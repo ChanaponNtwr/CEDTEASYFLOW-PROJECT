@@ -2,7 +2,7 @@ import { FaUser, FaBook } from 'react-icons/fa'; // นำเข้าไอค�
 
 function Sidebar() {
   return (
-    <div className="w-64 h-full bg-white shadow-md  p-4">
+    <div className="w-64 h-screen bg-white shadow-md p-4 fixed left-0 top-20">
       {/* TEACHING Section */}
       <div className="mb-6">
         <div className="flex items-center mb-2 bg-blue-600 px-2 py-3 rounded">
@@ -16,10 +16,7 @@ function Sidebar() {
             <span className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center mr-2 text-white text-xs font-semibold">
               P
             </span>
-            <a
-              href="#"
-              className="text-gray-700 "
-            >
+            <a href="#" className="text-gray-700">
               Project-Flowchart1
             </a>
           </li>
@@ -27,10 +24,7 @@ function Sidebar() {
             <span className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center mr-2 text-white text-xs font-semibold">
               P
             </span>
-            <a
-              href="#"
-              className="text-gray-700 "
-            >
+            <a href="#" className="text-gray-700">
               Project-Flowchart2
             </a>
           </li>
@@ -38,7 +32,7 @@ function Sidebar() {
       </div>
 
       {/* ENROLLED Section */}
-     
+      <div>
         <div className="flex items-center mb-2 bg-blue-600 px-2 py-3 rounded">
           <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center mr-2">
             <FaBook className="text-blue-600 w-4 h-4" />
@@ -50,10 +44,7 @@ function Sidebar() {
             <span className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center mr-2 text-white text-xs font-semibold">
               P
             </span>
-            <a
-              href="#"
-              className="text-gray-700"
-            >
+            <a href="#" className="text-gray-700">
               Project-Flowchart3
             </a>
           </li>
@@ -61,10 +52,7 @@ function Sidebar() {
             <span className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center mr-2 text-white text-xs font-semibold">
               P
             </span>
-            <a
-              href="#"
-              className="text-gray-700 "
-            >
+            <a href="#" className="text-gray-700">
               Project-Flowchart4
             </a>
           </li>
@@ -72,10 +60,7 @@ function Sidebar() {
             <span className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center mr-2 text-white text-xs font-semibold">
               P
             </span>
-            <a
-              href="#"
-              className="text-gray-700 "
-            >
+            <a href="#" className="text-gray-700">
               Project-Flowchart5
             </a>
           </li>
@@ -83,16 +68,13 @@ function Sidebar() {
             <span className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center mr-2 text-white text-xs font-semibold">
               P
             </span>
-            <a
-              href="#"
-              className="text-gray-700 "
-            >
+            <a href="#" className="text-gray-700">
               Project-Flowchart6
             </a>
           </li>
         </ul>
       </div>
-    
+    </div>
   );
 }
 

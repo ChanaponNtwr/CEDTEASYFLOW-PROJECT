@@ -17,6 +17,7 @@ function Selectlab() {
   ];
   return (
     <div className="pt-20 min-h-screen bg-gray-100">
+      <div className="pl-60">
       <Navbar />
       <div className="flex h-screen">
         <Sidebar />
@@ -37,7 +38,7 @@ function Selectlab() {
         </div>
       </div>
     </div>
-
+</div>
   );
 }
 

@@ -38,7 +38,9 @@ function Navbar() {
             />
             <span>Chanapon</span>
             <svg
-              className="w-4 h-4 ml-1"
+              className={`w-4 h-4 ml-1 transition-transform duration-300 ease-in-out ${
+                isDropdownOpen ? "rotate-180" : "rotate-0"
+              }`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -49,10 +51,10 @@ function Navbar() {
           </div>
           {isDropdownOpen && (
             <div className="absolute right-0 mt-2 w-48 bg-white text-black rounded-md shadow-lg">
-              <Link href="/profile" className="block px-4 py-2 hover:bg-gray-100">Profile</Link>
+              <Link href="/profile" className="block px-4 py-2 hover:bg-gray-100 rounded-md">Profile</Link>
               <button
                 onClick={() => signOut({ callbackUrl: "/login" })}
-                className="w-full text-left px-4 py-2 hover:bg-gray-100"
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 rounded-md"
               >
                 Logout
               </button>

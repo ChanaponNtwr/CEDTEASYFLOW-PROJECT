@@ -55,7 +55,8 @@ function Editlab() {
   };
 
   return (
-    <div className="pt-20 min-h-screen bg-gray-100">
+    <div className="min-h-screen w-full bg-gray-100">
+      <div className="pt-20 pl-72">
       <Navbar />
       <div className="flex h-screen">
         <Sidebar />
@@ -187,6 +188,7 @@ function Editlab() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

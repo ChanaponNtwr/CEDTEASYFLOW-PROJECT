@@ -11,7 +11,7 @@ interface AssignmentItemProps {
 
 function AssignmentItem({ title = "Untitled Assignment", due = "No due date", onEditClick }: AssignmentItemProps) {
   return (
-    <div className="h-26 flex items-center justify-between bg-white p-4 rounded-lg shadow-md hover:bg-gray-100 hover:scale-100 transition-all cursor-pointer">
+    <div className="h-26 flex items-center justify-between bg-white p-4 rounded-lg shadow-md hover:bg-gray-100 hover:scale-100 transition-all cursor-pointer m-2">
       <div className="flex items-center">
         <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mr-4">
           <FaFileAlt className="w-8 h-8 text-gray-500" />
