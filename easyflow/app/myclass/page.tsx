@@ -96,8 +96,10 @@ function Myclass() {
             {classes1.length === 0 ? (
               <p className="text-gray-500">No other classes available.</p>
             ) : (
-              classes1.map((classItem, index) => (
-                <ClassCard_Other key={index} {...classItem} />
+              classes.map((classItem, index) => (
+                <Link href="/Classstudent" key={index}>
+                  <ClassCard_Other {...classItem} />
+                </Link>
               ))
             )}
           </div>

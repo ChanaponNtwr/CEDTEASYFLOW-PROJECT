@@ -57,9 +57,9 @@ function Classwork() {
             <FilterActions onCreateClick={handleCreateClick} />
 
             {/* Assignments List */}
-            <div className="space-y-4">
+            <div className="flex flex-col space-y-4">
               {assignments.map((assignment, index) => (
-                <Link href="/-" key={index}>
+                <Link href="/labinclass" key={index}>
                   <AssignmentItem
                     title={assignment.title}
                     due={assignment.due}

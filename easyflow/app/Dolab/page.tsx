@@ -1,9 +1,8 @@
 "use client";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import {
   ReactFlow,
   addEdge,
-  Background,
   Controls,
   MiniMap,
   useNodesState,
@@ -13,10 +12,9 @@ import {
   Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-
-import { getFlowchart, saveFlowchart } from "../api/flowchartApi";
 import Navbar from "@/components/Navbar";
 import TopBarControls from "./_components/TopBarControls";
+import SymbolSection from "./_components/SymbolSection";
 import { v4 as uuidv4 } from "uuid";
 
 type Props = {
@@ -24,19 +22,39 @@ type Props = {
 };
 
 const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
-  const [flowchartName, setFlowchartName] = useState("My Flowchart");
-  const [description, setDescription] = useState("This is a sample flowchart");
+  // Mockup nodes & edges
+  const initialNodes: Node[] = [
+    { id: "start", type: "input", data: { label: "Start" }, position: { x: 300, y: 50 } },
+    { id: "end", type: "output", data: { label: "End" }, position: { x: 300, y: 150 } },
+  ];
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
+  const initialEdges: Edge[] = [
+    { id: "e1", source: "start", target: "end", animated: true, label: "Next" },
+  ];
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>(initialEdges);
+
+  const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
+  const [edgePosition, setEdgePosition] = useState<{ x: number; y: number } | null>(null);
 
   const onConnect = useCallback(
     (connection: Connection) =>
-      setEdges((eds) =>
-        addEdge({ ...connection, animated: true, label: "Edge" }, eds)
-      ),
+      setEdges((eds) => addEdge({ ...connection, animated: true, label: "Edge" }, eds)),
     [setEdges]
   );
+
+  // เมื่อคลิก edge
+  const onEdgeClick = (event: React.MouseEvent, edge: Edge) => {
+    event.stopPropagation();
+    setSelectedEdge(edge);
+    setEdgePosition({ x: event.clientX, y: event.clientY });
+  };
+
+  const closeModal = () => {
+    setSelectedEdge(null);
+    setEdgePosition(null);
+  };
 
   const addNode = () => {
     const newNode: Node = {
@@ -48,109 +66,51 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     setNodes((nds) => [...nds, newNode]);
   };
 
-  const handleSave = async () => {
-    const payload = {
-      flowchartID: flowchartId,
-      name: flowchartName,
-      description: description,
-      nodes: nodes.map((n) => ({
-        id: n.id,
-        flowchartid: flowchartId,
-        type: n.type ?? "default",
-        label: typeof n.data.label === "string" ? n.data.label : "Node",
-        x: n.position.x,
-        y: n.position.y,
-      })),
-      edges: edges.map((e) => ({
-        id: e.id,
-        flowchartid: flowchartId,
-        from: e.source,
-        to: e.target,
-        label: e.label ?? "",
-      })),
-    };
-
-    try {
-      await saveFlowchart(payload);
-      alert("Saved!");
-    } catch (error) {
-      console.error("Save failed:", error);
-      alert("Error saving flowchart");
-    }
-  };
-
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const data = await getFlowchart(flowchartId);
-        setFlowchartName(data.name);
-        setDescription(data.description);
-
-        const loadedNodes: Node[] = data.nodes.map((n: any) => ({
-          id: n.id,
-          type: n.type,
-          position: { x: n.x, y: n.y },
-          data: { label: n.label },
-        }));
-
-        const loadedEdges: Edge[] = data.edges.map((e: any) => ({
-          id: e.id,
-          source: e.from,
-          target: e.to,
-          label: e.label,
-          animated: true,
-        }));
-
-        setNodes(loadedNodes);
-        setEdges(loadedEdges);
-      } catch (error) {
-        console.log("No existing flowchart. Starting new.");
-      }
-    };
-
-    loadData();
-  }, [flowchartId]);
-
   return (
-    
-  <div className="flex flex-col h-screen w-screen overflow-hidden">
-  <Navbar />
+    <div className="flex flex-col h-screen w-screen overflow-hidden">
+      <Navbar />
+      <div className="mt-20 ml-4">
+        <TopBarControls />
+      </div>
 
-  {/* Header bar (ชื่อ flowchart + ปุ่ม) */}
-  <div className="p-2 bg-gray-100 flex justify-between shrink-0 mt-21">
-    <div>
-      <h2 className="text-xl font-semibold">{flowchartName}</h2>
-      <p className="text-sm text-gray-500">{description}</p>
+      {/* ReactFlow */}
+      <div className="flex-1">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          fitView
+          onEdgeClick={onEdgeClick}
+        >
+          <MiniMap />
+          <Controls />
+        </ReactFlow>
+      </div>
+
+      {/* Modal */}
+        {selectedEdge && edgePosition && (
+          <div
+            className="fixed inset-0 z-50 pointer-events-auto bg-transparent"
+            onClick={closeModal} // คลิกด้านนอกปิด modal
+          >
+            <div
+              className="absolute bg-white p-6 rounded-lg shadow-lg max-h-[400px] overflow-y-auto"
+              style={{
+                top: Math.min(edgePosition.y, window.innerHeight - 500),
+                left: Math.min(edgePosition.x + 20, window.innerWidth - 500),
+                minWidth: 300,
+                maxWidth: 500,
+              }}
+              onClick={(e) => e.stopPropagation()} // ป้องกันคลิกใน modal ไม่ให้ปิด
+            >
+              {/* SymbolSection */}
+              <SymbolSection />
+            </div>
+          </div>
+        )}
     </div>
-    <div>
-      <button onClick={addNode} className="px-3 py-1 bg-blue-500 text-white rounded mr-2">
-        + Add Node
-      </button>
-      <button onClick={handleSave} className="px-3 py-1 bg-green-600 text-white rounded">
-        💾 Save
-      </button>
-    </div>
-  </div>
-  {/* Controls bar */}
-        <div className="mt-4 ml-4">
-          <TopBarControls />
-        </div>
-  {/* ReactFlow เต็มพื้นที่ที่เหลือ */}
-  <div className="flex-1">
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onConnect={onConnect}
-      fitView
-    >
-      <Background />
-      <MiniMap />
-      <Controls />
-    </ReactFlow>
-  </div>
-</div>
   );
 };
 

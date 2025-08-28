@@ -49,7 +49,7 @@ function Labinfo() {
         <div className="flex min-h-screen">
           <Sidebar />
             <div className="flex-1 flex justify-center p-6 md:p-10">
-            <div className="w-full max-w-7xl bg-white p-6 rounded-lg shadow-md">
+            <div className="w-full max-w-5xl bg-white p-6 rounded-lg shadow-md">
               {/* Buttons (Edit) */}
               <div className="flex justify-end space-x-4 mb-6">
                 <Link
@@ -99,7 +99,7 @@ function Labinfo() {
 
                 {/* Test Case Table */}
                 <div className="flex-1 mb-6">
-                  <table className="w-full table-auto">
+                  <table className="w-4xl table-auto">
                     <thead>
                       <tr className="bg-gray-100">
                         <th className="px-4 py-2 text-left">No.</th>

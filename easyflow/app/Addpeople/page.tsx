@@ -45,8 +45,8 @@ function Addpeople() {
       <Navbar />
       <div className="flex h-screen">
         <Sidebar />
-        <div className="flex-1 flex flex-col px-10 py-10 overflow-auto ">
-          <div className="ml-34 mt-14">
+        <div className="flex-1 flex flex-col px-10 py-10 h-screen w-screen overflow-hidden ">
+          <div className="ml-34 mt-10">
           <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
           </div>
           <PeopleList title="Teacher" people={teachers} onAdd={() => openModal("Teacher")} />

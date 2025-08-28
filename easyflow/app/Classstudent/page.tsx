@@ -1,7 +1,7 @@
 "use client"; // ระบุว่าเป็น client component สำหรับ Next.js App Router
 
 import React, { useState } from "react";
-
+import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import Tabs from "./_components/Tabs";
@@ -39,6 +39,7 @@ function Classstudent() {
 
   return (
     <div className="pt-20 min-h-screen bg-gray-100">
+      <div className="pl-60">
       <Navbar />
       <div className="flex h-screen">
         <Sidebar />
@@ -58,19 +59,21 @@ function Classstudent() {
           <FilterActions onCreateClick={handleCreateClick} />
 
           {/* Assignments List */}
-          <div className="space-y-4">
-            {assignments.map((assignment, index) => (
-              <AssignmentItem
-                key={index}
-                title={assignment.title}
-                due={assignment.due}
-                onEditClick={() => console.log(`Edit assignment: ${assignment.title}`)} // เพิ่ม handler สำหรับ Edit
-              />
-            ))}
-          </div>
+            <div className="flex flex-col space-y-4">
+              {assignments.map((assignment, index) => (
+                <Link href="/Studentlab" key={index}>
+                  <AssignmentItem
+                    title={assignment.title}
+                    due={assignment.due}
+                    onEditClick={() => console.log(`Edit assignment: ${assignment.title}`)}
+                  />
+                </Link>
+              ))}
+            </div>
         </div>
       </div>
     </div>
+  </div>
   );
 }
 
