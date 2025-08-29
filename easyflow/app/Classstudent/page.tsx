@@ -52,7 +52,7 @@ function Classstudent() {
             code="OOP-53"
             teacher="Chanapon Nitiwirot"
             schedule="9:00-12:00(อ.) - 13:00-15:00(พ.)"
-            backgroundImage="/images/classroom.jpg" // ใช้ local image หรือ remote URL ที่กำหนดใน next.config.js
+            backgroundImage="/images/classwork.png" // ใช้ local image หรือ remote URL ที่กำหนดใน next.config.js
           />
 
           {/* Filter and Create Buttons */}

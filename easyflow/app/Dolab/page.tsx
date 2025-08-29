@@ -3,6 +3,7 @@ import React, { useCallback, useState } from "react";
 import {
   ReactFlow,
   addEdge,
+  Background,
   Controls,
   MiniMap,
   useNodesState,
@@ -22,7 +23,6 @@ type Props = {
 };
 
 const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
-  // Mockup nodes & edges
   const initialNodes: Node[] = [
     { id: "start", type: "input", data: { label: "Start" }, position: { x: 300, y: 50 } },
     { id: "end", type: "output", data: { label: "End" }, position: { x: 300, y: 150 } },
@@ -35,8 +35,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>(initialEdges);
 
-  const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
-  const [edgePosition, setEdgePosition] = useState<{ x: number; y: number } | null>(null);
+const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
+const [modalPosition, setModalPosition] = useState<{ x: number; y: number } | null>(null);
 
   const onConnect = useCallback(
     (connection: Connection) =>
@@ -44,18 +44,16 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     [setEdges]
   );
 
-  // เมื่อคลิก edge
-  const onEdgeClick = (event: React.MouseEvent, edge: Edge) => {
-    event.stopPropagation();
-    setSelectedEdge(edge);
-    setEdgePosition({ x: event.clientX, y: event.clientY });
-  };
+const onEdgeClick = (event: React.MouseEvent, edge: Edge) => {
+  event.stopPropagation();
+  setSelectedEdge(edge);
+  setModalPosition({ x: event.clientX + 10, y: event.clientY + 10 }); // +10 offset ให้ไม่ทับ pointer
+};
 
-  const closeModal = () => {
-    setSelectedEdge(null);
-    setEdgePosition(null);
-  };
-
+const closeModal = () => {
+  setSelectedEdge(null);
+  setModalPosition(null);
+};
   const addNode = () => {
     const newNode: Node = {
       id: uuidv4(),
@@ -74,42 +72,40 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       </div>
 
       {/* ReactFlow */}
-      <div className="flex-1">
+      <div className="flex-1 relative">
         <ReactFlow
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          fitView
+          fitView={false} // ปิด fitView ถ้าไม่ต้องการให้ zoom อัตโนมัติ
+          defaultViewport={{ x: 600, y: 150, zoom: 1 }} // ตั้ง zoom เริ่มต้น
           onEdgeClick={onEdgeClick}
         >
+          <Background />
           <MiniMap />
           <Controls />
         </ReactFlow>
       </div>
 
-      {/* Modal */}
-        {selectedEdge && edgePosition && (
+      {/* Modal ของ SymbolSection */}
+      {selectedEdge && modalPosition && (
+        <div
+          className="fixed inset-0 z-50" // เพิ่ม overlay สีโปร่งใส
+          onClick={closeModal} // คลิกที่ overlay จะปิด modal
+        >
           <div
-            className="fixed inset-0 z-50 pointer-events-auto bg-transparent"
-            onClick={closeModal} // คลิกด้านนอกปิด modal
+            className="absolute"
+            style={{ top: modalPosition.y, left: modalPosition.x }}
+            onClick={(e) => e.stopPropagation()} // คลิกภายใน modal จะไม่ปิด
           >
-            <div
-              className="absolute bg-white p-6 rounded-lg shadow-lg max-h-[400px] overflow-y-auto"
-              style={{
-                top: Math.min(edgePosition.y, window.innerHeight - 500),
-                left: Math.min(edgePosition.x + 20, window.innerWidth - 500),
-                minWidth: 300,
-                maxWidth: 500,
-              }}
-              onClick={(e) => e.stopPropagation()} // ป้องกันคลิกใน modal ไม่ให้ปิด
-            >
-              {/* SymbolSection */}
-              <SymbolSection />
-            </div>
+            <SymbolSection edge={selectedEdge} />
           </div>
-        )}
+        </div>
+      )}
+
+
     </div>
   );
 };

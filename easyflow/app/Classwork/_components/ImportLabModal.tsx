@@ -86,9 +86,10 @@ function ImportLabModal({ isOpen, onClose, onAddClick, formData, setFormData }: 
               </div>
 
               {/* Assignment due date */}
-              <div>
-                <label className="block text-gray-500 mb-1">Assignment due date</label>
-                <div className="space-y-2">
+              <div className="space-y-4">
+                {/* Date */}
+                <div>
+                  <label className="block text-gray-500 font-medium mb-2">Assignment Due Date</label>
                   <div className="relative">
                     <input
                       type="date"
@@ -96,20 +97,23 @@ function ImportLabModal({ isOpen, onClose, onAddClick, formData, setFormData }: 
                       value={formData.dueDate}
                       onChange={handleInputChange}
                       ref={dateInputRef}
-                      className="w-full h-12 p-2 border border-gray-300 text-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+                      className="w-full h-12 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 appearance-none"
                       min={new Date().toISOString().split("T")[0]}
                     />
                     <Image
                       src="/images/date.png"
                       alt="Date Icon"
-                      width={30}
-                      height={30}
+                      width={24}
+                      height={24}
                       className="absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer"
                       onClick={handleDateIconClick}
                     />
                   </div>
+                </div>
 
-                  <label className="block text-gray-500 mb-1">Time</label>
+                {/* Time */}
+                <div>
+                  <label className="block text-gray-500 font-medium mb-2">Time</label>
                   <div className="relative">
                     <input
                       type="time"
@@ -117,16 +121,16 @@ function ImportLabModal({ isOpen, onClose, onAddClick, formData, setFormData }: 
                       value={formData.dueTime}
                       onChange={handleInputChange}
                       ref={timeInputRef}
-                      className="w-full h-12 p-2 border text-gray-500 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+                      className="w-full h-12 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 appearance-none"
                       min="08:00"
                       max="18:00"
-                      step="900"
+                      step={900}
                     />
                     <Image
                       src="/images/clock.png"
                       alt="Clock Icon"
-                      width={30}
-                      height={30}
+                      width={24}
+                      height={24}
                       className="absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer"
                       onClick={handleTimeIconClick}
                     />

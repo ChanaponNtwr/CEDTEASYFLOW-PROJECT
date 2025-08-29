@@ -29,7 +29,7 @@ function ClassHeader({
       />
 
       {/* Overlay */}
-      <div className="absolute inset-0 bg-black bg-opacity-30 rounded-lg z-0"></div>
+      <div className="absolute inset-0  rounded-lg z-0"></div>
 
       {/* Content */}
       <div className="relative z-10">
