@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { signOut } from "next-auth/react";
+import { motion } from "framer-motion";
 
 function Navbar() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -10,14 +11,18 @@ function Navbar() {
   return (
     <div className="fixed top-0 left-0 w-full bg-blue-600 text-white p-4 flex justify-between items-center z-[1100]">
       <div className="flex items-center">
-        <img
-          src="https://img5.pic.in.th/file/secure-sv1/Esay-Flow.png"
-          alt="EasyFlow Logo"
-          className="h-14 mr-6"
-        />
+        <Link href="/">
+          <motion.img
+            src="https://img5.pic.in.th/file/secure-sv1/Esay-Flow.png"
+            alt="EasyFlow Logo"
+            className="h-14 mr-6 cursor-pointer"
+            whileHover={{ scale: 1.1, rotate: 5 }} // เพิ่ม animation แค่ตรง logo
+            transition={{ type: "spring", stiffness: 300 }}
+          />
+        </Link>
       </div>
       <div className="flex items-center space-x-14">
-        <Link href="/homepage" className="hover:underline hover:scale-105 transition-all cursor-pointer">
+        <Link href="/" className="hover:underline hover:scale-105 transition-all cursor-pointer">
           Home
         </Link>
         <Link href="/mylab" className="hover:underline hover:scale-105 transition-all cursor-pointer">
@@ -38,7 +43,9 @@ function Navbar() {
             />
             <span>Chanapon</span>
             <svg
-              className="w-4 h-4 ml-1"
+              className={`w-4 h-4 ml-1 transition-transform duration-300 ease-in-out ${
+                isDropdownOpen ? "rotate-180" : "rotate-0"
+              }`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -49,10 +56,10 @@ function Navbar() {
           </div>
           {isDropdownOpen && (
             <div className="absolute right-0 mt-2 w-48 bg-white text-black rounded-md shadow-lg">
-              <Link href="/profile" className="block px-4 py-2 hover:bg-gray-100">Profile</Link>
+              <Link href="/profile" className="block px-4 py-2 hover:bg-gray-100 rounded-md">Profile</Link>
               <button
                 onClick={() => signOut({ callbackUrl: "/login" })}
-                className="w-full text-left px-4 py-2 hover:bg-gray-100"
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 rounded-md"
               >
                 Logout
               </button>

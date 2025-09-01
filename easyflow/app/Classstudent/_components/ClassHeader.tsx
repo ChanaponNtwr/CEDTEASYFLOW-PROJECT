@@ -25,7 +25,7 @@ function ClassHeader({ code = "N/A", teacher = "Unknown", schedule = "No schedul
         />
       )}
       {/* Overlay for better text readability */}
-      <div className="absolute inset-0 bg-black bg-opacity-30 rounded-lg z-0"></div>
+      <div className="absolute inset-0 rounded-lg z-0"></div>
       {/* Content */}
       <div className="relative z-10">
         <h1 className="text-3xl font-semibold">{code}</h1>

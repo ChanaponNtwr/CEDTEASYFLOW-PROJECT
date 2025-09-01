@@ -6,6 +6,7 @@ import ClassCard from './_components/ClassCard';
 import ClassCard_Other from './_components/ClassCard_Other';
 import CreateClassModal from "./_components/CreateClassModal";
 import Link from "next/link";
+
 // Type definitions
 export type ClassItem = {
   code: string;
@@ -60,11 +61,12 @@ function Myclass() {
 
   return (
     <div className="pt-20 min-h-screen bg-gray-100">
+      <div className="pl-60">
       <Navbar />
-      <div className="flex h-screen">
+      <div className="flex">
         <Sidebar />
         <div className="flex-1 flex flex-col p-20">
-          <div className="flex justify-end">
+          <div className="flex justify-end mb-6">
             <button
               onClick={openModal}
               className="bg-[#0D3ACE] text-white px-4 py-2 rounded-lg flex items-center hover:bg-[#0B2EA6] hover:shadow-lg transition-all duration-200"
@@ -77,25 +79,27 @@ function Myclass() {
           </div>
 
           <h2 className="text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-4">My Class</h2>
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {classes.length === 0 ? (
-                <p className="text-gray-500">You don't have any classes yet.</p>
-              ) : (
-                classes.map((classItem, index) => (
-                  <Link href="/Classwork" key={index}>
-                    <ClassCard {...classItem} />
-                  </Link>
-                ))
-              )}
-            </div>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {classes.length === 0 ? (
+              <p className="text-gray-500">You don't have any classes yet.</p>
+            ) : (
+              classes.map((classItem, index) => (
+                <Link href="/Classwork" key={index}>
+                  <ClassCard {...classItem} />
+                </Link>
+              ))
+            )}
+          </div>
 
           <h2 className="text-4xl font-semibold border-b-2 border-gray-300 pb-1 mt-8 mb-4">Class</h2>
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {classes1.length === 0 ? (
               <p className="text-gray-500">No other classes available.</p>
             ) : (
-              classes1.map((classItem, index) => (
-                <ClassCard_Other key={index} {...classItem} />
+              classes.map((classItem, index) => (
+                <Link href="/Classstudent" key={index}>
+                  <ClassCard_Other {...classItem} />
+                </Link>
               ))
             )}
           </div>
@@ -109,6 +113,7 @@ function Myclass() {
         formData={formData}
         setFormData={setFormData}
       />
+    </div>
     </div>
   );
 }
