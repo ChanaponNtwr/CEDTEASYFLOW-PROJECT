@@ -2,13 +2,20 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import { Edge } from "@xyflow/react";
 
 interface SymbolItem {
   label: string;
   imageSrc: string;
 }
 
-const SymbolSection: React.FC = () => {
+interface SymbolSectionProps {
+  edge?: Edge;
+  onAddNode?: (type: string, label: string) => void;
+}
+
+
+const SymbolSection: React.FC<SymbolSectionProps> = ({ onAddNode }) => {
   const [showInputModal, setShowInputModal] = useState(false);
   const [showOutputModal, setShowOutputModal] = useState(false);
   const [showDeclareModal, setShowDeclareModal] = useState(false);
@@ -17,6 +24,11 @@ const SymbolSection: React.FC = () => {
   const [showWhileModal, setShowWhileModal] = useState(false);
   const [showForModal, setShowForModal] = useState(false);
   const [showDoModal, setShowDoModal] = useState(false);
+
+    // เพิ่ม state สำหรับเก็บค่าที่กรอก
+  const [inputValue, setInputValue] = useState("");
+  const [outputValue, setOutputValue] = useState("");
+  const [ifExpression, setIfExpression] = useState("");
 
   const symbols: Record<string, SymbolItem> = {
     input: { label: "Input", imageSrc: "/images/input.png" },
@@ -48,28 +60,21 @@ const SymbolSection: React.FC = () => {
   const handleCloseForModal = () => setShowForModal(false);
   const handleCloseDoModal = () => setShowDoModal(false);
 
+const handlers: Record<string, () => void> = {
+  Input: handleInputClick,
+  Output: handleOutputClick,
+  Declare: handleDeclareClick,
+  Assign: handleAssignClick,
+  IF: handleIfClick,
+  While: handleWhileClick,
+  For: handleForClick,
+  Do: handleDoClick,
+};
+
 const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
   <div
     className="flex flex-col items-center gap-1 cursor-pointer"
-    onClick={
-      item.label === "Input"
-        ? handleInputClick
-        : item.label === "Output"
-        ? handleOutputClick
-        : item.label === "Declare"
-        ? handleDeclareClick
-        : item.label === "Assign"
-        ? handleAssignClick
-        : item.label === "IF"
-        ? handleIfClick
-        : item.label === "While"
-        ? handleWhileClick
-        : item.label === "For"
-        ? handleForClick
-        : item.label === "Do"
-        ? handleDoClick
-        : undefined
-    }
+    onClick={handlers[item.label]} // ใช้ mapping
   >
     <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
     <span className="text-sm text-gray-700">{item.label}</span>
@@ -79,94 +84,97 @@ const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
 
 
   // --- Input Modal ---
-  if (showInputModal) {
-    return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
-          Input Properties
-        </div>
-
-        <div className="text-gray-700 mb-2 ml-4">Input</div>
-
-        <input
-          type="text"
-          placeholder=""
-          className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 "
-        />
-
-        <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-          <button
-            onClick={handleCloseInputModal}
-            className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => {
-              alert("Ok clicked!");
+if (showInputModal) {
+  return (
+    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-4 border-1">
+      <div className="text-xl font-semibold text-gray-800 mb-4">Input Properties</div>
+      <input
+        type="text"
+        placeholder="Variable name"
+        value={inputValue} // bind state
+        onChange={(e) => setInputValue(e.target.value)} // update state
+        className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+      />
+      <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+        <button
+          onClick={() => {
+            handleCloseInputModal();
+            setInputValue(""); // reset
+          }}
+          className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => {
+            if (inputValue.trim() !== "") {
+              onAddNode?.("input", inputValue); // ส่ง label ที่ผู้ใช้กรอก
+              setInputValue(""); // reset
               handleCloseInputModal();
-            }}
-            className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-          >
-            Ok
-          </button>
-        </div>
-
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
-          <span className="text-gray-600 text-sm">
-            A Input Statement reads a value from the keyboard and stores the
-            result in a variable.
-          </span>
-        </div>
+            }
+          }}
+          className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
+        >
+          Ok
+        </button>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
 
   // --- Output Modal ---
-  if (showOutputModal) {
-    return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
-          Output Properties
-        </div>
-
-        <div className="text-gray-700 mb-2 ml-4">Output</div>
-
-        <input
-          type="text"
-          placeholder=""
-          className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-        />
-
-        <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-          <button
-            onClick={handleCloseOutputModal}
-            className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => {
-              alert("Ok clicked!");
-              handleCloseOutputModal();
-            }}
-            className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-          >
-            Ok
-          </button>
-        </div>
-
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
-          <span className="text-gray-600 text-sm">
-            An Output Statement evaluates an expression and then displays the
-            result to the screen.
-          </span>
-        </div>
+if (showOutputModal) {
+  return (
+    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
+      <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
+        Output Properties
       </div>
-    );
-  }
+
+      <div className="text-gray-700 mb-2 ml-4">Output</div>
+
+      <input
+        type="text"
+        placeholder="Variable or expression"
+        value={outputValue} // bind state
+        onChange={(e) => setOutputValue(e.target.value)} // update state
+        className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+      />
+
+      <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+        <button
+          onClick={() => {
+            handleCloseOutputModal();
+            setOutputValue(""); // reset
+          }}
+          className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => {
+            if (outputValue.trim() !== "") {
+              onAddNode?.("output", outputValue); // ส่ง label ที่ผู้ใช้กรอก
+              setOutputValue(""); // reset
+              handleCloseOutputModal();
+            }
+          }}
+          className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
+        >
+          Ok
+        </button>
+      </div>
+
+      <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
+        <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
+        <span className="text-gray-600 text-sm">
+          An Output Statement evaluates an expression and then displays the
+          result to the screen.
+        </span>
+      </div>
+    </div>
+  );
+}
 
   // --- Declare Modal ---
   if (showDeclareModal) {
@@ -294,7 +302,9 @@ if (showIfModal) {
 
       <input
         type="text"
-        placeholder=""
+        placeholder="Condition"
+        value={ifExpression}
+        onChange={(e) => setIfExpression(e.target.value)}
         className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
       />
 
@@ -307,8 +317,11 @@ if (showIfModal) {
         </button>
         <button
           onClick={() => {
-            alert("IF Saved!");
+            if (ifExpression.trim() !== "") {
+              onAddNode?.("if", ifExpression); // ส่งค่าไปสร้าง IF Node
+            }
             handleCloseIfModal();
+            setIfExpression("");
           }}
           className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
         >
@@ -319,7 +332,7 @@ if (showIfModal) {
       <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
         <img src="/images/shape_if.png" alt="Icon" className="w-50 h-10" />
         <span className="text-gray-600 text-sm">
-          A lf Statement checks a Boolean expression then executes a true or false branch based on the result.
+          An IF Statement checks a Boolean expression then executes a true or false branch based on the result.
         </span>
       </div>
     </div>

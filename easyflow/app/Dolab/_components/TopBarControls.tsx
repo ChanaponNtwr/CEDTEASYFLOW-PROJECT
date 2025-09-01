@@ -43,6 +43,7 @@ export default function TopBarControls() {
               <table className="w-full text-sm font-['Sarabun'] border-collapse">
                 <thead>
                   <tr className="bg-gray-100">
+                    <th className="p-2 text-left border-b border-gray-300">No</th>
                     <th className="p-2 text-left border-b border-gray-300">Testcase</th>
                     <th className="p-2 text-left border-b border-gray-300">Input</th>
                     <th className="p-2 text-left border-b border-gray-300">Output</th>
@@ -51,16 +52,26 @@ export default function TopBarControls() {
                 </thead>
                 <tbody>
                   <tr>
+                    <td className="p-2 border-b border-gray-200">1</td>
                     <td className="p-2 border-b border-gray-200">y</td>
                     <td className="p-2 border-b border-gray-200">8</td>
                     <td className="p-2 border-b border-gray-200" />
-                    <td className="p-2 border-b border-gray-200"><button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">Test</button></td>
+                    <td className="p-2 border-b border-gray-200">
+                      <button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">
+                        Test
+                      </button>
+                    </td>
                   </tr>
                   <tr>
+                    <td className="p-2 border-b border-gray-200">2</td>
                     <td className="p-2 border-b border-gray-200">x</td>
                     <td className="p-2 border-b border-gray-200">ลอง</td>
                     <td className="p-2 border-b border-gray-200" />
-                    <td className="p-2 border-b border-gray-200"><button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">Test</button></td>
+                    <td className="p-2 border-b border-gray-200">
+                      <button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">
+                        Test
+                      </button>
+                    </td>
                   </tr>
                 </tbody>
               </table>
