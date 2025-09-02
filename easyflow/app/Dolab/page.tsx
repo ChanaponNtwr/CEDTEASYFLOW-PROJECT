@@ -40,8 +40,8 @@ const IfNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
       }}
     >
       <Handle type="target" position={Position.Top} style={{ background: "#555" }} />
-      <Handle type="source" position={Position.Left} id="left"  />
-      <Handle type="source" position={Position.Right} id="right"  />
+      <Handle type="source" position={Position.Left} id="left" />
+      <Handle type="source" position={Position.Right} id="right" />
       <div>{data.label}</div>
     </div>
   );
@@ -96,19 +96,15 @@ const BreakpointNodeComponent: React.FC<{ data: { label: string } }> = ({ data }
         type="target"
         position={Position.Left}
         id="false"
-        style={{ top: "50%", }}
+        style={{ top: "50%" }}
       />
       <Handle
         type="target"
         position={Position.Right}
         id="true"
-        style={{ top: "50%", }}
+        style={{ top: "50%" }}
       />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        
-      />
+      <Handle type="source" position={Position.Bottom} />
       <div>{data.label}</div>
     </div>
   );
@@ -218,6 +214,69 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   };
 
   const addNode = (type: string, label: string) => {
+    if (!selectedEdge) return;
+
+    const { source, target, sourceHandle } = selectedEdge;
+    const isIfTrueBranch = sourceHandle === "right";
+    const isIfFalseBranch = sourceHandle === "left";
+
+    if (isIfTrueBranch || isIfFalseBranch) {
+      const newNodeId = uuidv4();
+
+      const sourceNode = nodes.find(n => n.id === source);
+      const targetNode = nodes.find(n => n.id === target);
+
+      const offsetX = isIfTrueBranch ? 475 : 125; // ขวา / ซ้าย
+      const baseY =
+        sourceNode && targetNode
+          ? (sourceNode.position.y + targetNode.position.y) / 2
+          : (sourceNode?.position.y ?? 0) + 60;
+
+      const newNode: Node = {
+        id: newNodeId,
+        type: type === "default" ? "default" : `${type}Node`,
+        data: { label },
+        position: {
+          x: offsetX,
+          y: baseY,
+        },
+        draggable: false,
+      };
+
+      const newEdges: Edge[] = [
+        createArrowEdge(
+          source,
+          newNodeId,
+          selectedEdge.data?.label,
+          sourceHandle,
+          "black",
+          undefined,
+          isIfTrueBranch ? 100 : -100,
+          true // step edge
+        ),
+        createArrowEdge(
+          newNodeId,
+          target,
+          undefined,
+          undefined,
+          "black",
+          selectedEdge.targetHandle,
+          isIfTrueBranch ? 0 : -0, // ให้เส้นไป breakpoint เป็นเหลี่ยม
+          true // <-- ตรงนี้เพิ่ม!
+        ),
+      ];
+
+
+
+      const updatedEdges = edges.filter(e => e.id !== selectedEdge.id);
+      setNodes(prev => [...prev, newNode]);
+      setEdges([...updatedEdges, ...newEdges]);
+      closeModal();
+      return;
+    }
+
+
+    // fallback: เพิ่ม node ตาม logic ปกติ
     const startNode = nodes.find(n => n.id === "start");
     const endNode = nodes.find(n => n.id === "end");
     if (!startNode || !endNode) return;
@@ -257,8 +316,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       setEdges(prev => [
         ...prev.filter(e => !(e.source === previousNode.id && e.target === endNode.id)),
         createArrowEdge(previousNode.id, whileNode.id),
-        createArrowEdge(whileNode.id, whileNode.id, "True", "true", "black", undefined, 150, true), // วนกลับ
-        createArrowEdge(whileNode.id, endNode.id, "False", "false", "black"), // ไป End
+        createArrowEdge(whileNode.id, whileNode.id, "True", "true", "black", undefined, 150, true),
+        createArrowEdge(whileNode.id, endNode.id, "False", "false", "black"),
       ]);
     } else {
       const newNode: Node = { id: uuidv4(), type: "default", data: { label }, position: { x: 300, y: baseY }, draggable: false };
@@ -293,7 +352,11 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           onConnect={onConnect}
           fitView={false}
           defaultViewport={{ x: 600, y: 150, zoom: 1 }}
-          nodeTypes={{ ifNode: IfNodeComponent, whileNode: WhileNodeComponent, breakpointNode: BreakpointNodeComponent }}
+          nodeTypes={{
+            ifNode: IfNodeComponent,
+            whileNode: WhileNodeComponent,
+            breakpointNode: BreakpointNodeComponent,
+          }}
           edgeTypes={{ step: StepEdge }}
           onEdgeClick={onEdgeClick}
         >
@@ -306,7 +369,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       {selectedEdge && modalPosition && (
         <div className="fixed inset-0 z-50" onClick={closeModal}>
           <div style={{ top: modalPosition.y, left: modalPosition.x }} className="absolute" onClick={e => e.stopPropagation()}>
-            <SymbolSection edge={selectedEdge} onAddNode={(type, label) => { addNode(type, label); closeModal(); }} />
+            <SymbolSection edge={selectedEdge} onAddNode={(type, label) => { addNode(type, label); }} />
           </div>
         </div>
       )}
