@@ -29,6 +29,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onAddNode }) => {
   const [inputValue, setInputValue] = useState("");
   const [outputValue, setOutputValue] = useState("");
   const [ifExpression, setIfExpression] = useState("");
+  const [whileExpression, setWhileExpression] = useState("");
+
 
   const symbols: Record<string, SymbolItem> = {
     input: { label: "Input", imageSrc: "/images/input.png" },
@@ -86,7 +88,7 @@ const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
   // --- Input Modal ---
 if (showInputModal) {
   return (
-    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-4 border-1">
+    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
       <div className="text-xl font-semibold text-gray-800 mb-4">Input Properties</div>
       <input
         type="text"
@@ -118,6 +120,14 @@ if (showInputModal) {
           Ok
         </button>
       </div>
+
+      <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
+        <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
+        <span className="text-gray-600 text-sm">
+          A Input Statement reads a value from the keyboard and stores the result in a variable.
+        </span>
+
+      </div>
     </div>
   );
 }
@@ -127,11 +137,7 @@ if (showInputModal) {
 if (showOutputModal) {
   return (
     <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-      <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
-        Output Properties
-      </div>
-
-      <div className="text-gray-700 mb-2 ml-4">Output</div>
+      <div className="text-xl font-semibold text-gray-800 mb-4">Output Properties</div>
 
       <input
         type="text"
@@ -168,13 +174,13 @@ if (showOutputModal) {
       <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
         <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
         <span className="text-gray-600 text-sm">
-          An Output Statement evaluates an expression and then displays the
-          result to the screen.
+          An Output Statement evaluates an expression and then displays the result to the screen.
         </span>
       </div>
     </div>
   );
 }
+
 
   // --- Declare Modal ---
   if (showDeclareModal) {
@@ -351,7 +357,9 @@ if (showWhileModal) {
 
       <input
         type="text"
-        placeholder=""
+        placeholder="Condition"
+        value={whileExpression}
+        onChange={(e) => setWhileExpression(e.target.value)}
         className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
       />
 
@@ -364,8 +372,11 @@ if (showWhileModal) {
         </button>
         <button
           onClick={() => {
-            alert("WHILE Saved!");
+            if (whileExpression.trim() !== "") {
+              onAddNode?.("while", whileExpression); // ส่งค่าไปสร้าง WHILE Node
+            }
             handleCloseWhileModal();
+            setWhileExpression("");
           }}
           className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
         >
@@ -382,6 +393,7 @@ if (showWhileModal) {
     </div>
   );
 }
+
 
 // --- For Modal ---
 if (showForModal) {
