@@ -3,183 +3,26 @@ import React, { useCallback, useState } from "react";
 import {
   ReactFlow,
   addEdge,
-  Background,
-  Controls,
-  MiniMap,
   useNodesState,
   useEdgesState,
   Connection,
   Node,
   Edge,
-  Position,
-  Handle,
-  BaseEdge,
-  EdgeLabelRenderer,
+  Background,
+  Controls,
+  MiniMap,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Navbar from "@/components/Navbar";
 import TopBarControls from "./_components/TopBarControls";
 import SymbolSection from "./_components/SymbolSection";
-import { v4 as uuidv4 } from "uuid";
-
-// ---- Custom IF Node ----
-const IfNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
-  return (
-    <div
-      style={{
-        padding: 10,
-        border: "1px solid #333",
-        borderRadius: 5,
-        backgroundColor: "#fff",
-        textAlign: "center",
-        width: 150,
-        minHeight: 30,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <Handle type="target" position={Position.Top} style={{ background: "#555" }} />
-      <Handle type="source" position={Position.Left} id="left" />
-      <Handle type="source" position={Position.Right} id="right" />
-      <div>{data.label}</div>
-    </div>
-  );
-};
-
-// ---- Custom While Node ----
-const WhileNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
-  return (
-    <div
-      style={{
-        padding: 10,
-        border: "1px solid",
-        borderRadius: 5,
-        backgroundColor: "white",
-        textAlign: "center",
-        width: 150,
-        minHeight: 30,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        position: "relative",
-      }}
-    >
-      <Handle type="target" position={Position.Top} />
-      <Handle type="source" position={Position.Right} id="true" />
-      <Handle type="source" position={Position.Bottom} id="false" />
-      <div>{data.label}</div>
-    </div>
-  );
-};
-
-// ---- Custom Breakpoint Node ----
-const BreakpointNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
-  return (
-    <div
-      style={{
-        width: 30,
-        height: 30,
-        border: "2px solid #333",
-        borderRadius: "50%",
-        backgroundColor: "#f0f0f0",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        textAlign: "center",
-        fontSize: 12,
-        position: "relative",
-      }}
-    >
-      <Handle
-        type="target"
-        position={Position.Left}
-        id="false"
-        style={{ top: "50%" }}
-      />
-      <Handle
-        type="target"
-        position={Position.Right}
-        id="true"
-        style={{ top: "50%" }}
-      />
-      <Handle type="source" position={Position.Bottom} />
-      <div>{data.label}</div>
-    </div>
-  );
-};
-
-// ---- Custom Step Edge ----
-const StepEdge = ({ id, sourceX, sourceY, targetX, targetY, data, markerEnd }: any) => {
-  const offset = data?.offset ?? 200;
-  let path = "";
-
-  if (sourceX === targetX && sourceY === targetY) {
-    // self-loop
-    path = `
-      M ${sourceX} ${sourceY}
-      C ${sourceX + offset} ${sourceY - 50},
-        ${targetX + offset} ${targetY + 50},
-        ${targetX} ${targetY}
-    `;
-  } else {
-    // normal step
-    const midX = sourceX + offset;
-    path = `
-      M ${sourceX} ${sourceY}
-      L ${midX} ${sourceY}
-      L ${midX} ${targetY}
-      L ${targetX} ${targetY}
-    `;
-  }
-
-  return (
-    <>
-      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ stroke: "#000", strokeWidth: 2 }} />
-      {data?.label && (
-        <EdgeLabelRenderer>
-          <div
-            style={{
-              position: "absolute",
-              top: `${sourceY - 12}px`,
-              left: `${sourceX + offset / 2}px`,
-              transform: 'translate(-50%, -50%)',
-              background: "white",
-              padding: "2px 4px",
-              fontSize: 12,
-            }}
-          >
-            {data.label}
-          </div>
-        </EdgeLabelRenderer>
-      )}
-    </>
-  );
-};
+import IfNodeComponent from "./_components/IfNodeComponent";
+import WhileNodeComponent from "./_components/WhileNodeComponent";
+import BreakpointNodeComponent from "./_components/BreakpointNodeComponent";
+import StepEdge from "./_components/StepEdge";
+import { createArrowEdge } from "./_components/createArrowEdge";
 
 type Props = { flowchartId: string };
-
-const createArrowEdge = (
-  source: string,
-  target: string,
-  label?: string,
-  sourceHandle?: string,
-  color = "black",
-  targetHandle?: string,
-  offset = 200,
-  step = false
-): Edge => ({
-  id: uuidv4(),
-  source,
-  target,
-  type: step ? "step" : "straight",
-  sourceHandle,
-  targetHandle,
-  style: { stroke: color, strokeWidth: 2 },
-  markerEnd: { type: "arrowclosed", color },
-  data: step ? { offset, label } : { label },
-});
 
 const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   const initialNodes: Node[] = [
@@ -221,7 +64,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     const isIfFalseBranch = sourceHandle === "left";
 
     if (isIfTrueBranch || isIfFalseBranch) {
-      const newNodeId = uuidv4();
+      const newNodeId = crypto.randomUUID ? crypto.randomUUID() : `${Math.random()}`;
 
       const sourceNode = nodes.find(n => n.id === source);
       const targetNode = nodes.find(n => n.id === target);
@@ -236,10 +79,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         id: newNodeId,
         type: type === "default" ? "default" : `${type}Node`,
         data: { label },
-        position: {
-          x: offsetX,
-          y: baseY,
-        },
+        position: { x: offsetX, y: baseY },
         draggable: false,
       };
 
@@ -252,7 +92,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           "black",
           undefined,
           isIfTrueBranch ? 100 : -100,
-          true // step edge
+          true
         ),
         createArrowEdge(
           newNodeId,
@@ -261,12 +101,10 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           undefined,
           "black",
           selectedEdge.targetHandle,
-          isIfTrueBranch ? 0 : -0, // ให้เส้นไป breakpoint เป็นเหลี่ยม
-          true // <-- ตรงนี้เพิ่ม!
+          isIfTrueBranch ? 0 : -0,
+          true
         ),
       ];
-
-
 
       const updatedEdges = edges.filter(e => e.id !== selectedEdge.id);
       setNodes(prev => [...prev, newNode]);
@@ -275,8 +113,6 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       return;
     }
 
-
-    // fallback: เพิ่ม node ตาม logic ปกติ
     const startNode = nodes.find(n => n.id === "start");
     const endNode = nodes.find(n => n.id === "end");
     if (!startNode || !endNode) return;
@@ -287,8 +123,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     const baseY = startNode.position.y + stepY * (middleNodes.length + 1);
 
     if (type === "if") {
-      const ifNode: Node = { id: uuidv4(), type: "ifNode", data: { label }, position: { x: 300, y: baseY }, draggable: false };
-      const breakpoint: Node = { id: uuidv4(), type: "breakpointNode", data: { label: "" }, position: { x: 360, y: baseY + stepY }, draggable: false };
+      const ifNode: Node = { id: crypto.randomUUID(), type: "ifNode", data: { label }, position: { x: 300, y: baseY }, draggable: false };
+      const breakpoint: Node = { id: crypto.randomUUID(), type: "breakpointNode", data: { label: "" }, position: { x: 360, y: baseY + stepY }, draggable: false };
 
       setNodes(prev => [
         ...prev.filter(n => n.id !== "end"),
@@ -305,7 +141,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         createArrowEdge(breakpoint.id, endNode.id),
       ]);
     } else if (type === "while") {
-      const whileNode: Node = { id: uuidv4(), type: "whileNode", data: { label }, position: { x: 300, y: baseY }, draggable: false };
+      const whileNode: Node = { id: crypto.randomUUID(), type: "whileNode", data: { label }, position: { x: 300, y: baseY }, draggable: false };
 
       setNodes(prev => [
         ...prev.filter(n => n.id !== "end"),
@@ -320,7 +156,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         createArrowEdge(whileNode.id, endNode.id, "False", "false", "black"),
       ]);
     } else {
-      const newNode: Node = { id: uuidv4(), type: "default", data: { label }, position: { x: 300, y: baseY }, draggable: false };
+      const newNode: Node = { id: crypto.randomUUID(), type: "default", data: { label }, position: { x: 300, y: baseY }, draggable: false };
 
       setNodes(prev => [
         ...prev.filter(n => n.id !== "end"),
@@ -369,7 +205,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       {selectedEdge && modalPosition && (
         <div className="fixed inset-0 z-50" onClick={closeModal}>
           <div style={{ top: modalPosition.y, left: modalPosition.x }} className="absolute" onClick={e => e.stopPropagation()}>
-            <SymbolSection edge={selectedEdge} onAddNode={(type, label) => { addNode(type, label); }} />
+            <SymbolSection edge={selectedEdge} onAddNode={(type, label) => addNode(type, label)} />
           </div>
         </div>
       )}
