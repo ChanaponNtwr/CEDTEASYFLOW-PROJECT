@@ -1,4 +1,4 @@
-import { Edge } from "@xyflow/react";
+import { Edge, MarkerType } from "@xyflow/react";
 import { v4 as uuidv4 } from "uuid";
 
 export const createArrowEdge = (
@@ -6,10 +6,10 @@ export const createArrowEdge = (
   target: string,
   label?: string,
   sourceHandle?: string,
-  color = "black",
+  color: string = "black",
   targetHandle?: string,
-  offset = 200,
-  step = false
+  offset: number = 200,
+  step: boolean = false
 ): Edge => ({
   id: uuidv4(),
   source,
@@ -18,6 +18,9 @@ export const createArrowEdge = (
   sourceHandle,
   targetHandle,
   style: { stroke: color, strokeWidth: 2 },
-  markerEnd: { type: "arrowclosed", color },
-  data: step ? { offset, label } : { label },
+  markerEnd: { type: MarkerType.ArrowClosed, color }, // ✅ ใช้ MarkerType
+  data: {
+    label: label ?? undefined,   // ✅ ให้ label เป็น string | undefined
+    ...(step ? { offset } : {}), // ✅ เพิ่ม offset เฉพาะตอน step
+  },
 });
