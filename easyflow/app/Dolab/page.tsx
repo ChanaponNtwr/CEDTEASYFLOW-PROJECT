@@ -20,7 +20,6 @@ import SymbolSection from "./_components/SymbolSection";
 
 import IfNodeComponent from "./_components/IfNodeComponent";
 import BreakpointNodeComponent from "./_components/BreakpointNodeComponent";
-import StepEdge from "./_components/StepEdge";
 import { createArrowEdge } from "./_components/createArrowEdge";
 
 type Props = { flowchartId: string };
@@ -28,9 +27,10 @@ type Props = { flowchartId: string };
 // FlowchartEditor - คอมโพเนนต์หลักสำหรับแก้ไข flowchart
 // ปรับปรุง:
 // - ให้ node 'end' มีตัวเดียวเสมอ และปรับตำแหน่ง 'end' อัตโนมัติ
-// - ปรับ: ให้เฉพาะเส้นที่มี label เป็น "True" หรือ "False" เท่านั้นเป็นเส้นเหลี่ยม (type: 'step')
+// - เส้นเชื่อมทั้งหมดเป็นชนิด 'smoothstep'
+// - เพิ่มข้อความ "True" (ขวา) และ "False" (ซ้าย) บนเส้นที่ออกจากโหนด IF
 const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
-  const stepY = 100; // ระยะตั้งฉาก (vertical spacing) ระหว่างชั้นของ node
+  const stepY = 100; // ระยะห่างแนวตั้งระหว่างชั้นของโหนด
 
   // ---------------------- Initial Nodes & Edges ----------------------
   const initialNodes: Node[] = [
@@ -46,42 +46,30 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   const [modalPosition, setModalPosition] = useState<{ x: number; y: number } | null>(null);
 
   // ---------------------- Helper: คำนวนตำแหน่ง end ใหม่ ----------------------
-  // ให้ end อยู่ต่ำกว่าจุดที่ต่ำที่สุดของ node อื่น ๆ เสมอ (เพื่อไม่ให้ทับกัน)
+  // ให้ end อยู่ต่ำกว่าโหนดที่ต่ำที่สุดเสมอเพื่อไม่ให้ทับกัน
   const computeEndY = (allNodes: Node[]) => {
     const maxY = allNodes
       .filter(n => n.id !== "end")
       .reduce((m, n) => Math.max(m, n.position.y), 0);
-    return maxY + stepY; // เว้นระยะ stepY จาก node ที่ต่ำสุด
+    return maxY + stepY; // เว้นระยะห่างจากโหนดที่ต่ำที่สุด
   };
 
-  // ---------------------- Helper: บังคับให้เฉพาะ edges label True/False เป็น 'step' ----------------------
-  // เปลี่ยน type เป็น 'step' เฉพาะ edge ที่มี label === 'True' || label === 'False'
-  const ensureBranchEdgesAreStep = (edgesList: Edge[], _nodesList: Node[]) =>
-    edgesList.map(e => {
-      const label = (e as any).label; // label ถูกส่งจาก createArrowEdge ในหลายที่
-      if (label === 'True' || label === 'False') {
-        return { ...e, type: 'step' };
-      }
-      return e;
-    });
-
   // ---------------------- Connect Edge ----------------------
-  // เมื่อผู้ใช้ลากเชื่อม ให้เพิ่ม edge ปกติ (straight) — แต่หลังจาก update จะบังคับให้
-  // เฉพาะ edges ที่มี label True/False กลายเป็น 'step' (ด้วย ensureBranchEdgesAreStep)
+  // เมื่อผู้ใช้ลากเส้นเชื่อม ให้สร้าง edge ชนิด 'smoothstep'
   const onConnect = useCallback(
     (connection: Connection) =>
       setEdges((eds) => {
         const connEdge: Edge = {
           ...connection,
           animated: true,
-          type: 'straight',
+          type: 'smoothstep', // กำหนดชนิดของ edge เป็น smoothstep
           markerEnd: { type: MarkerType.ArrowClosed },
         } as Edge;
 
         const newEdges = addEdge(connEdge, eds);
-        return ensureBranchEdgesAreStep(newEdges, nodes);
+        return newEdges;
       }),
-    [setEdges, nodes]
+    [setEdges]
   );
 
   // ---------------------- Click Edge ----------------------
@@ -108,7 +96,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
 
     // ---------------------- Add Node บน Edge ของ IF (branch) ----------------------
     if (selectedEdge) {
-      const { source, target, sourceHandle } = selectedEdge;
+      // ✅ FIX-1: Destructure `targetHandle` from the selected edge
+      const { source, target, sourceHandle, targetHandle } = selectedEdge;
       const isIfTrueBranch = sourceHandle === "right";
       const isIfFalseBranch = sourceHandle === "left";
 
@@ -117,14 +106,14 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         const targetNode = nodes.find((n) => n.id === target);
         if (!sourceNode || !targetNode) return;
 
-        const stepX = 200; // ระยะทางด้านซ้าย/ขวา สำหรับ branch
+        const stepX = 200; // ระยะห่างแนวนอนสำหรับ branch
         const stepYForEdge = stepY;
         const offsetX = isIfTrueBranch
           ? sourceNode.position.x + stepX
           : sourceNode.position.x - stepX;
         const baseYEdge = sourceNode.position.y + stepYForEdge;
 
-        // เลื่อนเฉพาะ node ที่อยู่ด้านล่างของ sourceNode (ไม่รวม end)
+        // เลื่อนเฉพาะโหนดที่อยู่ใต้ sourceNode (ไม่รวม 'end')
         const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y && n.id !== "end");
         const movedNodes = nodesToMove.map(n => ({
           ...n,
@@ -150,22 +139,23 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           draggable: false,
         };
 
-        const bpWidth = 140; // ค่าเดียวกับ data.width
-        const offsetForBranch = Math.ceil(bpWidth / 2) + 20; // เผื่อช่องว่าง
-
-        // สร้าง edges ใหม่ (ใส่ label True/False สำหรับ branch)
+        // สร้าง edges ใหม่ พร้อมกับใส่ label
         const newEdges: Edge[] = [
-          createArrowEdge(sourceNode.id, newIfNodeId, { sourceHandle: sourceHandle ?? undefined }),
-          createArrowEdge(newIfNodeId, newBreakpoint.id, { label: "True", sourceHandle: "right", color: "black", targetHandle: "true", offset: offsetForBranch, step: true }),
-          createArrowEdge(newIfNodeId, newBreakpoint.id, { label: "False", sourceHandle: "left",  color: "black", targetHandle: "false", offset: -offsetForBranch, step: true }),
-          // connector จาก breakpoint ไปยัง target — ถาต้องการให้เป็นเส้นเหลี่ยมให้ใส่ step: true (offset ตามต้องการ)
-          createArrowEdge(newBreakpoint.id, targetNode.id, { step: true, offset: 0 }),
+          createArrowEdge(sourceNode.id, newIfNodeId, { 
+            label: isIfTrueBranch ? "True" : "False", // เพิ่ม label ที่นี่
+            sourceHandle: sourceHandle ?? undefined 
+          }),
+          createArrowEdge(newIfNodeId, newBreakpoint.id, { label: "True", sourceHandle: "right", color: "black", targetHandle: "true" }),
+          createArrowEdge(newIfNodeId, newBreakpoint.id, { label: "False", sourceHandle: "left", color: "black", targetHandle: "false" }),
+          // ✅ FIX-2: Use the extracted `targetHandle` for the new connection
+          createArrowEdge(newBreakpoint.id, targetNode.id, {
+            targetHandle: targetHandle ?? undefined
+          }),
         ];
-
 
         const updatedEdges = edges.filter((e) => e.id !== selectedEdge.id);
 
-        // สร้างรายการ nodes ใหม่โดยผสม prev nodes (แต่แทนที่ nodesToMove ด้วย movedNodes)
+        // สร้างรายการโหนดใหม่โดยรวมโหนดเก่าและโหนดใหม่เข้าด้วยกัน
         const newCombinedNodes = (() => {
           const remaining = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
           const combined = [
@@ -180,12 +170,9 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           };
           return [...combined, updatedEnd];
         })();
-
-        // บังคับให้เฉพาะ edges ที่มี label True/False เป็น 'step'
-        const finalEdges = ensureBranchEdgesAreStep([...updatedEdges, ...newEdges], newCombinedNodes);
-
+        
         setNodes(newCombinedNodes);
-        setEdges(finalEdges);
+        setEdges([...updatedEdges, ...newEdges]);
         closeModal();
         return;
       }
@@ -214,7 +201,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         draggable: false,
       };
 
-      // สร้าง combined nodes แล้วคำนวนตำแหน่ง end ใหม่
+      // สร้างโหนดที่รวมกันแล้วคำนวณตำแหน่ง end ใหม่
       const newCombinedNodes = (() => {
         const remaining = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
         const combined = [
@@ -233,25 +220,24 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       let newEdges: Edge[] = [];
       if (previousNode.type === "ifNode") {
         newEdges = [
-          createArrowEdge(previousNode.id, ifNode.id, { color: "black", step: true }),
-          createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", color: "black", targetHandle: "true", offset: 100, step: true }),
-          createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", color: "black", targetHandle: "false", offset: -100, step: true }),
+          createArrowEdge(previousNode.id, ifNode.id, { color: "black" }),
+          createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", color: "black", targetHandle: "true" }),
+          createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", color: "black", targetHandle: "false" }),
           createArrowEdge(breakpoint.id, "end"),
         ];
       } else {
         newEdges = [
           createArrowEdge(previousNode.id, ifNode.id),
-          createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", color: "black", targetHandle: "true", offset: 150, step: true }),
-          createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", color: "black", targetHandle: "false", offset: -150, step: true }),
+          createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", color: "black", targetHandle: "true" }),
+          createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", color: "black", targetHandle: "false" }),
           createArrowEdge(breakpoint.id, "end"),
         ];
       }
-
-      // บังคับให้เฉพาะเส้น True/False เป็น 'step'
-      const finalEdges = ensureBranchEdgesAreStep([
+      
+      const finalEdges = [
         ...edges.filter(e => !(e.source === previousNode.id && e.target === "end")),
         ...newEdges,
-      ], newCombinedNodes);
+      ];
 
       setNodes(newCombinedNodes);
       setEdges(finalEdges);
@@ -278,11 +264,11 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         return [...combined, updatedEnd];
       })();
 
-      const finalEdges = ensureBranchEdgesAreStep([
+      const finalEdges = [
         ...edges.filter(e => !(e.source === previousNode.id && e.target === "end")),
         createArrowEdge(previousNode.id, newNode.id),
         createArrowEdge(newNode.id, "end"),
-      ], newCombinedNodes);
+      ];
 
       setNodes(newCombinedNodes);
       setEdges(finalEdges);
@@ -309,7 +295,6 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             ifNode: IfNodeComponent,
             breakpointNode: BreakpointNodeComponent,
           }}
-          edgeTypes={{ step: StepEdge }}
           onEdgeClick={onEdgeClick}
         >
           <Background />
@@ -318,7 +303,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         </ReactFlow>
       </div>
 
-      {/* Modal เพิ่ม node */}
+      {/* Modal สำหรับเพิ่มโหนด */}
       {selectedEdge && modalPosition && (
         <div className="fixed inset-0 z-50" onClick={closeModal}>
           <div
