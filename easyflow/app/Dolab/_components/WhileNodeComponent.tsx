@@ -21,7 +21,8 @@ const WhileNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) => 
   >
     <Handle type="target" position={Position.Top} />
     <Handle type="source" position={Position.Right} id="true" />
-    <Handle type="source" position={Position.Bottom} id="false" />
+    <Handle type="target" position={Position.Bottom} id="false" style={{ left: "60%" }} />
+    <Handle type="source" position={Position.Bottom} id="false_end" style={{ left: "50%" }} />
     <div>{data.label}</div>
   </div>
 );
