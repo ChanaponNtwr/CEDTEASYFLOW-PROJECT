@@ -10,9 +10,8 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
       return { nextCondition: "auto" };
     }
 
-    // 2) ถ้าเป็น assignment expression เช่น "line = line + '*'" ให้ประเมินขวาแล้ว set กลับ context
-    if (message.includes("=")) {
-      // แยกครั้งแรกเท่านั้น (support expressions containing = อื่น ๆ เป็นกรณีพิเศษ)
+    // 2) ถ้าเป็น assignment expression เช่น "line = line + '*'" 
+    if (message.includes("=") && !/^`.*`\s*$/.test(message)) {
       const [leftRaw, ...rest] = message.split("=");
       const varName = leftRaw.trim();
       const expr = rest.join("=").trim();
@@ -30,11 +29,28 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
 
       context.set(varName, value);
       console.log(`📤 Output (assign -> context.set): ${varName} = ${value}`);
-      // โดยปกติ assignment ผ่าน OU จะไม่ push เป็น output line (เราใช้เพื่อเปลี่ยน context)
       return { nextCondition: "auto" };
     }
 
-    // 3) ข้อความธรรมดา -> push เดิม
+    // 3) ถ้าเป็น template literal (เริ่มและจบด้วย backtick) → evaluate
+    if (message.startsWith("`") && message.endsWith("`")) {
+      const keys = context.variables.map(v => v.name);
+      const values = context.variables.map(v => v.value);
+
+      let evaluated;
+      try {
+        evaluated = Function(...keys, `return ${message};`)(...values);
+      } catch (e) {
+        console.error(`❌ Error evaluating template literal '${message}': ${e.message}`);
+        evaluated = message; // ถ้า fail ก็ push ดิบ
+      }
+
+      console.log(`📤 Output: ${evaluated}`);
+      context.output.push(evaluated);
+      return { nextCondition: "auto" };
+    }
+
+    // 4) ข้อความธรรมดา → push ตรง
     console.log(`📤 Output: ${message}`);
     context.output.push(message);
     return { nextCondition: "auto" };

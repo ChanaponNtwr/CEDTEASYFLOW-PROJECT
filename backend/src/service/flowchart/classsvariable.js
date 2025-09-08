@@ -1,3 +1,4 @@
+// src/service/flowchart/classvariable.js
 class VariableItem{
     constructor(
         name,
@@ -14,3 +15,4 @@ class VariableItem{
     }
 }
 export default VariableItem;
+

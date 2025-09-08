@@ -1,4 +1,4 @@
-// src/controller/flowchartController.js
+// src/controller/flowchart.Controller.js
 import express from "express";
 import { Flowchart, Executor, Context, Node, Edge } from "../service/flowchart/index.js";
 
@@ -13,9 +13,6 @@ function normalizeList(maybe) {
   return [];
 }
 
-/**
- * map common full names -> short codes used by Node class
- */
 const TYPE_MAP = {
   start: "ST", st: "ST",
   end: "EN", en: "EN",
@@ -33,16 +30,11 @@ const TYPE_MAP = {
 function normalizeType(rawType) {
   if (!rawType) return "PH";
   const t = String(rawType).trim();
-  // if already in uppercase short code (e.g. "DC", "WH")
   if (/^[A-Z]{2,3}$/.test(t)) return t;
   const key = t.toLowerCase();
   return TYPE_MAP[key] ?? "PH";
 }
 
-/**
- * quick check: is there a path from n_start -> n_end ?
- * BFS over fc.edges
- */
 function hasPathStartToEnd(fc) {
   const adj = {};
   for (const eid of Object.keys(fc.edges || {})) {
@@ -64,20 +56,16 @@ function hasPathStartToEnd(fc) {
   return false;
 }
 
-/* ---------------- hydrate ---------------- */
-
+/* ---------------- hydrateFlowchart ---------------- */
 /**
- * hydrateFlowchart(payload)
- * - build Flowchart instance from payload.nodes & payload.edges
- * - supports nodes/edges as array or object-map
- * - preserves edge.id when possible (uses fc._addEdgeInternal)
- * - normalizes node.type (accepts "declare", "DC", "Declare", etc.)
- * - validates that there is a path from n_start -> n_end (throws Error if not)
+ * Build Flowchart instance from payload.nodes / payload.edges
+ * - supports array or object-map
+ * - preserves provided edge ids when possible
+ * - best-effort sequential insert if nodes provided but no meaningful edges
  */
 export function hydrateFlowchart(payload = {}) {
   const fc = new Flowchart();
 
-  // apply limits if provided
   if (Number.isFinite(payload.maxSteps)) fc.maxSteps = payload.maxSteps;
   if (Number.isFinite(payload.maxTimeMs)) fc.maxTimeMs = payload.maxTimeMs;
   if (Number.isFinite(payload.maxLoopIterationsPerNode)) fc.maxLoopIterationsPerNode = payload.maxLoopIterationsPerNode;
@@ -85,7 +73,7 @@ export function hydrateFlowchart(payload = {}) {
   const nodesInput = normalizeList(payload.nodes);
   const edgesInput = normalizeList(payload.edges);
 
-  // 1) Add nodes (skip start/end which are already created in constructor)
+  // add nodes
   for (const n of nodesInput) {
     if (!n || !n.id) continue;
     if (n.id === "n_start" || n.id === "n_end") continue;
@@ -104,7 +92,7 @@ export function hydrateFlowchart(payload = {}) {
     fc.addNode(node);
   }
 
-  // 2) Add edges (prefer preserving provided id)
+  // add edges (preserve id when provided)
   for (const e of edgesInput) {
     if (!e || !e.source || !e.target) continue;
     if (e.id && typeof fc._addEdgeInternal === "function") {
@@ -112,14 +100,13 @@ export function hydrateFlowchart(payload = {}) {
         fc._addEdgeInternal(new Edge(e.id, e.source, e.target, e.condition ?? "auto"));
         continue;
       } catch (err) {
-        // fallback to addEdge on failure
+        // fallback
       }
     }
     fc.addEdge(e.source, e.target, e.condition ?? "auto");
   }
 
-  // 3) If nodes were provided but there are no meaningful edges (only default start->end),
-  //    try a best-effort sequential insertion between start->end.
+  // best-effort: if nodes exist but only start->end edge, insert sequentially
   const meaningfulEdges = Object.keys(fc.edges || {}).filter(id => id !== "n_start-n_end");
   if (nodesInput.length > 0 && meaningfulEdges.length === 0) {
     let currentEdgeId;
@@ -140,14 +127,12 @@ export function hydrateFlowchart(payload = {}) {
         fc.addEdge("n_start", newNode.id, "auto");
         fc.addEdge(newNode.id, "n_end", "auto");
       }
-      // update pointer for next insertion
       const outEdgeId = (newNode.outgoingEdgeIds || []).find(id => fc.getEdge(id));
       if (!outEdgeId) break;
       currentEdgeId = outEdgeId;
     }
   }
 
-  // 4) Validate path start -> end exists
   if (!hasPathStartToEnd(fc)) {
     throw new Error("Graph invalid: no path from n_start to n_end. Ensure edges connect nodes from start to end.");
   }
@@ -161,7 +146,6 @@ router.post("/hydrate", (req, res) => {
   try {
     const payload = req.body || {};
     const fc = hydrateFlowchart(payload);
-
     return res.json({
       ok: true,
       nodes: fc.nodes,
@@ -178,9 +162,71 @@ router.post("/hydrate", (req, res) => {
   }
 });
 
+/**
+ * Ensure executor.context contains variables for any IN nodes:
+ * - body.variables (array) wins (we initialize Context with it)
+ * - otherwise we create (or set) variables from inputMap / inputDefaults
+ */
+function ensureContextVariablesFromBody(body, executor) {
+  // priority: variables array
+  if (Array.isArray(body.variables) && body.variables.length > 0) {
+    executor.context = new Context(body.variables);
+    return;
+  }
+
+  // otherwise, keep existing context (fresh) and set from inputMap / inputDefaults
+  const inputMap = (body.inputMap && typeof body.inputMap === "object") ? body.inputMap : {};
+  const inputDefaults = (body.inputDefaults && typeof body.inputDefaults === "object") ? body.inputDefaults : {};
+
+  // set provided keys
+  for (const k of Object.keys(inputMap)) {
+    executor.context.set(k, inputMap[k]);
+  }
+  // set defaults only if not present
+  for (const k of Object.keys(inputDefaults)) {
+    if (executor.context.get(k) === undefined) executor.context.set(k, inputDefaults[k]);
+  }
+}
+
+/**
+ * POST /flowchart/execute
+ *
+ * Body options:
+ * - flowchart?: { nodes, edges, limits } OR top-level nodes/edges
+ * - variables?: [{name,value,varType}]  // initial variables (preferred)
+ * - inputMap?: { name: value }          // alternative for IN nodes
+ * - inputDefaults?: { name: value }     // fallback defaults
+ * - action?: "run"|"step"|"resume"|"reset"
+ * - options?: { maxSteps, maxTimeMs, maxLoopIterationsPerNode, ignoreBreakpoints }
+ */
 router.post("/execute", (req, res) => {
   try {
-    const body = req.body || {};
+    // parse possibly-string body
+    let raw = req.body;
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch (e) {
+        // keep raw as string (will be invalid)
+      }
+    }
+    const body = raw || {};
+
+    // quick diagnostics
+    const hasNodes = body.nodes && (Array.isArray(body.nodes) ? body.nodes.length > 0 : Object.keys(body.nodes || {}).length > 0);
+    const hasFlowchartNodes = body.flowchart && body.flowchart.nodes && (Array.isArray(body.flowchart.nodes) ? body.flowchart.nodes.length > 0 : Object.keys(body.flowchart.nodes || {}).length > 0);
+
+    if (!hasNodes && !hasFlowchartNodes) {
+      return res.status(400).json({
+        ok: false,
+        error: "No nodes found in payload. POST JSON with top-level 'nodes'/'edges' or 'flowchart' containing them.",
+        example: {
+          nodes: [{ id: "n1", type: "DC", data: { name: "x", value: 2 } }],
+          edges: [{ source: "n_start", target: "n1" }]
+        }
+      });
+    }
+
     const action = body.action ?? "run";
     const fcPayload = body.flowchart && Object.keys(body.flowchart).length ? body.flowchart : body;
     const variables = Array.isArray(body.variables) ? body.variables : [];
@@ -188,17 +234,16 @@ router.post("/execute", (req, res) => {
     const restoreState = body.restoreState || {};
     const forceAdvanceBP = Boolean(body.forceAdvanceBP);
 
-    // hydrate -> may throw if invalid
+    // hydrate flowchart (can throw)
     const fc = hydrateFlowchart(fcPayload);
 
-    // debug: show what was hydrated
     console.log("HYDRATED NODES:", Object.keys(fc.nodes));
     console.log("HYDRATED EDGES:", Object.keys(fc.edges));
 
     // create executor
     const executor = new Executor(fc, options);
 
-    // restore minimal state if provided
+    // restore state if provided
     if (restoreState && restoreState.context && Array.isArray(restoreState.context.variables)) {
       executor.context = new Context(restoreState.context.variables);
     }
@@ -207,7 +252,10 @@ router.post("/execute", (req, res) => {
     if (typeof restoreState.paused === "boolean") executor.paused = restoreState.paused;
     if (typeof restoreState.stepCount === "number") executor.stepCount = restoreState.stepCount;
 
-    // set initial variables (before running)
+    // ensure context variables from body.variables / inputMap / inputDefaults
+    ensureContextVariablesFromBody(body, executor);
+
+    // also apply variables array entries individually (if provided) to be safe
     for (const v of variables) {
       if (v && v.name) executor.context.set(v.name, v.value, v.varType);
     }
@@ -239,8 +287,10 @@ router.post("/execute", (req, res) => {
     }
 
     // default: runAll
-    const finalContext = executor.runAll();
+    const ignoreBreakpoints = Boolean(options.ignoreBreakpoints || body.ignoreBreakpoints);
+    const finalContext = executor.runAll({ ignoreBreakpoints });
     console.log("RUN finished; variables:", finalContext.variables, "output:", finalContext.output);
+
     return res.json({
       ok: true,
       context: { variables: finalContext.variables, output: finalContext.output }

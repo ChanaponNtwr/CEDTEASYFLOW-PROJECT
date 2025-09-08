@@ -1,6 +1,6 @@
 // src/index.js
 import express from "express";
-import flowchartRouter from "./controller/flowchartController.js";
+import flowchartRouter from "./controller/flowchart.controller.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
