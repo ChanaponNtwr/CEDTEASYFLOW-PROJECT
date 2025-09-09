@@ -1,3 +1,4 @@
+// FlowchartEditor.tsx
 "use client";
 import React, { useCallback, useState } from "react";
 import {
@@ -14,77 +15,57 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+
+// ส่วนประกอบ (Components) อื่นๆ ของคุณ
 import Navbar from "@/components/Navbar";
 import TopBarControls from "./_components/TopBarControls";
 import SymbolSection from "./_components/SymbolSection";
 
+// Custom Nodes
 import IfNodeComponent from "./_components/IfNodeComponent";
 import BreakpointNodeComponent from "./_components/BreakpointNodeComponent";
-import StepEdge from "./_components/StepEdge";
+import WhileNodeComponent from "./_components/WhileNodeComponent";
+
+// Utility function
 import { createArrowEdge } from "./_components/createArrowEdge";
 
 type Props = { flowchartId: string };
 
-// FlowchartEditor - คอมโพเนนต์หลักสำหรับแก้ไข flowchart
-// ปรับปรุง:
-// - ให้ node 'end' มีตัวเดียวเสมอ และปรับตำแหน่ง 'end' อัตโนมัติ
-// - ปรับ: ให้เฉพาะเส้นที่มี label เป็น "True" หรือ "False" เท่านั้นเป็นเส้นเหลี่ยม (type: 'step')
 const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
-  const stepY = 100; // ระยะตั้งฉาก (vertical spacing) ระหว่างชั้นของ node
+  const stepY = 100;
 
-  // ---------------------- Initial Nodes & Edges ----------------------
   const initialNodes: Node[] = [
     { id: "start", type: "input", data: { label: "Start" }, position: { x: 300, y: 50 }, draggable: false },
     { id: "end", type: "output", data: { label: "End" }, position: { x: 300, y: 250 }, draggable: false },
   ];
   const initialEdges: Edge[] = [createArrowEdge("start", "end")];
 
-  // ---------------------- State Management ----------------------
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [modalPosition, setModalPosition] = useState<{ x: number; y: number } | null>(null);
 
-  // ---------------------- Helper: คำนวนตำแหน่ง end ใหม่ ----------------------
-  // ให้ end อยู่ต่ำกว่าจุดที่ต่ำที่สุดของ node อื่น ๆ เสมอ (เพื่อไม่ให้ทับกัน)
   const computeEndY = (allNodes: Node[]) => {
     const maxY = allNodes
       .filter(n => n.id !== "end")
       .reduce((m, n) => Math.max(m, n.position.y), 0);
-    return maxY + stepY; // เว้นระยะ stepY จาก node ที่ต่ำสุด
+    return maxY + stepY;
   };
 
-  // ---------------------- Helper: บังคับให้เฉพาะ edges label True/False เป็น 'step' ----------------------
-  // เปลี่ยน type เป็น 'step' เฉพาะ edge ที่มี label === 'True' || label === 'False'
-  const ensureBranchEdgesAreStep = (edgesList: Edge[], _nodesList: Node[]) =>
-    edgesList.map(e => {
-      const label = (e as any).label; // label ถูกส่งจาก createArrowEdge ในหลายที่
-      if (label === 'True' || label === 'False') {
-        return { ...e, type: 'step' };
-      }
-      return e;
-    });
-
-  // ---------------------- Connect Edge ----------------------
-  // เมื่อผู้ใช้ลากเชื่อม ให้เพิ่ม edge ปกติ (straight) — แต่หลังจาก update จะบังคับให้
-  // เฉพาะ edges ที่มี label True/False กลายเป็น 'step' (ด้วย ensureBranchEdgesAreStep)
   const onConnect = useCallback(
     (connection: Connection) =>
       setEdges((eds) => {
         const connEdge: Edge = {
           ...connection,
           animated: true,
-          type: 'straight',
+          type: 'smoothstep',
           markerEnd: { type: MarkerType.ArrowClosed },
         } as Edge;
-
-        const newEdges = addEdge(connEdge, eds);
-        return ensureBranchEdgesAreStep(newEdges, nodes);
+        return addEdge(connEdge, eds);
       }),
-    [setEdges, nodes]
+    [setEdges]
   );
 
-  // ---------------------- Click Edge ----------------------
   const onEdgeClick = (event: React.MouseEvent, edge: Edge) => {
     event.stopPropagation();
     setSelectedEdge(edge);
@@ -96,200 +77,234 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     setModalPosition(null);
   };
 
-  // ---------------------- Add Node ----------------------
   const addNode = (type: string, label: string) => {
     const startNode = nodes.find(n => n.id === "start");
     const endNode = nodes.find(n => n.id === "end");
     if (!startNode || !endNode) return;
 
+    // --- CASE 1: Add node on a selected edge ---
+    if (selectedEdge) {
+      const { source, target, sourceHandle, targetHandle } = selectedEdge;
+      const sourceNode = nodes.find((n) => n.id === source);
+      const targetNode = nodes.find((n) => n.id === target);
+      if (!sourceNode || !targetNode) return;
+      
+      // --- NEW: SPECIAL CASE FOR WHILE LOOP ---
+      // If the source and target are the same, it's a loop on a while node.
+      if (source === target && sourceNode.type === 'whileNode') {
+        let newNodesToAdd: Node[] = [];
+        let newEdgesToAdd: Edge[] = [];
+        let lastNodeInLoopId = ''; // Keep track of the last node to connect back
+        
+        const newX = sourceNode.position.x + 200; // Position new nodes to the right
+        const newY = sourceNode.position.y;
+
+        if (type === 'if') {
+          const ifNode = { id: crypto.randomUUID(), type: 'ifNode', data: { label }, position: { x: newX, y: newY }, draggable: false };
+          const breakpoint = { id: crypto.randomUUID(), type: 'breakpointNode', data: { label: '' }, position: { x: newX + 60, y: newY + stepY }, draggable: false };
+          newNodesToAdd.push(ifNode, breakpoint);
+          lastNodeInLoopId = breakpoint.id; // The breakpoint is the last node in this chain
+
+          newEdgesToAdd.push(
+            // Connect while 'True' to the new ifNode
+            createArrowEdge(sourceNode.id, ifNode.id, { label: "True", sourceHandle: "true" }),
+            // Internal if-node edges
+            createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
+            createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", targetHandle: "false" })
+          );
+        } else { // Handle default nodes (input/output/process)
+          const newNode = { id: crypto.randomUUID(), type: 'default', data: { label }, position: { x: newX, y: newY }, draggable: false };
+          newNodesToAdd.push(newNode);
+          lastNodeInLoopId = newNode.id;
+
+          newEdgesToAdd.push(
+            // Connect while 'True' to the new node
+            createArrowEdge(sourceNode.id, newNode.id, { label: "True", sourceHandle: "true" })
+          );
+        }
+
+        // Create the final edge that loops back from the new chain to the while node
+        newEdgesToAdd.push({
+          ...createArrowEdge(lastNodeInLoopId, sourceNode.id, { targetHandle: "loop_in" }),
+          type: 'smoothstep',
+        });
+
+        // Update state
+        setNodes(nds => [...nds, ...newNodesToAdd]);
+        setEdges(eds => [...eds.filter(e => e.id !== selectedEdge.id), ...newEdgesToAdd]);
+        
+        closeModal();
+        return; // Exit the function after handling the loop case
+      }
+      // --- END OF NEW LOGIC ---
+
+      const isBranchingFromIf = sourceNode.type === 'ifNode' && (sourceHandle === 'right' || sourceHandle === 'left');
+
+      // SUB-CASE 1.1: Branching out from an IF Node (creates horizontal branch)
+      if (isBranchingFromIf) {
+        // ... โค้ดส่วนนี้ไม่มีการเปลี่ยนแปลง ...
+        const isIfTrueBranch = sourceHandle === "right";
+        const stepX = 200;
+        const offsetX = isIfTrueBranch ? sourceNode.position.x + stepX : sourceNode.position.x - stepX;
+        const baseYEdge = sourceNode.position.y + stepY;
+
+        if (type === "if") {
+          const yOffset = stepY * 2;
+          const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y && n.id !== "end");
+          const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
+
+          const newIfNode = { id: crypto.randomUUID(), type: "ifNode", data: { label }, position: { x: offsetX, y: baseYEdge }, draggable: false };
+          const newBreakpoint = { id: crypto.randomUUID(), type: "breakpointNode", data: { label: "" }, position: { x: offsetX + 60, y: baseYEdge + stepY }, draggable: false };
+          
+          const newEdges = [
+            createArrowEdge(sourceNode.id, newIfNode.id, { label: isIfTrueBranch ? "True" : "False", sourceHandle: sourceHandle ?? undefined }),
+            createArrowEdge(newIfNode.id, newBreakpoint.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
+            createArrowEdge(newIfNode.id, newBreakpoint.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
+            createArrowEdge(newBreakpoint.id, targetNode.id, { targetHandle: targetHandle ?? undefined }),
+          ];
+
+          const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
+          const combined = [...remainingNodes, ...movedNodes, newIfNode, newBreakpoint];
+          const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
+          setNodes([...combined, updatedEnd]);
+          setEdges([...edges.filter(e => e.id !== selectedEdge.id), ...newEdges]);
+
+        } else { // Default node on a new branch
+          const yOffset = stepY;
+          const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y && n.id !== "end");
+          const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
+          
+          const newNode = { id: crypto.randomUUID(), type: "default", data: { label }, position: { x: offsetX, y: baseYEdge }, draggable: false };
+
+          const newEdges = [
+            createArrowEdge(sourceNode.id, newNode.id, { label: isIfTrueBranch ? "True" : "False", sourceHandle: sourceHandle ?? undefined }),
+            createArrowEdge(newNode.id, targetNode.id, { targetHandle: targetHandle ?? undefined }),
+          ];
+
+          const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
+          const combined = [...remainingNodes, ...movedNodes, newNode];
+          const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
+          setNodes([...combined, updatedEnd]);
+          setEdges([...edges.filter(e => e.id !== selectedEdge.id), ...newEdges]);
+        }
+      } 
+      // SUB-CASE 1.2: Generic insertion into an existing edge (vertical stacking)
+      else {
+        const yOffset = type === 'if' ? stepY * 2 : stepY;
+        const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y && n.id !== "end");
+        const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
+
+        let newNodesToAdd: Node[] = [];
+        let newEdgesToAdd: Edge[] = [];
+        
+        if (type === 'if') {
+          const ifNode = { id: crypto.randomUUID(), type: 'ifNode', data: { label }, position: { x: sourceNode.position.x, y: sourceNode.position.y + stepY }, draggable: false };
+          const breakpoint = { id: crypto.randomUUID(), type: 'breakpointNode', data: { label: '' }, position: { x: sourceNode.position.x + 60, y: sourceNode.position.y + stepY * 2 }, draggable: false };
+          newNodesToAdd.push(ifNode, breakpoint);
+          newEdgesToAdd.push(
+            createArrowEdge(sourceNode.id, ifNode.id, { sourceHandle: sourceHandle ?? undefined }),
+            createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
+            createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
+            createArrowEdge(breakpoint.id, targetNode.id, { targetHandle: targetHandle ?? undefined })
+          );
+        } else if (type === 'while') {
+          const whileNode = { id: crypto.randomUUID(), type: 'whileNode', data: { label }, position: { x: sourceNode.position.x, y: sourceNode.position.y + stepY }, draggable: false };
+          newNodesToAdd.push(whileNode);
+          newEdgesToAdd.push(
+            createArrowEdge(sourceNode.id, whileNode.id, { sourceHandle: sourceHandle ?? undefined, targetHandle: "top" }),
+            createArrowEdge(whileNode.id, targetNode.id, { label: "False", sourceHandle: "false", targetHandle: targetHandle ?? undefined }),
+            {
+              ...createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }),
+              type: 'smoothstep',
+            }
+          );
+        } else { // Default node
+          const newNode = { id: crypto.randomUUID(), type: 'default', data: { label }, position: { x: sourceNode.position.x, y: sourceNode.position.y + stepY }, draggable: false };
+          newNodesToAdd.push(newNode);
+          newEdgesToAdd.push(
+            createArrowEdge(sourceNode.id, newNode.id, { sourceHandle: sourceHandle ?? undefined }),
+            createArrowEdge(newNode.id, targetNode.id, { targetHandle: targetHandle ?? undefined })
+          );
+        }
+        
+        const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
+        const combined = [...remainingNodes, ...movedNodes, ...newNodesToAdd];
+        const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
+        setNodes([...combined, updatedEnd]);
+        setEdges([...edges.filter(e => e.id !== selectedEdge.id), ...newEdgesToAdd]);
+      }
+      closeModal();
+      return;
+    }
+
+    // --- CASE 2: Add node to the end of the main flow ---
+    // ... โค้ดส่วนนี้ไม่มีการเปลี่ยนแปลง ...
     const middleNodes = nodes.filter(n => n.id !== "start" && n.id !== "end");
     const previousNode = middleNodes[middleNodes.length - 1] || startNode;
     const baseY = startNode.position.y + stepY * (middleNodes.length + 1);
-
-    // ---------------------- Add Node บน Edge ของ IF (branch) ----------------------
-    if (selectedEdge) {
-      const { source, target, sourceHandle } = selectedEdge;
-      const isIfTrueBranch = sourceHandle === "right";
-      const isIfFalseBranch = sourceHandle === "left";
-
-      if (isIfTrueBranch || isIfFalseBranch) {
-        const sourceNode = nodes.find((n) => n.id === source);
-        const targetNode = nodes.find((n) => n.id === target);
-        if (!sourceNode || !targetNode) return;
-
-        const stepX = 200; // ระยะทางด้านซ้าย/ขวา สำหรับ branch
-        const stepYForEdge = stepY;
-        const offsetX = isIfTrueBranch
-          ? sourceNode.position.x + stepX
-          : sourceNode.position.x - stepX;
-        const baseYEdge = sourceNode.position.y + stepYForEdge;
-
-        // เลื่อนเฉพาะ node ที่อยู่ด้านล่างของ sourceNode (ไม่รวม end)
-        const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y && n.id !== "end");
-        const movedNodes = nodesToMove.map(n => ({
-          ...n,
-          position: { x: n.position.x, y: n.position.y + stepYForEdge * 2 },
-        }));
-
-        const newIfNodeId = crypto.randomUUID();
-        const newBreakpointId = crypto.randomUUID();
-
-        const newIfNode: Node = {
-          id: newIfNodeId,
-          type: "ifNode",
-          data: { label },
-          position: { x: offsetX, y: baseYEdge },
-          draggable: false,
-        };
-
-        const newBreakpoint: Node = {
-          id: newBreakpointId,
-          type: "breakpointNode",
-          data: { label: "" },
-          position: { x: offsetX + 60, y: baseYEdge + stepYForEdge },
-          draggable: false,
-        };
-
-        const bpWidth = 140; // ค่าเดียวกับ data.width
-        const offsetForBranch = Math.ceil(bpWidth / 2) + 20; // เผื่อช่องว่าง
-
-        // สร้าง edges ใหม่ (ใส่ label True/False สำหรับ branch)
-        const newEdges: Edge[] = [
-          createArrowEdge(sourceNode.id, newIfNodeId, { sourceHandle: sourceHandle ?? undefined }),
-          createArrowEdge(newIfNodeId, newBreakpoint.id, { label: "True", sourceHandle: "right", color: "black", targetHandle: "true", offset: offsetForBranch, step: true }),
-          createArrowEdge(newIfNodeId, newBreakpoint.id, { label: "False", sourceHandle: "left",  color: "black", targetHandle: "false", offset: -offsetForBranch, step: true }),
-          // connector จาก breakpoint ไปยัง target — ถาต้องการให้เป็นเส้นเหลี่ยมให้ใส่ step: true (offset ตามต้องการ)
-          createArrowEdge(newBreakpoint.id, targetNode.id, { step: true, offset: 0 }),
-        ];
-
-
-        const updatedEdges = edges.filter((e) => e.id !== selectedEdge.id);
-
-        // สร้างรายการ nodes ใหม่โดยผสม prev nodes (แต่แทนที่ nodesToMove ด้วย movedNodes)
-        const newCombinedNodes = (() => {
-          const remaining = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
-          const combined = [
-            ...remaining,
-            ...movedNodes,
-            newIfNode,
-            newBreakpoint,
-          ];
-          const updatedEnd = {
-            ...endNode,
-            position: { x: endNode.position.x, y: computeEndY(combined) },
-          };
-          return [...combined, updatedEnd];
-        })();
-
-        // บังคับให้เฉพาะ edges ที่มี label True/False เป็น 'step'
-        const finalEdges = ensureBranchEdgesAreStep([...updatedEdges, ...newEdges], newCombinedNodes);
-
-        setNodes(newCombinedNodes);
-        setEdges(finalEdges);
-        closeModal();
-        return;
-      }
-    }
-
-    // ---------------------- Add IF Node ปกติ (เพิ่มเป็นชั้นแนวตั้ง) ----------------------
+    
     if (type === "if") {
+      const yOffset = stepY * 2;
       const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y && n.id !== "end");
-      const movedNodes = nodesToMove.map(n => ({
-        ...n,
-        position: { x: n.position.x, y: n.position.y + stepY * 2 },
-      }));
-
-      const ifNode: Node = {
-        id: crypto.randomUUID(),
-        type: "ifNode",
-        data: { label },
-        position: { x: 300, y: baseY },
-        draggable: false,
-      };
-      const breakpoint: Node = {
-        id: crypto.randomUUID(),
-        type: "breakpointNode",
-        data: { label: "" },
-        position: { x: 360, y: baseY + stepY },
-        draggable: false,
-      };
-
-      // สร้าง combined nodes แล้วคำนวนตำแหน่ง end ใหม่
-      const newCombinedNodes = (() => {
-        const remaining = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
-        const combined = [
-          ...remaining,
-          ifNode,
-          breakpoint,
-          ...movedNodes,
-        ];
-        const updatedEnd = {
-          ...nodes.find(n => n.id === "end")!,
-          position: { x: 300, y: computeEndY(combined) },
-        };
-        return [...combined, updatedEnd];
-      })();
-
-      let newEdges: Edge[] = [];
-      if (previousNode.type === "ifNode") {
-        newEdges = [
-          createArrowEdge(previousNode.id, ifNode.id, { color: "black", step: true }),
-          createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", color: "black", targetHandle: "true", offset: 100, step: true }),
-          createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", color: "black", targetHandle: "false", offset: -100, step: true }),
-          createArrowEdge(breakpoint.id, "end"),
-        ];
-      } else {
-        newEdges = [
+      const movedNodes = nodesToMove.map(n => ({...n, position: { ...n.position, y: n.position.y + yOffset }}));
+      
+      const ifNode = { id: crypto.randomUUID(), type: "ifNode", data: { label }, position: { x: 300, y: baseY }, draggable: false };
+      const breakpoint = { id: crypto.randomUUID(), type: "breakpointNode", data: { label: "" }, position: { x: 360, y: baseY + stepY }, draggable: false };
+      
+      const newEdges = [
           createArrowEdge(previousNode.id, ifNode.id),
-          createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", color: "black", targetHandle: "true", offset: 150, step: true }),
-          createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", color: "black", targetHandle: "false", offset: -150, step: true }),
-          createArrowEdge(breakpoint.id, "end"),
-        ];
-      }
+          createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
+          createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
+          createArrowEdge(breakpoint.id, endNode.id),
+      ];
+      
+      const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
+      const combined = [...remainingNodes, ...movedNodes, ifNode, breakpoint];
+      const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
+      setNodes([...combined, updatedEnd]);
+      setEdges([...edges.filter(e => !(e.source === previousNode.id && e.target === endNode.id)), ...newEdges]);
+    } else if (type === 'while') {
+      const yOffset = stepY;
+      const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y && n.id !== "end");
+      const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
+      
+      const whileNode = { id: crypto.randomUUID(), type: 'whileNode', data: { label }, position: { x: 300, y: baseY }, draggable: false };
 
-      // บังคับให้เฉพาะเส้น True/False เป็น 'step'
-      const finalEdges = ensureBranchEdgesAreStep([
-        ...edges.filter(e => !(e.source === previousNode.id && e.target === "end")),
-        ...newEdges,
-      ], newCombinedNodes);
+      const newEdges = [
+          createArrowEdge(previousNode.id, whileNode.id, { targetHandle: "top" }),
+          createArrowEdge(whileNode.id, endNode.id, { label: "False", sourceHandle: "false" }),
+          {
+            ...createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }),
+            type: 'smoothstep',
+            animated: true,
+          }
+      ];
 
-      setNodes(newCombinedNodes);
-      setEdges(finalEdges);
-    } else {
-      // ---------------------- Add Default Node ----------------------
-      const newNode: Node = {
-        id: crypto.randomUUID(),
-        type: "default",
-        data: { label },
-        position: { x: 300, y: baseY },
-        draggable: false,
-      };
+      const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
+      const combined = [...remainingNodes, ...movedNodes, whileNode];
+      const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
+      setNodes([...combined, updatedEnd]);
+      setEdges([...edges.filter(e => !(e.source === previousNode.id && e.target === endNode.id)), ...newEdges]);
+    } else { // Default node
+      const yOffset = stepY;
+      const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y && n.id !== "end");
+      const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
+      
+      const newNode = { id: crypto.randomUUID(), type: "default", data: { label }, position: { x: 300, y: baseY }, draggable: false };
 
-      const newCombinedNodes = (() => {
-        const remaining = nodes.filter(n => n.id !== "end");
-        const combined = [
-          ...remaining,
-          newNode,
-        ];
-        const updatedEnd = {
-          ...nodes.find(n => n.id === "end")!,
-          position: { x: nodes.find(n => n.id === "end")!.position.x, y: computeEndY(combined) },
-        };
-        return [...combined, updatedEnd];
-      })();
-
-      const finalEdges = ensureBranchEdgesAreStep([
-        ...edges.filter(e => !(e.source === previousNode.id && e.target === "end")),
+      const newEdges = [
         createArrowEdge(previousNode.id, newNode.id),
-        createArrowEdge(newNode.id, "end"),
-      ], newCombinedNodes);
+        createArrowEdge(newNode.id, endNode.id),
+      ];
 
-      setNodes(newCombinedNodes);
-      setEdges(finalEdges);
+      const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
+      const combined = [...remainingNodes, ...movedNodes, newNode];
+      const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
+      setNodes([...combined, updatedEnd]);
+      setEdges([...edges.filter(e => !(e.source === previousNode.id && e.target === endNode.id)), ...newEdges]);
     }
   };
 
-  // ---------------------- Render ----------------------
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
       <Navbar />
@@ -308,8 +323,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           nodeTypes={{
             ifNode: IfNodeComponent,
             breakpointNode: BreakpointNodeComponent,
+            whileNode: WhileNodeComponent,
           }}
-          edgeTypes={{ step: StepEdge }}
           onEdgeClick={onEdgeClick}
         >
           <Background />
@@ -318,7 +333,6 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         </ReactFlow>
       </div>
 
-      {/* Modal เพิ่ม node */}
       {selectedEdge && modalPosition && (
         <div className="fixed inset-0 z-50" onClick={closeModal}>
           <div
