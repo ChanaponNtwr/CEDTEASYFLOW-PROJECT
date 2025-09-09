@@ -151,7 +151,10 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             createArrowEdge(breakpoint.id, targetNode.id, { targetHandle: targetHandle ?? undefined })
           );
         } else { // Default node
-          const newNode = { id: crypto.randomUUID(), type: 'default', data: { label }, position: { x: sourceNode.position.x, y: sourceNode.position.y + stepY }, draggable: false };
+          // Check if the source is a breakpoint to align the new node correctly
+          const newX = sourceNode.type === 'breakpointNode' ? targetNode.position.x : sourceNode.position.x;
+          
+          const newNode = { id: crypto.randomUUID(), type: 'default', data: { label }, position: { x: newX, y: sourceNode.position.y + stepY }, draggable: false };
           newNodesToAdd.push(newNode);
           newEdgesToAdd.push(
             createArrowEdge(sourceNode.id, newNode.id, { sourceHandle: sourceHandle ?? undefined }),
