@@ -89,60 +89,50 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       const targetNode = nodes.find((n) => n.id === target);
       if (!sourceNode || !targetNode) return;
       
-      // --- NEW: SPECIAL CASE FOR WHILE LOOP ---
-      // If the source and target are the same, it's a loop on a while node.
       if (source === target && sourceNode.type === 'whileNode') {
         let newNodesToAdd: Node[] = [];
         let newEdgesToAdd: Edge[] = [];
-        let lastNodeInLoopId = ''; // Keep track of the last node to connect back
+        let lastNodeInLoopId = ''; 
         
-        const newX = sourceNode.position.x + 200; // Position new nodes to the right
-        const newY = sourceNode.position.y;
+        const newX = sourceNode.position.x + 250;
+        const newY = sourceNode.position.y + 50;
 
         if (type === 'if') {
           const ifNode = { id: crypto.randomUUID(), type: 'ifNode', data: { label }, position: { x: newX, y: newY }, draggable: false };
           const breakpoint = { id: crypto.randomUUID(), type: 'breakpointNode', data: { label: '' }, position: { x: newX + 60, y: newY + stepY }, draggable: false };
           newNodesToAdd.push(ifNode, breakpoint);
-          lastNodeInLoopId = breakpoint.id; // The breakpoint is the last node in this chain
+          lastNodeInLoopId = breakpoint.id;
 
           newEdgesToAdd.push(
-            // Connect while 'True' to the new ifNode
             createArrowEdge(sourceNode.id, ifNode.id, { label: "True", sourceHandle: "true" }),
-            // Internal if-node edges
             createArrowEdge(ifNode.id, breakpoint.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
             createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", targetHandle: "false" })
           );
-        } else { // Handle default nodes (input/output/process)
+        } else {
           const newNode = { id: crypto.randomUUID(), type: 'default', data: { label }, position: { x: newX, y: newY }, draggable: false };
           newNodesToAdd.push(newNode);
           lastNodeInLoopId = newNode.id;
 
           newEdgesToAdd.push(
-            // Connect while 'True' to the new node
             createArrowEdge(sourceNode.id, newNode.id, { label: "True", sourceHandle: "true" })
           );
         }
 
-        // Create the final edge that loops back from the new chain to the while node
         newEdgesToAdd.push({
           ...createArrowEdge(lastNodeInLoopId, sourceNode.id, { targetHandle: "loop_in" }),
           type: 'smoothstep',
         });
 
-        // Update state
         setNodes(nds => [...nds, ...newNodesToAdd]);
         setEdges(eds => [...eds.filter(e => e.id !== selectedEdge.id), ...newEdgesToAdd]);
         
         closeModal();
-        return; // Exit the function after handling the loop case
+        return;
       }
-      // --- END OF NEW LOGIC ---
 
       const isBranchingFromIf = sourceNode.type === 'ifNode' && (sourceHandle === 'right' || sourceHandle === 'left');
 
-      // SUB-CASE 1.1: Branching out from an IF Node (creates horizontal branch)
       if (isBranchingFromIf) {
-        // ... โค้ดส่วนนี้ไม่มีการเปลี่ยนแปลง ...
         const isIfTrueBranch = sourceHandle === "right";
         const stepX = 200;
         const offsetX = isIfTrueBranch ? sourceNode.position.x + stepX : sourceNode.position.x - stepX;
@@ -150,7 +140,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
 
         if (type === "if") {
           const yOffset = stepY * 2;
-          const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y && n.id !== "end");
+          const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y); // [!] EDITED THIS LINE
           const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
 
           const newIfNode = { id: crypto.randomUUID(), type: "ifNode", data: { label }, position: { x: offsetX, y: baseYEdge }, draggable: false };
@@ -164,14 +154,14 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           ];
 
           const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
-          const combined = [...remainingNodes, ...movedNodes, newIfNode, newBreakpoint];
+          const combined = [...remainingNodes, ...movedNodes.filter(n => n.id !== 'end'), newIfNode, newBreakpoint];
           const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
           setNodes([...combined, updatedEnd]);
           setEdges([...edges.filter(e => e.id !== selectedEdge.id), ...newEdges]);
 
-        } else { // Default node on a new branch
+        } else {
           const yOffset = stepY;
-          const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y && n.id !== "end");
+          const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y); // [!] EDITED THIS LINE
           const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
           
           const newNode = { id: crypto.randomUUID(), type: "default", data: { label }, position: { x: offsetX, y: baseYEdge }, draggable: false };
@@ -182,24 +172,37 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           ];
 
           const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
-          const combined = [...remainingNodes, ...movedNodes, newNode];
+          const combined = [...remainingNodes, ...movedNodes.filter(n => n.id !== 'end'), newNode];
           const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
           setNodes([...combined, updatedEnd]);
           setEdges([...edges.filter(e => e.id !== selectedEdge.id), ...newEdges]);
         }
       } 
-      // SUB-CASE 1.2: Generic insertion into an existing edge (vertical stacking)
       else {
-        const yOffset = type === 'if' ? stepY * 2 : stepY;
-        const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y && n.id !== "end");
+        const yOffset = (type === 'if' || type === 'while') ? stepY * 2 : stepY;
+        const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y); // [!] EDITED THIS LINE
         const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
+
+        let newPosX = sourceNode.position.x;
+        if (sourceNode.type === 'breakpointNode') {
+          const incomingEdge = edges.find(e => e.target === sourceNode.id);
+          if (incomingEdge) {
+            const parentIfNode = nodes.find(n => n.id === incomingEdge.source);
+            if (parentIfNode) {
+              newPosX = parentIfNode.position.x;
+            }
+          }
+        }
 
         let newNodesToAdd: Node[] = [];
         let newEdgesToAdd: Edge[] = [];
         
+        let updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(nodes) } };
+        let combinedNodes: Node[] = [];
+
         if (type === 'if') {
-          const ifNode = { id: crypto.randomUUID(), type: 'ifNode', data: { label }, position: { x: sourceNode.position.x, y: sourceNode.position.y + stepY }, draggable: false };
-          const breakpoint = { id: crypto.randomUUID(), type: 'breakpointNode', data: { label: '' }, position: { x: sourceNode.position.x + 60, y: sourceNode.position.y + stepY * 2 }, draggable: false };
+          const ifNode = { id: crypto.randomUUID(), type: 'ifNode', data: { label }, position: { x: newPosX, y: sourceNode.position.y + stepY }, draggable: false };
+          const breakpoint = { id: crypto.randomUUID(), type: 'breakpointNode', data: { label: '' }, position: { x: newPosX + 60, y: sourceNode.position.y + stepY * 2 }, draggable: false };
           newNodesToAdd.push(ifNode, breakpoint);
           newEdgesToAdd.push(
             createArrowEdge(sourceNode.id, ifNode.id, { sourceHandle: sourceHandle ?? undefined }),
@@ -207,8 +210,13 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
             createArrowEdge(breakpoint.id, targetNode.id, { targetHandle: targetHandle ?? undefined })
           );
+          
+          const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id));
+          combinedNodes = [...remainingNodes.filter(n => n.id !== 'end'), ...movedNodes.filter(n => n.id !== 'end'), ...newNodesToAdd];
+          updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combinedNodes) } };
+
         } else if (type === 'while') {
-          const whileNode = { id: crypto.randomUUID(), type: 'whileNode', data: { label }, position: { x: sourceNode.position.x, y: sourceNode.position.y + stepY }, draggable: false };
+          const whileNode = { id: crypto.randomUUID(), type: 'whileNode', data: { label }, position: { x: newPosX, y: sourceNode.position.y + stepY + 60}, draggable: false };
           newNodesToAdd.push(whileNode);
           newEdgesToAdd.push(
             createArrowEdge(sourceNode.id, whileNode.id, { sourceHandle: sourceHandle ?? undefined, targetHandle: "top" }),
@@ -216,21 +224,28 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             {
               ...createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }),
               type: 'smoothstep',
+              pathOptions: { offset: 60 }
             }
           );
-        } else { // Default node
-          const newNode = { id: crypto.randomUUID(), type: 'default', data: { label }, position: { x: sourceNode.position.x, y: sourceNode.position.y + stepY }, draggable: false };
+          
+          const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id));
+          combinedNodes = [...remainingNodes.filter(n => n.id !== 'end'), ...movedNodes.filter(n => n.id !== 'end'), ...newNodesToAdd];
+          updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combinedNodes) + stepY } };
+
+        } else {
+          const newNode = { id: crypto.randomUUID(), type: 'default', data: { label }, position: { x: newPosX, y: sourceNode.position.y + stepY }, draggable: false };
           newNodesToAdd.push(newNode);
           newEdgesToAdd.push(
             createArrowEdge(sourceNode.id, newNode.id, { sourceHandle: sourceHandle ?? undefined }),
             createArrowEdge(newNode.id, targetNode.id, { targetHandle: targetHandle ?? undefined })
           );
+          
+          const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id));
+          combinedNodes = [...remainingNodes.filter(n => n.id !== 'end'), ...movedNodes.filter(n => n.id !== 'end'), ...newNodesToAdd];
+          updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combinedNodes) } };
         }
         
-        const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
-        const combined = [...remainingNodes, ...movedNodes, ...newNodesToAdd];
-        const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
-        setNodes([...combined, updatedEnd]);
+        setNodes([...combinedNodes, updatedEnd]);
         setEdges([...edges.filter(e => e.id !== selectedEdge.id), ...newEdgesToAdd]);
       }
       closeModal();
@@ -238,14 +253,13 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     }
 
     // --- CASE 2: Add node to the end of the main flow ---
-    // ... โค้ดส่วนนี้ไม่มีการเปลี่ยนแปลง ...
     const middleNodes = nodes.filter(n => n.id !== "start" && n.id !== "end");
     const previousNode = middleNodes[middleNodes.length - 1] || startNode;
     const baseY = startNode.position.y + stepY * (middleNodes.length + 1);
     
     if (type === "if") {
       const yOffset = stepY * 2;
-      const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y && n.id !== "end");
+      const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y);
       const movedNodes = nodesToMove.map(n => ({...n, position: { ...n.position, y: n.position.y + yOffset }}));
       
       const ifNode = { id: crypto.randomUUID(), type: "ifNode", data: { label }, position: { x: 300, y: baseY }, draggable: false };
@@ -259,13 +273,14 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       ];
       
       const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
-      const combined = [...remainingNodes, ...movedNodes, ifNode, breakpoint];
+      const combined = [...remainingNodes, ...movedNodes.filter(n => n.id !== 'end'), ifNode, breakpoint];
       const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
       setNodes([...combined, updatedEnd]);
       setEdges([...edges.filter(e => !(e.source === previousNode.id && e.target === endNode.id)), ...newEdges]);
+
     } else if (type === 'while') {
       const yOffset = stepY;
-      const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y && n.id !== "end");
+      const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y);
       const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
       
       const whileNode = { id: crypto.randomUUID(), type: 'whileNode', data: { label }, position: { x: 300, y: baseY }, draggable: false };
@@ -277,17 +292,19 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             ...createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }),
             type: 'smoothstep',
             animated: true,
+            pathOptions: { offset: 60 }
           }
       ];
 
       const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
-      const combined = [...remainingNodes, ...movedNodes, whileNode];
-      const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
+      const combined = [...remainingNodes, ...movedNodes.filter(n => n.id !== 'end'), whileNode];
+      const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) + stepY } };
       setNodes([...combined, updatedEnd]);
       setEdges([...edges.filter(e => !(e.source === previousNode.id && e.target === endNode.id)), ...newEdges]);
-    } else { // Default node
+      
+    } else {
       const yOffset = stepY;
-      const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y && n.id !== "end");
+      const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y);
       const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
       
       const newNode = { id: crypto.randomUUID(), type: "default", data: { label }, position: { x: 300, y: baseY }, draggable: false };
@@ -298,7 +315,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       ];
 
       const remainingNodes = nodes.filter(p => !nodesToMove.some(n => n.id === p.id) && p.id !== "end");
-      const combined = [...remainingNodes, ...movedNodes, newNode];
+      const combined = [...remainingNodes, ...movedNodes.filter(n => n.id !== 'end'), newNode];
       const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
       setNodes([...combined, updatedEnd]);
       setEdges([...edges.filter(e => !(e.source === previousNode.id && e.target === endNode.id)), ...newEdges]);
