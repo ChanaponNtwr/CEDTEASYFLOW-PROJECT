@@ -196,34 +196,37 @@ function serializeFlowchart(fc) {
 /* ---------------- routes ---------------- */
 
 /**
- * POST /flowchart/save
- * - body.flowchart OR top-level nodes/edges/limits
- * - optional body.id (flowchartId). If not provided generate one.
- * - returns { flowchartId }
+ * POST /flowchart/create
+ * - Creates an empty flowchart entry (with empty nodes/edges) and returns flowchartId plus hydrated start/end/edges
+ * - body: { id?: string, limits?: {}, overwrite?: boolean }
  */
-router.post("/save", (req, res) => {
+router.post("/create", (req, res) => {
   try {
     let raw = req.body;
     if (typeof raw === "string") {
       try { raw = JSON.parse(raw); } catch (e) { /* keep raw */ }
     }
     const body = raw || {};
-    const fcPayload = body.flowchart && Object.keys(body.flowchart).length ? body.flowchart : body;
+    const providedId = body.id;
+    const overwrite = Boolean(body.overwrite);
+    const limits = body.limits && typeof body.limits === "object" ? body.limits : {};
 
-    // minimal validation
-    const nodes = normalizeList(fcPayload.nodes);
-    const edges = normalizeList(fcPayload.edges);
-    if (!nodes.length && !edges.length) {
-      return res.status(400).json({ ok: false, error: "No nodes/edges found in flowchart payload." });
+    const id = providedId || `flow_${Date.now()}`;
+    if (savedFlowcharts.has(id) && !overwrite) {
+      return res.status(409).json({ ok: false, error: `Flowchart id '${id}' already exists. Provide overwrite=true to replace.` });
     }
 
-    const id = body.id || `flow_${Date.now()}`;
-    // store plain JSON (so we can later hydrate)
-    savedFlowcharts.set(id, { nodes, edges, limits: fcPayload.limits ?? {} });
+    // store minimal empty graph (hydrateFlowchart will create start/end when hydrated)
+    savedFlowcharts.set(id, { nodes: [], edges: [], limits });
 
-    return res.json({ ok: true, flowchartId: id });
+    // hydrate + serialize to return canonical start/end and edges
+    const saved = savedFlowcharts.get(id);
+    const fc = hydrateFlowchart(saved);
+    const serialized = serializeFlowchart(fc);
+
+    return res.json({ ok: true, flowchartId: id, flowchart: serialized });
   } catch (err) {
-    console.error("save error:", err);
+    console.error("create error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
@@ -375,6 +378,25 @@ router.get("/:id", (req, res) => {
     return res.json({ ok: true, flowchartId: id, flowchart: serialized });
   } catch (err) {
     console.error("get flowchart error:", err);
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+  }
+});
+
+/**
+ * GET /flowchart/:id/edges
+ * - return just the serialized edges array for quick UI use
+ */
+router.get("/:id/edges", (req, res) => {
+  try {
+    const id = req.params.id;
+    const saved = savedFlowcharts.get(id);
+    if (!saved) return res.status(404).json({ ok: false, error: "Not found" });
+
+    const fc = hydrateFlowchart(saved);
+    const serialized = serializeFlowchart(fc);
+    return res.json({ ok: true, flowchartId: id, edges: serialized.edges });
+  } catch (err) {
+    console.error("get edges error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
