@@ -30,7 +30,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onAddNode }) => {
   const [outputValue, setOutputValue] = useState("");
   const [ifExpression, setIfExpression] = useState("");
   const [whileExpression, setWhileExpression] = useState("");
-
+  const [declareValue, setDeclareValue] = useState("");
+  const [assignValue, setAssignValue] = useState("");
 
   const symbols: Record<string, SymbolItem> = {
     input: { label: "Input", imageSrc: "/images/input.png" },
@@ -157,7 +158,7 @@ if (showOutputModal) {
         >
           Cancel
         </button>
-        <button
+        <button 
           onClick={() => {
             if (outputValue.trim() !== "") {
               onAddNode?.("output", outputValue); // ส่ง label ที่ผู้ใช้กรอก
@@ -195,6 +196,8 @@ if (showOutputModal) {
         <input
           type="text"
           placeholder=""
+          value={declareValue} // bind state
+          onChange={(e) => setDeclareValue(e.target.value)} // update state
           className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
         />
 
@@ -224,9 +227,12 @@ if (showOutputModal) {
           </button>
           <button
             onClick={() => {
-              alert("Declare Saved!");
-              handleCloseDeclareModal();
-            }}
+              if (declareValue.trim() !== "") {
+                onAddNode?.("declare", declareValue); // ✅ ส่ง type=declare และ label=declareValue
+                setDeclareValue(""); // reset
+                handleCloseDeclareModal();
+            }
+          }}
             className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
           >
             Ok
@@ -256,6 +262,8 @@ if (showOutputModal) {
         <input
           type="text"
           placeholder=""
+          value={assignValue} // bind state
+          onChange={(e) => setAssignValue(e.target.value)} // update state
           className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
         />
 
@@ -277,9 +285,12 @@ if (showOutputModal) {
           </button>
           <button
             onClick={() => {
-              alert("Assign Saved!");
-              handleCloseAssignModal();
-            }}
+              if (assignValue.trim() !== "") {
+                onAddNode?.("assign", assignValue); // ✅ ส่ง type=declare และ label=declareValue
+                setAssignValue(""); // reset
+                handleCloseAssignModal();
+            }
+          }}
             className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
           >
             Ok
