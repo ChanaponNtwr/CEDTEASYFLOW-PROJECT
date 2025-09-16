@@ -3,25 +3,30 @@
 import React from "react";
 import { Handle, Position } from "@xyflow/react";
 
-const WhileNodeComponent: React.FC<{ data: { label: string } }> = ({
-  data,
-}) => {
-  const borderWidth = 1; // ความหนาของกรอบ
+// Define the type for the data prop for better type-checking
+interface WhileNodeData {
+  label: string;
+  width?: number; // Make width an optional property
+}
 
-  // สไตล์สำหรับจุดเชื่อมต่อ (Handle) ให้หนาขึ้น
+const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
+  const { label, width = 176 } = data; // Set a default width of 150
+  const borderWidth = 1;
+
   const handleStyle = {
+    // You can add common styles for handles here if needed
   };
 
   return (
     <div
       style={{
-        // กรอบนอก (สีของกรอบ)
-        backgroundColor: "#000000", // สีของเส้นกรอบ
+        // This outer div creates the border effect
+        backgroundColor: "#000000", // Border color
         clipPath:
           "polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%)",
-        padding: borderWidth, // ใช้ padding เป็นความหนาของกรอบ
-        width: 150, // ปรับความกว้างเพื่อให้เนื้อหาด้านในมีขนาด 150
-        height: "auto", // ให้ความสูงปรับตามเนื้อหา
+        padding: borderWidth,
+        width: width, // Use the dynamic width
+        height: "auto",
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
@@ -29,17 +34,17 @@ const WhileNodeComponent: React.FC<{ data: { label: string } }> = ({
     >
       <div
         style={{
-          // เนื้อหาด้านใน (สีพื้นหลังด้านใน)
+          // This inner div contains the content
           padding: "10px 20px",
-          background: "#FFFFFF", // สีพื้นหลังของ Node
+          background: "#FFFFFF", // Node background color
           textAlign: "center",
-          width: 150, // ความกว้างของเนื้อหาด้านใน
+          width: width, // Use the dynamic width
           clipPath:
             "polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%)",
-          position: "relative", // สำคัญสำหรับ Handle
+          position: "relative", // Important for Handle positioning
         }}
       >
-        {/* 1. รับเส้นที่เข้ามา (จาก Node ก่อนหน้า) */}
+        {/* Input handle from the previous node */}
         <Handle
           type="target"
           position={Position.Top}
@@ -47,9 +52,9 @@ const WhileNodeComponent: React.FC<{ data: { label: string } }> = ({
           style={handleStyle}
         />
 
-        <div>{data.label}</div>
+        <div>{label}</div>
 
-        {/* 2. ส่งเส้น "True" ออกไปด้านขวา (สำหรับ Loop) */}
+        {/* "True" condition output for the loop body */}
         <Handle
           type="source"
           position={Position.Right}
@@ -57,7 +62,7 @@ const WhileNodeComponent: React.FC<{ data: { label: string } }> = ({
           style={handleStyle}
         />
 
-        {/* 3. ส่งเส้น "False" ออกไปด้านล่าง (ไป Node ถัดไป) */}
+        {/* "False" condition output to the next node */}
         <Handle
           type="source"
           position={Position.Bottom}
@@ -65,12 +70,12 @@ const WhileNodeComponent: React.FC<{ data: { label: string } }> = ({
           style={handleStyle}
         />
 
-        {/* 4. รับเส้น "True" ที่วนกลับมาด้านล่าง */}
+        {/* Input handle for the returning loop connection */}
         <Handle
           type="target"
           position={Position.Bottom}
           id="loop_in"
-          style={{ ...handleStyle, left: "75%", background: "#555" }} // ปรับ style เพื่อให้ไม่ซ้อนกับ handle "false"
+          style={{ ...handleStyle, left: "75%", background: "#555" }}
         />
       </div>
     </div>

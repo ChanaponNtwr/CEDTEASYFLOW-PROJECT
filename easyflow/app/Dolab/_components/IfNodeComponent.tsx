@@ -3,7 +3,7 @@ import React, { useRef, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 
 const IfNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
-  const baseWidth = 150;
+  const baseWidth = 176;
   const baseHeight = 70;
   const padding = 20; // ระยะห่างตัวอักษรจากขอบ
   const [width, setWidth] = useState(baseWidth);
