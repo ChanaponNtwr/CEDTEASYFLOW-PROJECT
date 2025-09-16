@@ -13,6 +13,9 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
 
   const textRef = useRef<HTMLSpanElement>(null);
 
+  // สร้างข้อความที่จะแสดงผล
+  const displayText = `Input ${data.label}`;
+
   useEffect(() => {
     if (textRef.current) {
       const textWidth = textRef.current.offsetWidth;
@@ -20,19 +23,12 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
       const newWidth = Math.max(baseWidth, textWidth + padding * 2 + skew);
       setWidth(newWidth);
     }
-  }, [data.label]);
+  }, [displayText]); // เปลี่ยน dependency เป็น displayText
 
   const height = baseHeight; // ความสูงคงที่สำหรับสี่เหลี่ยมด้านขนาน
 
   // สร้างพิกัดสำหรับสี่เหลี่ยมด้านขนาน
   const points = `${skew},0 ${width},0 ${width - skew},${height} 0,${height}`;
-
-  const hiddenHandleStyle = {
-    width: 8,
-    height: 8,
-    background: "#ccc",
-    border: "1px solid #555",
-  };
 
   return (
     <div style={{ position: "relative", width, height }}>
@@ -40,7 +36,7 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
       <svg width="100%" height="100%" style={{ overflow: "visible" }}>
         <polygon
           points={points}
-          fill="transparent" // เปลี่ยนจาก #FFFFFF เป็น transparent
+          fill="transparent"
           stroke="#000000"
           strokeWidth="1"
         />
@@ -51,11 +47,12 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
           alignmentBaseline="middle"
           fontSize="14"
         >
-          {data.label}
+          {/* แสดงผลข้อความใหม่ */}
+          {displayText}
         </text>
       </svg>
 
-      {/* Hidden span สำหรับวัดขนาดข้อความ (เหมือนเดิม) */}
+      {/* Hidden span สำหรับวัดขนาดข้อความ */}
       <span
         ref={textRef}
         style={{
@@ -66,7 +63,8 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
           fontWeight: "normal",
         }}
       >
-        {data.label}
+        {/* ใช้ข้อความใหม่ในการคำนวณความกว้าง */}
+        {displayText}
       </span>
 
       {/* Handles for connections */}

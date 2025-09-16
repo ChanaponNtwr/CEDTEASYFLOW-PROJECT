@@ -28,6 +28,8 @@ import StartNodeComponent from "./_components/StartNodeComponent";
 import EndNodeComponent from "./_components/EndNodeComponent";
 import InputNodeComponent from "./_components/InputNodeComponent";
 import OutputNodeComponent from "./_components/OutputNodeComponent";
+import DeclareComponent from "./_components/DeclareComponent";
+import AssignComponent from "./_components/AssignComponent";
 
 // --- Utility Functions ---
 import { createArrowEdge } from "./_components/createArrowEdge";
@@ -48,6 +50,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [modalPosition, setModalPosition] = useState<{ x: number; y: number } | null>(null);
+
+  const parallelogramXOffset = 25; // สำหรับ input/output/declare/assign
 
   // --- Helper Functions ---
   const computeEndY = (allNodes: Node[]) => {
@@ -84,17 +88,15 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
 
   // --- Core Logic: Add Node Function ---
   const addNode = (type: string, label: string) => {
-    // ✨ CHANGE: Added an offset to adjust the x-position for parallelogram shapes (input/output)
-    const parallelogramXOffset = 25; 
-
     const startNode = nodes.find(n => n.id === "start");
     const endNode = nodes.find(n => n.id === "end");
     if (!startNode || !endNode) return;
 
-    const nodeKind = (type === "input") ? "input" : (type === "output") ? "output" : type;
+    // --- Node kind including assign ---
+    const nodeKind = (type === "input" || type === "output" || type === "declare" || type === "assign") ? type : type;
 
     // ===================================================================================
-    // CASE 1: Add node on a selected edge (inserting)
+    // CASE 1: Add node on a selected edge
     // ===================================================================================
     if (selectedEdge) {
       const { source, target, sourceHandle, targetHandle } = selectedEdge;
@@ -102,7 +104,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       const targetNode = nodes.find((n) => n.id === target);
       if (!sourceNode || !targetNode) return;
 
-      // --- 1.1: Special Case: Adding node inside a 'while' loop ---
+      // --- Special Case: Adding node inside a 'while' loop ---
       if (source === target && sourceNode.type === 'whileNode') {
         let newNodesToAdd: Node[] = [];
         let newEdgesToAdd: Edge[] = [];
@@ -121,9 +123,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             createArrowEdge(ifNode.id, breakpoint.id, { label: "False", sourceHandle: "left", targetHandle: "false" })
           );
         } else {
-          const createdType = nodeKind === "input" || nodeKind === "output" ? nodeKind : "default";
-          // ✨ CHANGE: Applied offset for input/output nodes within a while loop
-          const finalNewX = (createdType === 'input' || createdType === 'output') ? newX - parallelogramXOffset : newX;
+          const createdType = (nodeKind === "input" || nodeKind === "output" || nodeKind === "declare" || nodeKind === "assign") ? nodeKind : "default";
+          const finalNewX = (createdType === 'input' || createdType === 'output' || createdType === 'declare' || createdType === 'assign') ? newX - parallelogramXOffset : newX;
           const newNode = { id: crypto.randomUUID(), type: createdType, data: { label }, position: { x: finalNewX, y: newY }, draggable: false };
           newNodesToAdd.push(newNode);
           lastNodeInLoopId = newNode.id;
@@ -144,7 +145,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         return;
       }
 
-      // --- 1.2: Case for adding node to an 'if' branch ---
+      // --- Case for adding node to an 'if' branch ---
       const isBranchingFromIf = sourceNode.type === 'ifNode' && (sourceHandle === 'right' || sourceHandle === 'left');
       if (isBranchingFromIf) {
         const isIfTrueBranch = sourceHandle === "right";
@@ -174,9 +175,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y);
           const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
           
-          const createdType = nodeKind === "input" || nodeKind === "output" ? nodeKind : "default";
-          // ✨ CHANGE: Applied offset for input/output nodes on an 'if' branch
-          const finalOffsetX = (createdType === 'input' || createdType === 'output') ? offsetX - parallelogramXOffset : offsetX;
+          const createdType = (nodeKind === "input" || nodeKind === "output" || nodeKind === "declare" || nodeKind === "assign") ? nodeKind : "default";
+          const finalOffsetX = (createdType === 'input' || createdType === 'output' || createdType === 'declare' || createdType === 'assign') ? offsetX - parallelogramXOffset : offsetX;
           const newNode = { id: crypto.randomUUID(), type: createdType, data: { label }, position: { x: finalOffsetX, y: baseYEdge }, draggable: false };
 
           const newEdges = [
@@ -191,7 +191,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
           setEdges([...edges.filter(e => e.id !== selectedEdge.id), ...newEdges]);
         }
       } 
-      // --- 1.3: Case for inserting node on a normal edge ---
+      // --- Case for inserting node on a normal edge ---
       else {
         const yOffset = (type === 'if' || type === 'while') ? stepY * 2 : stepY;
         const nodesToMove = nodes.filter(n => n.position.y > sourceNode.position.y);
@@ -233,9 +233,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             }
           );
         } else {
-          const createdType = (nodeKind === "input" || nodeKind === "output") ? nodeKind : "default";
-          // ✨ CHANGE: Applied offset when inserting a general input/output node
-          const finalNewPosX = (createdType === 'input' || createdType === 'output') ? newPosX - parallelogramXOffset : newPosX;
+          const createdType = (nodeKind === "input" || nodeKind === "output" || nodeKind === "declare" || nodeKind === "assign") ? nodeKind : "default";
+          const finalNewPosX = (createdType === 'input' || createdType === 'output' || createdType === 'declare' || createdType === 'assign') ? newPosX - parallelogramXOffset : newPosX;
           const newNode = { id: crypto.randomUUID(), type: createdType, data: { label }, position: { x: finalNewPosX, y: sourceNode.position.y + stepY }, draggable: false };
           newNodesToAdd.push(newNode);
           newEdgesToAdd.push(
@@ -250,6 +249,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
         
         setNodes([...combinedNodes, updatedEnd]);
         setEdges([...edges.filter(e => e.id !== selectedEdge.id), ...newEdgesToAdd]);
+
       }
       closeModal();
       return;
@@ -304,9 +304,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
       const nodesToMove = nodes.filter(n => n.position.y > previousNode.position.y);
       const movedNodes = nodesToMove.map(n => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
       
-      const createdType = (nodeKind === "input" || nodeKind === "output") ? nodeKind : "default";
-      // ✨ CHANGE: Applied offset when adding a new input/output to the end
-      const newPosX = (createdType === 'input' || createdType === 'output') ? 300 - parallelogramXOffset : 300;
+      const createdType = (nodeKind === "input" || nodeKind === "output" || nodeKind === "declare" || nodeKind === "assign") ? nodeKind : "default";
+      const newPosX = (createdType === 'input' || createdType === 'output' || createdType === 'declare' || createdType === 'assign') ? 300 - parallelogramXOffset : 300;
       const newNode = { id: crypto.randomUUID(), type: createdType, data: { label }, position: { x: newPosX, y: baseY }, draggable: false };
       
       const newEdges = [
@@ -347,6 +346,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             endNode: EndNodeComponent,
             input: InputNodeComponent,
             output: OutputNodeComponent,
+            declare: DeclareComponent,
+            assign: AssignComponent, // ✅ เพิ่ม Assign
           }}
           onEdgeClick={onEdgeClick}
         >

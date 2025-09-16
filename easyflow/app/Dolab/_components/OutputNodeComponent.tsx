@@ -2,36 +2,34 @@
 import React, { useRef, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 
-// คงชื่อ Component ไว้เป็น OutputNodeComponent เหมือนเดิม
 const OutputNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
-  // 1. นำค่าคงที่จาก InputNodeComponent มาใช้
   const baseWidth = 180;
   const baseHeight = 50;
   const padding = 30;
-  const skew = 20; // เพิ่มค่าความเอียง
+  const skew = 20;
   const [width, setWidth] = useState(baseWidth);
 
   const textRef = useRef<HTMLSpanElement>(null);
 
-  // 2. ใช้ useEffect แบบเดียวกับ InputNodeComponent เพื่อคำนวณความกว้าง
+  // สร้างข้อความที่จะแสดงผลขึ้นมาใหม่
+  const displayText = `Output ${data.label}`;
+
   useEffect(() => {
     if (textRef.current) {
       const textWidth = textRef.current.offsetWidth;
       const newWidth = Math.max(baseWidth, textWidth + padding * 2 + skew);
       setWidth(newWidth);
     }
-  }, [data.label]);
+  }, [displayText]); // เปลี่ยน dependency เป็น displayText
 
-  const height = baseHeight; // ความสูงคงที่
+  const height = baseHeight;
 
-  // 3. สร้างพิกัดสำหรับรูปทรงสี่เหลี่ยมด้านขนาน (Parallelogram)
+  // สร้างพิกัดสำหรับรูปทรงสี่เหลี่ยมด้านขนาน (Parallelogram)
   const points = `${skew},0 ${width},0 ${width - skew},${height} 0,${height}`;
 
   return (
-    // ไม่ต้องเปลี่ยน div ด้านนอก
     <div style={{ position: "relative", width, height }}>
       <svg width="100%" height="100%" style={{ overflow: "visible" }}>
-        {/* 4. เปลี่ยนจากการวาด <rect> เป็น <polygon> */}
         <polygon
           points={points}
           fill="#ffffff"
@@ -40,12 +38,13 @@ const OutputNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) =>
         />
         <text
           x={width / 2}
-          y={height / 2} // ปรับการจัดกลางเล็กน้อย
+          y={height / 2}
           textAnchor="middle"
           alignmentBaseline="middle"
           fontSize={14}
         >
-          {data.label}
+          {/* แสดงผลข้อความใหม่ */}
+          {displayText}
         </text>
       </svg>
 
@@ -57,13 +56,14 @@ const OutputNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) =>
           visibility: "hidden",
           whiteSpace: "nowrap",
           fontSize: 14,
-          fontWeight: "normal", // ปรับ font weight ให้ตรงกัน
+          fontWeight: "normal",
         }}
       >
-        {data.label}
+        {/* ใช้ข้อความใหม่ในการคำนวณความกว้าง */}
+        {displayText}
       </span>
 
-      {/* 5. ปรับตำแหน่ง Handle ให้ตรงกับรูปทรงที่เอียง */}
+      {/* ปรับตำแหน่ง Handle ให้ตรงกับรูปทรงที่เอียง */}
       <Handle
         type="target"
         id="top"
