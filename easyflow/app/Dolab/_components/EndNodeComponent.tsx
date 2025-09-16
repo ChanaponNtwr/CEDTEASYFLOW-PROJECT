@@ -44,7 +44,7 @@ const EndNodeComponent: React.FC<EndNodeProps> = ({ data }) => {
           height={height - 1}
           rx={height / 2} // **จุดสำคัญ: ทำให้มุมโค้งเป็นครึ่งวงกลม**
           ry={height / 2} // **จุดสำคัญ: ทำให้มุมโค้งเป็นครึ่งวงกลม**
-          fill="#799EFF"
+          fill="#E9B3FB"
           stroke="#000000"
           strokeWidth="1"
         />
