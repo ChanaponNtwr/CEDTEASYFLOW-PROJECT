@@ -14,24 +14,79 @@ interface SymbolSectionProps {
   onAddNode?: (type: string, label: string) => void;
 }
 
+// --- Validation Helper Functions ---
+const validateConditionalExpression = (exp: string): string => {
+  const trimmedExp = exp.trim();
+  if (trimmedExp === "") {
+    return "กรุณาใส่เงื่อนไข (Condition)";
+  }
+
+  const operators = /==|!=|>=|<=|>|</;
+  if (!operators.test(trimmedExp)) {
+    return "เงื่อนไขไม่ถูกต้อง (ต้องมีตัวเปรียบเทียบ เช่น >, <, ==)";
+  }
+
+  const parts = trimmedExp.split(operators);
+  if (parts.length < 2 || parts.some(p => p.trim() === '')) {
+    return "เงื่อนไขไม่สมบูรณ์ (เช่น 'a >' หรือ '< 10')";
+  }
+
+  return ""; // No error
+};
+
+const validateOutput = (output: string): string => {
+    const trimmedOutput = output.trim();
+    if (trimmedOutput === "") {
+        return "กรุณาใส่ค่าที่ต้องการแสดงผล";
+    }
+
+    const startsWithQuote = trimmedOutput.startsWith('"');
+    const endsWithQuote = trimmedOutput.endsWith('"');
+
+    if (startsWithQuote && !endsWithQuote) {
+        return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " ปิดท้าย)';
+    }
+    if (!startsWithQuote && endsWithQuote) {
+        return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " เปิด)';
+    }
+
+    return "";
+}
 
 const SymbolSection: React.FC<SymbolSectionProps> = ({ onAddNode }) => {
   const [showInputModal, setShowInputModal] = useState(false);
   const [showOutputModal, setShowOutputModal] = useState(false);
   const [showDeclareModal, setShowDeclareModal] = useState(false);
-  const [showAssignModal, setShowAssignModal] = useState(false); // ✅ state สำหรับ Assign
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const [showIfModal, setShowIfModal] = useState(false);
   const [showWhileModal, setShowWhileModal] = useState(false);
   const [showForModal, setShowForModal] = useState(false);
   const [showDoModal, setShowDoModal] = useState(false);
 
-    // เพิ่ม state สำหรับเก็บค่าที่กรอก
+  // States for modal inputs
   const [inputValue, setInputValue] = useState("");
   const [outputValue, setOutputValue] = useState("");
   const [ifExpression, setIfExpression] = useState("");
   const [whileExpression, setWhileExpression] = useState("");
-  const [declareValue, setDeclareValue] = useState("");
-  const [assignValue, setAssignValue] = useState("");
+  
+  // Declare states
+  const [declareVariable, setDeclareVariable] = useState("");
+  const [declareDataType, setDeclareDataType] = useState("Integer");
+
+  // Assign states
+  const [assignVariable, setAssignVariable] = useState("");
+  const [assignExpression, setAssignExpression] = useState("");
+
+  // For loop states
+  const [forVariable, setForVariable] = useState("");
+  const [forStart, setForStart] = useState("");
+  const [forEnd, setForEnd] = useState("");
+  const [forStep, setForStep] = useState("");
+
+  // Do-While state
+  const [doExpression, setDoExpression] = useState("");
+
+  const [error, setError] = useState("");
 
   const symbols: Record<string, SymbolItem> = {
     input: { label: "Input", imageSrc: "/images/input.png" },
@@ -49,500 +104,429 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onAddNode }) => {
   const handleInputClick = () => setShowInputModal(true);
   const handleOutputClick = () => setShowOutputModal(true);
   const handleDeclareClick = () => setShowDeclareModal(true);
-  const handleAssignClick = () => setShowAssignModal(true); // ✅ click Assign
+  const handleAssignClick = () => setShowAssignModal(true);
   const handleIfClick = () => setShowIfModal(true);
   const handleWhileClick = () => setShowWhileModal(true);
   const handleForClick = () => setShowForModal(true);
   const handleDoClick = () => setShowDoModal(true);
-  const handleCloseInputModal = () => setShowInputModal(false);
-  const handleCloseOutputModal = () => setShowOutputModal(false);
-  const handleCloseDeclareModal = () => setShowDeclareModal(false);
-  const handleCloseAssignModal = () => setShowAssignModal(false); // ✅ close Assign
-  const handleCloseIfModal = () => setShowIfModal(false);
-  const handleCloseWhileModal = () => setShowWhileModal(false);
-  const handleCloseForModal = () => setShowForModal(false);
-  const handleCloseDoModal = () => setShowDoModal(false);
+  
+  const handleCloseInputModal = () => { setShowInputModal(false); setError(""); };
+  const handleCloseOutputModal = () => { setShowOutputModal(false); setError(""); };
+  const handleCloseDeclareModal = () => { setShowDeclareModal(false); setError(""); };
+  const handleCloseAssignModal = () => { setShowAssignModal(false); setError(""); };
+  const handleCloseIfModal = () => { setShowIfModal(false); setError(""); };
+  const handleCloseWhileModal = () => { setShowWhileModal(false); setError(""); };
+  const handleCloseForModal = () => { setShowForModal(false); setError(""); };
+  const handleCloseDoModal = () => { setShowDoModal(false); setError(""); };
 
-const handlers: Record<string, () => void> = {
-  Input: handleInputClick,
-  Output: handleOutputClick,
-  Declare: handleDeclareClick,
-  Assign: handleAssignClick,
-  IF: handleIfClick,
-  While: handleWhileClick,
-  For: handleForClick,
-  Do: handleDoClick,
-};
+  const handlers: Record<string, () => void> = {
+    Input: handleInputClick,
+    Output: handleOutputClick,
+    Declare: handleDeclareClick,
+    Assign: handleAssignClick,
+    IF: handleIfClick,
+    While: handleWhileClick,
+    For: handleForClick,
+    Do: handleDoClick,
+  };
 
-const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
-  <div
-    className="flex flex-col items-center gap-1 cursor-pointer"
-    onClick={handlers[item.label]} // ใช้ mapping
-  >
-    <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
-    <span className="text-sm text-gray-700">{item.label}</span>
-  </div>
-);
+  const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
+    <div className="flex flex-col items-center gap-1 cursor-pointer" onClick={handlers[item.label]}>
+      <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
+      <span className="text-sm text-gray-700">{item.label}</span>
+    </div>
+  );
 
+  // --- Submit Handlers ---
+  const handleInputSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (inputValue.trim() === "") {
+        setError("กรุณาใส่ชื่อ Variable");
+        return;
+    }
+    const label = `Input ${inputValue}`;
+    onAddNode?.("input", label);
+    setInputValue("");
+    handleCloseInputModal();
+  };
+
+  const handleOutputSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const validationError = validateOutput(outputValue);
+    if (validationError) {
+        setError(validationError);
+        return;
+    }
+    const label = `Output ${outputValue}`;
+    onAddNode?.("output", label);
+    setOutputValue("");
+    handleCloseOutputModal();
+  };
+
+  const handleDeclareSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (declareVariable.trim() === "") {
+        setError("กรุณาใส่ชื่อ Variable");
+        return;
+    }
+    const label = `${declareDataType} ${declareVariable}`;
+    onAddNode?.("declare", label);
+    setDeclareVariable("");
+    setDeclareDataType("Integer");
+    handleCloseDeclareModal();
+  };
+  
+  const handleAssignSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (assignVariable.trim() === "" || assignExpression.trim() === "") {
+        setError("กรุณากรอกข้อมูลทั้ง Variable และ Expression");
+        return;
+    }
+    const label = `${assignVariable} = ${assignExpression}`;
+    onAddNode?.("assign", label);
+    setAssignVariable("");
+    setAssignExpression("");
+    handleCloseAssignModal();
+  };
+
+  const handleIfSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const validationError = validateConditionalExpression(ifExpression);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    onAddNode?.("if", ifExpression);
+    setIfExpression("");
+    handleCloseIfModal();
+  };
+
+  const handleWhileSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const validationError = validateConditionalExpression(whileExpression);
+    if (validationError) {
+        setError(validationError);
+        return;
+    }
+    onAddNode?.("while", whileExpression);
+    setWhileExpression("");
+    handleCloseWhileModal();
+  };
+
+  const handleForSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!forVariable.trim() || !forStart.trim() || !forEnd.trim() || !forStep.trim()) {
+      setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
+      return;
+    }
+    if (isNaN(Number(forStart)) || isNaN(Number(forEnd)) || isNaN(Number(forStep))) {
+      setError("ค่า Start, End, และ Step By ต้องเป็นตัวเลขเท่านั้น");
+      return;
+    }
+    const label = `${forVariable} = ${forStart} to ${forEnd}`;
+    onAddNode?.("for", label);
+    setForVariable("");
+    setForStart("");
+    setForEnd("");
+    setForStep("");
+    handleCloseForModal();
+  };
+
+  const handleDoSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const validationError = validateConditionalExpression(doExpression);
+    if (validationError) {
+        setError(validationError);
+        return;
+    }
+    onAddNode?.("do", doExpression);
+    setDoExpression("");
+    handleCloseDoModal();
+  };
 
 
   // --- Input Modal ---
-if (showInputModal) {
-  return (
-    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-      <div className="text-xl font-semibold text-gray-800 mb-4">Input Properties</div>
-      <input
-        type="text"
-        placeholder="Variable name"
-        value={inputValue} // bind state
-        onChange={(e) => setInputValue(e.target.value)} // update state
-        className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-      />
-      <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-        <button
-          onClick={() => {
-            handleCloseInputModal();
-            setInputValue(""); // reset
-          }}
-          className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => {
-            if (inputValue.trim() !== "") {
-              onAddNode?.("input", inputValue); // ส่ง label ที่ผู้ใช้กรอก
-              setInputValue(""); // reset
-              handleCloseInputModal();
-            }
-          }}
-          className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-        >
-          Ok
-        </button>
-      </div>
-
-      <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-        <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
-        <span className="text-gray-600 text-sm">
-          A Input Statement reads a value from the keyboard and stores the result in a variable.
-        </span>
-
-      </div>
-    </div>
-  );
-}
-
-
-  // --- Output Modal ---
-if (showOutputModal) {
-  return (
-    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-      <div className="text-xl font-semibold text-gray-800 mb-4">Output Properties</div>
-
-      <input
-        type="text"
-        placeholder="Variable or expression"
-        value={outputValue} // bind state
-        onChange={(e) => setOutputValue(e.target.value)} // update state
-        className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-      />
-
-      <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-        <button
-          onClick={() => {
-            handleCloseOutputModal();
-            setOutputValue(""); // reset
-          }}
-          className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button 
-          onClick={() => {
-            if (outputValue.trim() !== "") {
-              onAddNode?.("output", outputValue); // ส่ง label ที่ผู้ใช้กรอก
-              setOutputValue(""); // reset
-              handleCloseOutputModal();
-            }
-          }}
-          className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-        >
-          Ok
-        </button>
-      </div>
-
-      <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-        <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
-        <span className="text-gray-600 text-sm">
-          An Output Statement evaluates an expression and then displays the result to the screen.
-        </span>
-      </div>
-    </div>
-  );
-}
-
-
-  // --- Declare Modal ---
-  if (showDeclareModal) {
+  if (showInputModal) {
     return (
       <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
-          Declare Properties
-        </div>
-
-        <div className="text-gray-700 mb-2 ml-4">Variable Name</div>
-
-        <input
-          type="text"
-          placeholder=""
-          value={declareValue} // bind state
-          onChange={(e) => setDeclareValue(e.target.value)} // update state
-          className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-        />
-
-        <div className="text-gray-700 mb-2 ml-4">Data Type</div>
-
-        <div className="grid grid-cols-2 gap-2 ml-6 mb-4">
-          <label className="flex items-center gap-1 text-sm text-gray-700">
-            <input type="radio" name="dataType" value="integer" className="w-4 h-4" /> Integer
-          </label>
-          <label className="flex items-center gap-1 text-sm text-gray-700">
-            <input type="radio" name="dataType" value="real" className="w-4 h-4" /> Real
-          </label>
-          <label className="flex items-center gap-1 text-sm text-gray-700">
-            <input type="radio" name="dataType" value="string" className="w-4 h-4" /> String
-          </label>
-          <label className="flex items-center gap-1 text-sm text-gray-700">
-            <input type="radio" name="dataType" value="boolean" className="w-4 h-4" /> Boolean
-          </label>
-        </div>
-
-        <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-          <button
-            onClick={handleCloseDeclareModal}
-            className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => {
-              if (declareValue.trim() !== "") {
-                onAddNode?.("declare", declareValue); // ✅ ส่ง type=declare และ label=declareValue
-                setDeclareValue(""); // reset
-                handleCloseDeclareModal();
-            }
-          }}
-            className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-          >
-            Ok
-          </button>
-        </div>
-
+        <form onSubmit={handleInputSubmit}>
+            <div className="text-xl font-semibold text-gray-800 mb-4">Input Properties</div>
+            <input
+            type="text"
+            placeholder="Variable name"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+            />
+            {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+            <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+            <button
+                type="button"
+                onClick={() => {
+                handleCloseInputModal();
+                setInputValue("");
+                }}
+                className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
+            >
+                Cancel
+            </button>
+            <button
+                type="submit"
+                className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
+            >
+                Ok
+            </button>
+            </div>
+        </form>
         <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/shape_Declare.png" alt="Icon" className="w-50 h-7" />
-          <span className="text-gray-600 text-sm">
-            A Declare Statement is used to create variables and arrays. These are used to store data while the program runs.
-          </span>
+          <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
+          <span className="text-gray-600 text-sm">A Input Statement reads a value from the keyboard and stores it in a variable.</span>
         </div>
       </div>
     );
+  }
+
+  // --- Output Modal ---
+  if (showOutputModal) {
+    return (
+      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
+        <form onSubmit={handleOutputSubmit}>
+            <div className="text-xl font-semibold text-gray-800 mb-4">Output Properties</div>
+            <input
+            type="text"
+            placeholder='Variable or "string"'
+            value={outputValue}
+            onChange={(e) => setOutputValue(e.target.value)}
+            className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+            />
+            {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+            <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+            <button
+                type="button"
+                onClick={() => {
+                handleCloseOutputModal();
+                setOutputValue("");
+                }}
+                className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
+            >
+                Cancel
+            </button>
+            <button
+                type="submit"
+                className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
+            >
+                Ok
+            </button>
+            </div>
+        </form>
+        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
+          <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
+          <span className="text-gray-600 text-sm">An Output Statement displays the result of an expression to the screen.</span>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Declare Modal ---
+  if (showDeclareModal) {
+      return (
+          <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
+            <form onSubmit={handleDeclareSubmit}>
+              <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">Declare Properties</div>
+              <div className="text-gray-700 mb-2 ml-4">Variable Name</div>
+              <input type="text" placeholder="e.g., a" value={declareVariable} onChange={(e) => setDeclareVariable(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"/>
+              {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+              <div className="text-gray-700 mb-2 ml-4">Data Type</div>
+              <div className="grid grid-cols-2 gap-2 ml-6 mb-4">
+                  <label className="flex items-center gap-1 text-sm text-gray-700"><input type="radio" name="dataType" value="Integer" checked={declareDataType === "Integer"} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4"/> Integer</label>
+                  <label className="flex items-center gap-1 text-sm text-gray-700"><input type="radio" name="dataType" value="Real" checked={declareDataType === "Real"} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4"/> Real</label>
+                  <label className="flex items-center gap-1 text-sm text-gray-700"><input type="radio" name="dataType" value="String" checked={declareDataType === "String"} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4"/> String</label>
+                  <label className="flex items-center gap-1 text-sm text-gray-700"><input type="radio" name="dataType" value="Boolean" checked={declareDataType === "Boolean"} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4"/> Boolean</label>
+              </div>
+              <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+                  <button type="button" onClick={handleCloseDeclareModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">Cancel</button>
+                  <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">Ok</button>
+              </div>
+            </form>
+              <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
+                  <img src="/images/shape_Declare.png" alt="Icon" className="w-50 h-7" />
+                  <span className="text-gray-600 text-sm">A Declare Statement is used to create variables and arrays.</span>
+              </div>
+          </div>
+      );
   }
 
   // --- Assign Modal ---
   if (showAssignModal) {
+      return (
+          <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
+            <form onSubmit={handleAssignSubmit}>
+              <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">Assign Properties</div>
+              <div className="text-gray-700 mb-2 ml-4">Variable</div>
+              <input type="text" placeholder="e.g., a" value={assignVariable} onChange={(e) => setAssignVariable(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"/>
+              <div className="text-gray-700 mb-2 ml-4">Expression</div>
+              <input type="text" placeholder="e.g., 10" value={assignExpression} onChange={(e) => setAssignExpression(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"/>
+              {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+              <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+                  <button type="button" onClick={handleCloseAssignModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">Cancel</button>
+                  <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">Ok</button>
+              </div>
+            </form>
+              <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
+                  <img src="/images/square.png" alt="Icon" className="w-50 h-7" />
+                  <span className="text-gray-600 text-sm">An Assignment Statement stores the result of an expression in a variable.</span>
+              </div>
+          </div>
+      );
+  }
+
+  // --- IF Modal ---
+  if (showIfModal) {
     return (
       <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
-          Assign Properties
-        </div>
-
-        <div className="text-gray-700 mb-2 ml-4">Varibles</div>
-
-        <input
-          type="text"
-          placeholder=""
-          value={assignValue} // bind state
-          onChange={(e) => setAssignValue(e.target.value)} // update state
-          className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-        />
-
-
-        <div className="text-gray-700 mb-2 ml-4">Expression</div>
-
-        <input
-          type="text"
-          placeholder=""
-          className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-        />
-
-        <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-          <button
-            onClick={handleCloseAssignModal}
-            className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => {
-              if (assignValue.trim() !== "") {
-                onAddNode?.("assign", assignValue); // ✅ ส่ง type=declare และ label=declareValue
-                setAssignValue(""); // reset
-                handleCloseAssignModal();
-            }
-          }}
-            className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-          >
-            Ok
-          </button>
-        </div>
-
+        <form onSubmit={handleIfSubmit}>
+            <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">If Properties</div>
+            <div className="text-gray-700 mb-2 ml-4">Enter a conditional expression below</div>
+            <input
+            type="text"
+            placeholder="e.g., a > 10"
+            value={ifExpression}
+            onChange={(e) => setIfExpression(e.target.value)}
+            className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+            />
+            {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+            <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+            <button type="button" onClick={handleCloseIfModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
+                Cancel
+            </button>
+            <button
+                type="submit"
+                className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
+            >
+                Ok
+            </button>
+            </div>
+        </form>
         <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/square.png" alt="Icon" className="w-50 h-7" />
-          <span className="text-gray-600 text-sm">
-            An Assignment Statement calculates an expression and then stores the result in a variable.
-          </span>
+          <img src="/images/shape_if.png" alt="Icon" className="w-50 h-10" />
+          <span className="text-gray-600 text-sm">An IF Statement checks a Boolean expression and executes a branch based on the result.</span>
         </div>
       </div>
     );
   }
 
-  // --- IF Modal ---
-if (showIfModal) {
-  return (
-    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-      <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
-        If Properties
-      </div>
-
-      <div className="text-gray-700 mb-2 ml-4">Enter a conditional expression below</div>
-
-      <input
-        type="text"
-        placeholder="Condition"
-        value={ifExpression}
-        onChange={(e) => setIfExpression(e.target.value)}
-        className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-      />
-
-      <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-        <button
-          onClick={handleCloseIfModal}
-          className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => {
-            if (ifExpression.trim() !== "") {
-              onAddNode?.("if", ifExpression); // ส่งค่าไปสร้าง IF Node
-            }
-            handleCloseIfModal();
-            setIfExpression("");
-          }}
-          className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-        >
-          Ok
-        </button>
-      </div>
-
-      <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-        <img src="/images/shape_if.png" alt="Icon" className="w-50 h-10" />
-        <span className="text-gray-600 text-sm">
-          An IF Statement checks a Boolean expression then executes a true or false branch based on the result.
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// --- While Modal ---
-if (showWhileModal) {
-  return (
-    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-      <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
-        While Properties
-      </div>
-
-      <div className="text-gray-700 mb-2 ml-4">Enter a loop condition below</div>
-
-      <input
-        type="text"
-        placeholder="Condition"
-        value={whileExpression}
-        onChange={(e) => setWhileExpression(e.target.value)}
-        className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-      />
-
-      <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-        <button
-          onClick={handleCloseWhileModal}
-          className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => {
-            if (whileExpression.trim() !== "") {
-              onAddNode?.("while", whileExpression); // ส่งค่าไปสร้าง WHILE Node
-            }
-            handleCloseWhileModal();
-            setWhileExpression("");
-          }}
-          className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-        >
-          Ok
-        </button>
-      </div>
-
-      <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-        <img src="/images/shape_while.png" alt="Icon" className="w-50 h-10" />
-        <span className="text-gray-600 text-sm">
-          A WHILE Statement repeatedly executes a block of code as long as the condition evaluates to true.
-        </span>
-      </div>
-    </div>
-  );
-}
-
-
-// --- For Modal ---
-if (showForModal) {
-  return (
-    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-      <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
-        For Properties
-      </div>
-
-        <div className="grid grid-cols-2 gap-4 ml-6 mb-4">
-          {/* ช่องที่ 1 */}
-          <div className="flex flex-col mr-4">
-            <label className="text-gray-700 text-sm mb-1">Variables</label>
+  // --- While Modal ---
+  if (showWhileModal) {
+    return (
+      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
+        <form onSubmit={handleWhileSubmit}>
+            <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">While Properties</div>
+            <div className="text-gray-700 mb-2 ml-4">Enter a loop condition below</div>
             <input
-              type="text"
-              placeholder=""
-              className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            type="text"
+            placeholder="e.g., count < 10"
+            value={whileExpression}
+            onChange={(e) => setWhileExpression(e.target.value)}
+            className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
             />
-          </div>
-
-          {/* ช่องที่ 2 */}
-          <div className="flex flex-col mr-3">
-            <label className="text-gray-700 text-sm mb-1">Step By</label>
-            <input
-              type="text"
-              placeholder=""
-              className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {/* ช่องที่ 3 */}
-          <div className="flex flex-col mr-4">
-            <label className="text-gray-700 text-sm mb-1">Start</label>
-            <input
-              type="text"
-              placeholder=""
-              className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {/* ช่องที่ 4 */}
-          <div className="flex flex-col mr-3">
-            <label className="text-gray-700 text-sm mb-1">End</label>
-            <input
-              type="text"
-              placeholder=""
-              className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+            {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+            <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+            <button type="button" onClick={handleCloseWhileModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
+                Cancel
+            </button>
+            <button
+                type="submit"
+                className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
+            >
+                Ok
+            </button>
+            </div>
+        </form>
+        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
+          <img src="/images/shape_while.png" alt="Icon" className="w-50 h-10" />
+          <span className="text-gray-600 text-sm">A WHILE Statement repeatedly executes code as long as the condition is true.</span>
         </div>
-
-        <div className="text-gray-700 mb-2 ml-6 text-sm">Direction</div>
-          <label className="flex items-center gap-1 text-sm text-gray-700 ml-8">
-            <input type="radio" name="dataType" value="integer" className="w-4 h-4" /> Increasing
-          </label>
-          <label className="flex items-center gap-1 text-sm text-gray-700 ml-8 mt-3">
-            <input type="radio" name="dataType" value="real" className="w-4 h-4" /> decreasing
-          </label>
-
-
-      <div className="flex justify-end gap-3 mt-3 mr-4 text-xs">
-        <button
-          onClick={handleCloseForModal}
-          className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => {
-            alert("FOR Saved!");
-            handleCloseForModal();
-          }}
-          className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-        >
-          Ok
-        </button>
       </div>
+    );
+  }
 
-      <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-        <img src="/images/shape_while.png" alt="Icon" className="w-50 h-10" />
-        <span className="text-gray-600 text-sm">
-          A For Loop increments or decrements a variable through a range of values. This is a common and useful replacement for a While Loop.
-        </span>
+  // --- For Modal ---
+  if (showForModal) {
+    return (
+      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
+        <form onSubmit={handleForSubmit}>
+            <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">For Properties</div>
+            <div className="grid grid-cols-2 gap-4 ml-6 mb-4">
+            <div className="flex flex-col mr-4">
+                <label className="text-gray-700 text-sm mb-1">Variable</label>
+                <input type="text" placeholder="e.g., a" value={forVariable} onChange={(e) => setForVariable(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"/>
+            </div>
+            <div className="flex flex-col mr-3">
+                <label className="text-gray-700 text-sm mb-1">Step By</label>
+                <input type="text" placeholder="e.g., 1" value={forStep} onChange={(e) => setForStep(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"/>
+            </div>
+            <div className="flex flex-col mr-4">
+                <label className="text-gray-700 text-sm mb-1">Start</label>
+                <input type="text" placeholder="e.g., 0" value={forStart} onChange={(e) => setForStart(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"/>
+            </div>
+            <div className="flex flex-col mr-3">
+                <label className="text-gray-700 text-sm mb-1">End</label>
+                <input type="text" placeholder="e.g., 10" value={forEnd} onChange={(e) => setForEnd(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"/>
+            </div>
+            </div>
+            {error && <div className="text-red-500 text-xs ml-6 mb-2">{error}</div>}
+            <div className="text-gray-700 mb-2 ml-6 text-sm">Direction</div>
+            <label className="flex items-center gap-1 text-sm text-gray-700 ml-8">
+            <input type="radio" name="direction" value="increasing" defaultChecked className="w-4 h-4" /> Increasing
+            </label>
+            <label className="flex items-center gap-1 text-sm text-gray-700 ml-8 mt-3">
+            <input type="radio" name="direction" value="decreasing" className="w-4 h-4" /> decreasing
+            </label>
+            <div className="flex justify-end gap-3 mt-3 mr-4 text-xs">
+            <button type="button" onClick={handleCloseForModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
+                Cancel
+            </button>
+            <button
+                type="submit"
+                className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
+            >
+                Ok
+            </button>
+            </div>
+        </form>
+        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
+          <img src="/images/shape_while.png" alt="Icon" className="w-50 h-10" />
+          <span className="text-gray-600 text-sm">A For Loop increments or decrements a variable through a range of values.</span>
+        </div>
       </div>
-    </div>
-  );
-}
-
-
-// --- Do Modal ---
-if (showDoModal) {
-  return (
-    <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-      <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">
-        Do Properties
-      </div>
-
-      <div className="text-gray-700 mb-2 ml-4">Enter a conditional or loop expression below</div>
-
-      <input
-        type="text"
-        placeholder=""
-        className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-      />
-
-      <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-        <button
-          onClick={handleCloseDoModal}
-          className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => {
-            alert("DO Saved!");
-            handleCloseDoModal();
-          }}
-          className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-        >
-          Ok
-        </button>
-      </div>
-
-      <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-        <img src="/images/shape_while.png" alt="Icon" className="w-50 h-10" />
-        <span className="text-gray-600 text-sm">
-          The Do Loop is similar to a While Loop except that the block of statements is executed at least once before the expression is checked.
-        </span>
-      </div>
-    </div>
-  );
-}
-
+    );
+  }
+  
+  // --- Do Modal ---
+  if (showDoModal) {
+      return (
+          <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
+            <form onSubmit={handleDoSubmit}>
+              <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">Do Properties</div>
+              <div className="text-gray-700 mb-2 ml-4">Enter a conditional expression below</div>
+              <input type="text" placeholder="e.g., count < 10" value={doExpression} onChange={(e) => setDoExpression(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"/>
+              {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+              <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+                  <button type="button" onClick={handleCloseDoModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">Cancel</button>
+                  <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">Ok</button>
+              </div>
+            </form>
+              <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
+                  <img src="/images/shape_while.png" alt="Icon" className="w-50 h-10" />
+                  <span className="text-gray-600 text-sm">The Do Loop executes at least once before the expression is checked.</span>
+              </div>
+          </div>
+      );
+  }
 
   // --- Symbol Section ---
   return (
     <div className="w-full bg-white p-4 flex flex-col gap-4 rounded-lg shadow-lg border-1">
-      {/* Input / Output */}
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Input / Output</h3>
         <div className="flex gap-4">
@@ -550,8 +534,6 @@ if (showDoModal) {
           <SymbolItemComponent item={symbols.output} />
         </div>
       </div>
-
-      {/* Variables */}
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Variables</h3>
         <div className="flex gap-4">
@@ -559,16 +541,12 @@ if (showDoModal) {
           <SymbolItemComponent item={symbols.assign} />
         </div>
       </div>
-
-      {/* Control */}
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Control</h3>
         <div className="flex gap-4">
           <SymbolItemComponent item={symbols.if} />
         </div>
       </div>
-
-      {/* Looping */}
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Looping</h3>
         <div className="flex gap-4">

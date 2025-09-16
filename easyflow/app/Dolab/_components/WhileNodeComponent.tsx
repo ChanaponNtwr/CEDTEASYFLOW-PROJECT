@@ -17,6 +17,13 @@ const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
     // You can add common styles for handles here if needed
   };
 
+
+    const hiddenHandleStyle = {
+    width: 0,
+    height: 0,
+    background: "transparent",
+  };
+
   return (
     <div
       style={{
@@ -36,7 +43,7 @@ const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
         style={{
           // This inner div contains the content
           padding: "10px 20px",
-          background: "#FFFFFF", // Node background color
+          background: "#FFE0B0", // Node background color
           textAlign: "center",
           width: width, // Use the dynamic width
           clipPath:
@@ -49,7 +56,7 @@ const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
           type="target"
           position={Position.Top}
           id="top"
-          style={handleStyle}
+          style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
         />
 
         <div>{label}</div>
@@ -59,7 +66,7 @@ const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
           type="source"
           position={Position.Right}
           id="true"
-          style={handleStyle}
+          style={{ ...hiddenHandleStyle, right: -8, top: "50%", transform: "translateY(-50%)" }}
         />
 
         {/* "False" condition output to the next node */}
@@ -67,7 +74,7 @@ const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
           type="source"
           position={Position.Bottom}
           id="false"
-          style={handleStyle}
+          style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }} 
         />
 
         {/* Input handle for the returning loop connection */}
@@ -75,7 +82,7 @@ const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
           type="target"
           position={Position.Bottom}
           id="loop_in"
-          style={{ ...handleStyle, left: "75%", background: "#555" }}
+          style={{ ...handleStyle, bottom: -8, left: "75%", transform: "translateX(-50%)" }}
         />
       </div>
     </div>

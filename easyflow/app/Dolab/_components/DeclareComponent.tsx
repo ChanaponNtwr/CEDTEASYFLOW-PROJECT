@@ -2,8 +2,8 @@
 import React, { useRef, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 
-const InternalStorageComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
-  const baseWidth = 150;
+const DeclareComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
+  const baseWidth = 170;
   const baseHeight = 60;
   const padding = 40;
   const [width, setWidth] = useState(baseWidth);
@@ -13,18 +13,23 @@ const InternalStorageComponent: React.FC<{ data: { label: string } }> = ({ data 
   useEffect(() => {
     if (textRef.current) {
       const textWidth = textRef.current.offsetWidth;
-      const newWidth = Math.max(baseWidth, textWidth + padding);
+      // ✅ ปรับการคำนวณความกว้างให้เผื่อเส้นทั้ง 2 ข้าง
+      const newWidth = Math.max(baseWidth, textWidth + padding * 1.5);
       setWidth(newWidth);
     }
   }, [data.label]);
 
   const height = baseHeight;
-  const headerWidth1 = 15;
-  const headerWidth2 = 15;
+  const verticalLineWidth = 15; // กำหนดความกว้างของเส้นข้างให้เป็นตัวแปรเดียว
+
+  const hiddenHandleStyle = {
+    width: 0,
+    height: 0,
+    background: "transparent",
+  };
 
   return (
     <div style={{ position: "relative", width, height }}>
-      {/* SVG for the Internal Storage shape */}
       <svg width="100%" height="100%" style={{ overflow: "visible" }}>
         {/* Main rectangle body */}
         <rect
@@ -32,40 +37,40 @@ const InternalStorageComponent: React.FC<{ data: { label: string } }> = ({ data 
           y="0"
           width={width}
           height={height}
-          fill="#ffffff"
+          fill="#FFFFD8" // เปลี่ยนสีสำหรับ Declare node
           stroke="#000000"
           strokeWidth="1"
         />
 
-        {/* First vertical divider line */}
+        {/* First vertical divider line (Left) */}
         <line
-          x1={headerWidth1}
+          x1={verticalLineWidth}
           y1="0"
-          x2={headerWidth1}
+          x2={verticalLineWidth}
           y2={height}
           stroke="#000000"
           strokeWidth="1"
         />
 
-        {/* Horizontal divider line (middle) */}
+        
+        {/* Horizontal divider line (ถ้าไม่ต้องการ สามารถลบบรรทัดนี้ได้) */}
         <line
-        x1="0"
-        y1={height / 2 - 20}
-        x2={width}
-        y2={height / 2 - 20}
-        stroke="#000000"
-        strokeWidth="1.2"
+         x1="0"
+         y1={height / 2 - 20}
+         x2={width}
+         y2={height / 2 - 20}
+         stroke="#000000"
+         strokeWidth="1"
         />
 
-        {/* Label text */}
+        {/* ✅ Label text - แก้ไขตำแหน่ง x ให้อยู่ตรงกลางพอดี */}
         <text
-          x={(width + headerWidth1 + headerWidth2) / 2}
+          x={width / 2}
           y={height / 2}
           textAnchor="middle"
           alignmentBaseline="middle"
           fontSize="14"
           fill="#000000"
-          style={{ userSelect: "none" }}
         >
           {data.label}
         </text>
@@ -79,25 +84,24 @@ const InternalStorageComponent: React.FC<{ data: { label: string } }> = ({ data 
           visibility: "hidden",
           whiteSpace: "nowrap",
           fontSize: 14,
-          fontWeight: "normal",
         }}
       >
         {data.label}
       </span>
 
-      {/* Handles for connecting nodes (Top and Bottom only) */}
+      {/* ✅ Handles - เพิ่ม style left: '50%' เพื่อความชัดเจน */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ background: "#000000" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "51.5%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         position={Position.Bottom}
-        style={{ background: "#000000" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "51.5%", transform: "translateX(-50%)" }}
       />
     </div>
   );
 };
 
-export default InternalStorageComponent;
+export default DeclareComponent;
