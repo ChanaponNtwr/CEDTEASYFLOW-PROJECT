@@ -1,9 +1,12 @@
 export default function OutputHandler(node, context /*, flowchart optional */) {
-  let message = String(node.data.message).trim();
+  // ensure context.output exists
+  if (!Array.isArray(context.output)) context.output = [];
+
+  let message = (node.data && node.data.message != null) ? String(node.data.message).trim() : "";
 
   try {
     // 1) ถ้าตรงชื่อ variable ให้ push ค่าปัจจุบัน
-    const variable = context.variables.find(v => v.name === message);
+    const variable = (context.variables || []).find(v => v.name === message);
     if (variable) {
       console.log(`📤 Output: ${variable.name} = ${variable.value}`);
       context.output.push(variable.value);
@@ -11,13 +14,14 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
     }
 
     // 2) ถ้าเป็น assignment expression เช่น "line = line + '*'" 
+    //    (ไม่ใช่ template literal)
     if (message.includes("=") && !/^`.*`\s*$/.test(message)) {
       const [leftRaw, ...rest] = message.split("=");
       const varName = leftRaw.trim();
       const expr = rest.join("=").trim();
 
-      const keys = context.variables.map(v => v.name);
-      const values = context.variables.map(v => v.value);
+      const keys = (context.variables || []).map(v => v.name);
+      const values = (context.variables || []).map(v => v.value);
 
       let value;
       try {
@@ -27,15 +31,23 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
         value = undefined;
       }
 
-      context.set(varName, value);
+      if (typeof context.set === "function") {
+        context.set(varName, value);
+      } else {
+        // fallback: push into variables array or set directly
+        context.variables = context.variables || [];
+        const existing = context.variables.find(v => v.name === varName);
+        if (existing) existing.value = value;
+        else context.variables.push({ name: varName, value, varType: typeof value });
+      }
       console.log(`📤 Output (assign -> context.set): ${varName} = ${value}`);
       return { nextCondition: "auto" };
     }
 
     // 3) ถ้าเป็น template literal (เริ่มและจบด้วย backtick) → evaluate
     if (message.startsWith("`") && message.endsWith("`")) {
-      const keys = context.variables.map(v => v.name);
-      const values = context.variables.map(v => v.value);
+      const keys = (context.variables || []).map(v => v.name);
+      const values = (context.variables || []).map(v => v.value);
 
       let evaluated;
       try {

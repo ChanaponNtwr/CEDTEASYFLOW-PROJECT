@@ -132,8 +132,8 @@ class Flowchart {
     const { source, target } = edge;
     const srcNode = this.nodes[source];
     const tgtNode = this.nodes[target];
-    if (srcNode) srcNode.outgoingEdgeIds = srcNode.outgoingEdgeIds.filter(id => id !== edgeId);
-    if (tgtNode) tgtNode.incomingEdgeIds = tgtNode.incomingEdgeIds.filter(id => id !== edgeId);
+    if (srcNode) srcNode.outgoingEdgeIds = (srcNode.outgoingEdgeIds || []).filter(id => id !== edgeId);
+    if (tgtNode) tgtNode.incomingEdgeIds = (tgtNode.incomingEdgeIds || []).filter(id => id !== edgeId);
     delete this.edges[edgeId];
   }
 
@@ -153,7 +153,7 @@ class Flowchart {
   /**
    * แทรก node ใหม่ตรงกลาง edge
    * logic:
-   *  - ถอด edge เดิม แล้วสร้าง node ใหม่ + edge แทนที่ให้ถูกต้องตามประเภท node (IF / WH/FR / ปกติ)
+   *  - ถอด edge เดิมแล้วสร้าง node ใหม่ + edge แทนที่ให้ถูกต้องตามประเภท node (IF / WH/FR / ปกติ)
    */
   insertNodeAtEdge(edgeId, newNode, edgeLabel = "auto") {
     const edge = this.edges[edgeId];
@@ -232,73 +232,226 @@ class Flowchart {
 
   /**
    * ลบ node ออกจาก flowchart (ยกเว้น Start/End)
-   * ปรับปรุง logic การเชื่อมต่อใหม่:
-   *  - ไม่เชื่อมไปยัง target ที่อยู่ใน visited set (ชุด node ที่กำลังถูกลบแล้ว)
-   *  - ไม่สร้าง self-loop (source === target)
-   *  - ไม่สร้าง edge ที่มี id เดิมอยู่แล้ว (ป้องกัน duplicate)
+   * - รองรับการลบ IF (รวม bp_<id>) และ WH/FR (ลบ loop edges และ nodes ภายใน) โดยจะ rewire incoming -> outgoing targets
+   * - ไม่ทำ recursive delete ของ downstream nodes นอก loop (ยกเว้นกรณี loop body ซึ่งจะถูกลบ)
    */
   removeNode(nodeId) {
     const node = this.nodes[nodeId];
     if (!node) return;
     if (node.type === "ST" || node.type === "EN") return;
 
-    const visited = new Set();
+    // สำเนา edges ปัจจุบันเพื่อใช้อ้างอิงแบบ immutable ในการคำนวณ
+    const allEdges = Object.values(this.edges);
 
-    const recursiveRemove = (currentNode) => {
-      if (!currentNode || visited.has(currentNode.id)) return;
-      visited.add(currentNode.id);
+    // หา incoming / outgoing edges ปัจจุบัน
+    const incomingEdges = allEdges.filter(e => e.target === nodeId);
+    const outgoingEdges = allEdges.filter(e => e.source === nodeId);
 
-      // edges ที่เข้าหา node นี้ และ edges ที่ออกจาก node นี้
-      const incomingEdges = Object.values(this.edges).filter(e => e.target === currentNode.id);
-      const outgoingEdges = Object.values(this.edges).filter(e => e.source === currentNode.id);
+    // targets ที่จะใช้เชื่อม incoming -> targets (default จะเติม n_end ถ้าไม่ระบุ)
+    let targets = [];
 
-      // หา target node ที่ต้องเชื่อมแทน (ไม่เอา target ที่เป็น self)
-      // และกรองออกถ้า target อยู่ใน visited (กำลังถูกลบแล้ว)
-      let targets = outgoingEdges
+    if (node.type === "IF") {
+      // IF: ถ้ามี BP (bp_<id>) ให้ใช้ target ของ BP เป็น targets
+      const bpId = `bp_${nodeId}`;
+      const bpNode = this.getNode(bpId);
+
+      if (bpNode) {
+        // หา outgoing targets ของ bp node (มักจะเป็น target จริง)
+        const bpOutgoingEdges = Object.values(this.edges).filter(e => e.source === bpId);
+        const bpTargets = bpOutgoingEdges.map(e => e.target).filter(t => t && t !== bpId && t !== nodeId);
+
+        // ถ้า bpTargets ว่าง ให้ fallback ไปใช้ outgoing ของ IF เอง
+        targets = (bpTargets.length > 0) ? bpTargets : outgoingEdges.map(e => e.target).filter(t => t !== nodeId);
+
+        // Rewire: สำหรับแต่ละ incoming edge ของ IF ให้สร้าง edge ใหม่จาก inEdge.source -> ทุก bpTarget
+        for (const inEdge of incomingEdges) {
+          for (const t of targets) {
+            if (!t) continue;
+            if (inEdge.source === t) continue; // skip self-loop
+            const newEdgeId = `${inEdge.source}-${t}`;
+            if (!this.edges[newEdgeId]) {
+              if (this.getNode(inEdge.source) && this.getNode(t)) {
+                this._addEdgeInternal(new Edge(newEdgeId, inEdge.source, t, "auto"));
+              }
+            }
+          }
+        }
+
+        // ลบ edges ที่เกี่ยวข้องกับ BP และ IF (BP edges, IF->BP true/false, BP->next)
+        const bpRelated = Object.values(this.edges)
+          .filter(e => e.source === bpId || e.target === bpId || e.source === nodeId || e.target === nodeId)
+          .map(e => e.id);
+
+        for (const eid of bpRelated) {
+          this.removeEdge(eid);
+        }
+
+        // ลบ bp node ถ้ายังอยู่
+        if (this.getNode(bpId)) {
+          delete this.nodes[bpId];
+          console.log(`BP node ${bpId} ถูกลบพร้อมกับ IF ${nodeId}`);
+        }
+      } else {
+        // ไม่มี BP: fallback behavior (เชื่อม incoming -> outgoing targets ของ IF เอง)
+        targets = outgoingEdges.map(e => e.target).filter(t => t !== nodeId);
+
+        for (const inEdge of incomingEdges) {
+          for (const t of targets) {
+            if (!t) continue;
+            if (inEdge.source === t) continue;
+            const newEdgeId = `${inEdge.source}-${t}`;
+            if (!this.edges[newEdgeId]) {
+              if (this.getNode(inEdge.source) && this.getNode(t)) {
+                this._addEdgeInternal(new Edge(newEdgeId, inEdge.source, t, "auto"));
+              }
+            }
+          }
+        }
+
+        // ลบ edges incoming/outgoing ของ IF (ต่อไปจะลบ node ด้วย)
+        for (const e of [...incomingEdges, ...outgoingEdges]) {
+          this.removeEdge(e.id);
+        }
+      }
+    } else if (node.type === "WH" || node.type === "FR") {
+      // Loop node: ต้องลบ node ภายใน loop และเชื่อม incoming -> exit targets (false/done)
+      // หา exit target(s)
+      const exitTargets = [];
+      if (node.loopExitEdge && this.edges[node.loopExitEdge]) {
+        const exitEdge = this.edges[node.loopExitEdge];
+        if (exitEdge && exitEdge.target) exitTargets.push(exitEdge.target);
+      }
+      // ถ้าไม่มี exit target ให้ลองหา outgoing edges ที่มี condition false/done
+      if (exitTargets.length === 0) {
+        const possibleExits = outgoingEdges.filter(e => e.condition === "false" || e.condition === "done" || e.condition === "next" || e.condition === "auto");
+        for (const e of possibleExits) {
+          if (e.target && e.target !== nodeId) exitTargets.push(e.target);
+        }
+      }
+
+      // หา seed ของ body (targets ของ loop node ยกเว้น self หรือ exit targets)
+      const bodySeeds = outgoingEdges
         .map(e => e.target)
-        .filter(t => t !== currentNode.id && !visited.has(t));
+        .filter(t => t && t !== nodeId && !exitTargets.includes(t));
 
-      if (targets.length === 0) targets = ["n_end"];
+      // DFS/stack เพื่อหา nodes ภายใน loop (ไม่ข้าม exitTargets)
+      const bodyNodes = new Set();
+      const stack = [...bodySeeds];
+      while (stack.length > 0) {
+        const cur = stack.pop();
+        if (!cur) continue;
+        if (cur === nodeId) continue;
+        if (exitTargets.includes(cur)) continue;
+        if (bodyNodes.has(cur)) continue;
+        bodyNodes.add(cur);
 
-      // เชื่อม source เดิม → target ใหม่ (ไม่สร้าง self-loop, ไม่สร้าง duplicate)
-      for (let inEdge of incomingEdges) {
-        for (let targetId of targets) {
-          if (inEdge.source === targetId) continue; // skip self-loop
-          const newEdgeId = `${inEdge.source}-${targetId}`;
+        // หา outgoing ของ cur แล้วผลักต่อ (หลีกเลี่ยงการเข้า loop node หรือ exit targets)
+        const curOutgoing = Object.values(this.edges).filter(e => e.source === cur);
+        for (const oe of curOutgoing) {
+          const tgt = oe.target;
+          if (!tgt) continue;
+          if (tgt === nodeId) continue;
+          if (exitTargets.includes(tgt)) continue;
+          if (!bodyNodes.has(tgt)) stack.push(tgt);
+        }
+      }
+
+      // Rewire: เชื่อม incoming sources ของ loop node -> exitTargets (หรือ n_end ถ้าไม่มี)
+      let finalTargets = exitTargets.slice();
+      if (finalTargets.length === 0 && this.getNode("n_end")) finalTargets = ["n_end"];
+
+      for (const inEdge of incomingEdges) {
+        for (const t of finalTargets) {
+          if (!t) continue;
+          if (inEdge.source === t) continue;
+          const newEdgeId = `${inEdge.source}-${t}`;
           if (!this.edges[newEdgeId]) {
-            this._addEdgeInternal(new Edge(newEdgeId, inEdge.source, targetId, "auto"));
+            if (this.getNode(inEdge.source) && this.getNode(t)) {
+              this._addEdgeInternal(new Edge(newEdgeId, inEdge.source, t, "auto"));
+            }
           }
         }
       }
 
-      // ลบ edge ที่เชื่อมอยู่จริง ๆ
-      for (let e of [...incomingEdges, ...outgoingEdges]) {
-        this.removeEdge(e.id);
+      // ลบ edges ที่เกี่ยวข้องกับ body nodes (รวม edges ที่มี source/target ใน bodyNodes)
+      const bodyNodeIds = Array.from(bodyNodes);
+      const edgesToRemove = Object.values(this.edges)
+        .filter(e => bodyNodeIds.includes(e.source) || bodyNodeIds.includes(e.target) || e.source === nodeId || e.target === nodeId)
+        .map(e => e.id);
+
+      for (const eid of edgesToRemove) {
+        this.removeEdge(eid);
       }
 
-      // ลบ node นี้
-      delete this.nodes[currentNode.id];
-      console.log(`Node ${currentNode.id} ถูกลบเรียบร้อย`);
-
-      // cleanup references: ล้าง outgoing/incoming ที่อ้างถึง edge ที่หายไป
-      Object.values(this.nodes).forEach(n => {
-        n.outgoingEdgeIds = n.outgoingEdgeIds.filter(id => this.edges[id]);
-        n.incomingEdgeIds = n.incomingEdgeIds.filter(id => this.edges[id]);
-        if (n.loopExitEdge && !this.edges[n.loopExitEdge]) n.loopExitEdge = null;
-        if (n.loopEdge && !this.edges[n.loopEdge]) n.loopEdge = null;
-      });
-
-      // ดำเนินการลบต่อไปสำหรับ node ที่เคยอยู่ใน outgoingTargets (ถ้ายังไม่ถูกลบ)
-      // (ถ้าต้องการลบ subtree ทั้งหมด จะเรียก recursiveRemove สำหรับ target nodes ด้วย)
-      for (const out of outgoingEdges) {
-        const nextNode = this.getNode(out.target);
-        if (nextNode && !visited.has(nextNode.id)) {
-          recursiveRemove(nextNode);
+      // ลบ nodes ใน body
+      for (const nid of bodyNodeIds) {
+        if (this.getNode(nid)) {
+          delete this.nodes[nid];
+          console.log(`Loop body node ${nid} ถูกลบเนื่องจาก loop ${nodeId} ถูกลบ`);
         }
       }
-    };
+    } else {
+      // default: แค่ใช้ outgoing targets ปกติ (ไม่เอา self)
+      targets = outgoingEdges.map(e => e.target).filter(t => t !== nodeId);
 
-    recursiveRemove(node);
+      // Rewire incoming -> each target
+      for (const inEdge of incomingEdges) {
+        for (const t of targets) {
+          if (!t) continue;
+          if (inEdge.source === t) continue;
+          const newEdgeId = `${inEdge.source}-${t}`;
+          if (!this.edges[newEdgeId]) {
+            if (this.getNode(inEdge.source) && this.getNode(t)) {
+              this._addEdgeInternal(new Edge(newEdgeId, inEdge.source, t, "auto"));
+            }
+          }
+        }
+      }
+
+      // ถ้าไม่มี target ให้เชื่อมไป n_end (ถ้ามี)
+      if ((!targets || targets.length === 0) && this.getNode("n_end")) {
+        targets = ["n_end"];
+        for (const inEdge of incomingEdges) {
+          const newEdgeId = `${inEdge.source}-n_end`;
+          if (!this.edges[newEdgeId]) {
+            if (this.getNode(inEdge.source) && this.getNode("n_end")) {
+              this._addEdgeInternal(new Edge(newEdgeId, inEdge.source, "n_end", "auto"));
+            }
+          }
+        }
+      }
+    }
+
+    // --- ลบ edges ทั้ง incoming + outgoing ของ node นี้ (เหลือที่ยังไม่ถูกลบ) ---
+    // ใช้สำเนาเพื่อความปลอดภัย
+    const incomingNow = Object.values(this.edges).filter(e => e.target === nodeId).map(e => e.id);
+    const outgoingNow = Object.values(this.edges).filter(e => e.source === nodeId).map(e => e.id);
+    for (const eid of [...incomingNow, ...outgoingNow]) {
+      this.removeEdge(eid);
+    }
+
+    // ลบ node ตัวเอง
+    if (this.getNode(nodeId)) {
+      delete this.nodes[nodeId];
+      console.log(`Node ${nodeId} ถูกลบเรียบร้อย (rewired to: ${targets.join(", ")})`);
+    }
+
+    // cleanup: ปรับ outgoing/incoming lists ของ node อื่น ๆ
+    Object.values(this.nodes).forEach(n => {
+      n.outgoingEdgeIds = (n.outgoingEdgeIds || []).filter(id => this.edges[id]);
+      n.incomingEdgeIds = (n.incomingEdgeIds || []).filter(id => this.edges[id]);
+      if (n.loopExitEdge && !this.edges[n.loopExitEdge]) n.loopExitEdge = null;
+      if (n.loopEdge && !this.edges[n.loopEdge]) n.loopEdge = null;
+    });
+
+    // หลังการลบ: ถ้า start ไม่มี outgoing ใดๆ ให้คืน default start->end (ถ้ามี n_end)
+    const startNode = this.getNode("n_start");
+    if (startNode && (!startNode.outgoingEdgeIds || startNode.outgoingEdgeIds.length === 0)) {
+      if (this.getNode("n_end")) {
+        const defaultId = "n_start-n_end";
+        if (!this.edges[defaultId]) this._addEdgeInternal(new Edge(defaultId, "n_start", "n_end", "auto"));
+      }
+    }
   }
 
   // getter node/edge

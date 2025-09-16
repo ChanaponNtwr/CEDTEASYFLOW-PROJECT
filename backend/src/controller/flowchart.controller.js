@@ -1,4 +1,4 @@
-// src/controller/flowchart.Controller.js
+// src/controller/flowchart.controller.js
 import express from "express";
 import { Flowchart, Executor, Context, Node, Edge } from "../service/flowchart/index.js";
 
@@ -6,12 +6,10 @@ const router = express.Router();
 
 /* ---------------- In-memory store ----------------
    savedFlowcharts: Map<flowchartId, { nodes:[], edges:[], limits?:{} }>
-   (เปลี่ยนเป็น DB ได้ภายหลัง — เก็บ JSON ของ flowchart)
 */
 const savedFlowcharts = new Map();
 
 /* ---------------- helpers ---------------- */
-
 function normalizeList(maybe) {
   if (!maybe) return [];
   if (Array.isArray(maybe)) return maybe;
@@ -111,6 +109,20 @@ export function hydrateFlowchart(payload = {}) {
     fc.addEdge(e.source, e.target, e.condition ?? "auto");
   }
 
+  // --- remove default start->end if start has other outgoing edges ---
+  try {
+    const startNode = fc.getNode("n_start");
+    if (startNode) {
+      const others = (startNode.outgoingEdgeIds || []).filter(id => id !== "n_start-n_end");
+      if (others.length > 0 && fc.getEdge("n_start-n_end")) {
+        fc.removeEdge("n_start-n_end");
+        console.log("hydrateFlowchart: removed default n_start-n_end because other start outgoing edges exist");
+      }
+    }
+  } catch (e) {
+    console.warn("hydrateFlowchart: failed to remove default start->end:", e);
+  }
+
   // best-effort: if nodes provided but only start->end exists, insert sequentially
   const meaningfulEdges = Object.keys(fc.edges || {}).filter(id => id !== "n_start-n_end");
   if (nodesInput.length > 0 && meaningfulEdges.length === 0) {
@@ -150,6 +162,7 @@ export function hydrateFlowchart(payload = {}) {
  * This is used to persist back into savedFlowcharts map.
  */
 function serializeFlowchart(fc) {
+  // include all nodes (including start/end) and edges
   const nodes = Object.values(fc.nodes).map(n => ({
     id: n.id,
     type: n.type,
@@ -184,7 +197,7 @@ function serializeFlowchart(fc) {
 
 /**
  * POST /flowchart/save
- * - body.flowchart OR top-level nodes/edges/l mits
+ * - body.flowchart OR top-level nodes/edges/limits
  * - optional body.id (flowchartId). If not provided generate one.
  * - returns { flowchartId }
  */
@@ -215,10 +228,9 @@ router.post("/save", (req, res) => {
   }
 });
 
-
 /**
  * POST /flowchart/insert-node
- * - body.flowchartId (required) OR full payload (not recommended)
+ * - body.flowchartId (required)
  * - body.edgeId (required): the existing edge id to insert at
  * - body.node (required): spec of node to insert (type, label, data, optional id)
  *
@@ -299,23 +311,73 @@ router.post("/insert-node", (req, res) => {
   }
 });
 
+/**
+ * DELETE /flowchart/:flowchartId/node/:nodeId
+ * - deletes node (not allowed for n_start/n_end)
+ * - uses Flowchart.removeNode to rewire safely
+ */
+router.delete("/:flowchartId/node/:nodeId", (req, res) => {
+  try {
+    const { flowchartId, nodeId } = req.params;
+    const saved = savedFlowcharts.get(flowchartId);
+    if (!saved) return res.status(404).json({ ok: false, error: "Flowchart not found" });
+
+    if (!nodeId) return res.status(400).json({ ok: false, error: "Missing nodeId" });
+    if (nodeId === "n_start" || nodeId === "n_end") {
+      return res.status(400).json({ ok: false, error: "Cannot delete start or end node" });
+    }
+
+    // hydrate, perform removal using Flowchart logic (preserves wiring)
+    const fc = hydrateFlowchart(saved);
+    const targetNode = fc.getNode(nodeId);
+    if (!targetNode) return res.status(404).json({ ok: false, error: `Node ${nodeId} not found` });
+
+    try {
+      if (typeof fc.removeNode === "function") {
+        fc.removeNode(nodeId);
+      } else {
+        // fallback: remove node and its edges
+        for (const eid of Object.keys(fc.edges)) {
+          const e = fc.getEdge(eid);
+          if (e && (e.source === nodeId || e.target === nodeId)) fc.removeEdge(eid);
+        }
+        delete fc.nodes[nodeId];
+      }
+    } catch (err) {
+      console.error("removeNode error:", err);
+      return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+    }
+
+    // save updated serialized graph
+    savedFlowcharts.set(flowchartId, serializeFlowchart(fc));
+
+    return res.json({ ok: true, message: `Node ${nodeId} deleted`, flowchartId, flowchart: serializeFlowchart(fc) });
+  } catch (err) {
+    console.error("delete node error:", err);
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+  }
+});
 
 /**
  * GET /flowchart/:id
- * - return saved flowchart JSON
+ * - return saved flowchart JSON (serialized from hydrated Flowchart so it includes start/end)
  */
 router.get("/:id", (req, res) => {
   try {
     const id = req.params.id;
     const saved = savedFlowcharts.get(id);
     if (!saved) return res.status(404).json({ ok: false, error: "Not found" });
-    return res.json({ ok: true, flowchartId: id, flowchart: saved });
+
+    // hydrate then serialize to include generated Start/End and canonical edges
+    const fc = hydrateFlowchart(saved);
+    const serialized = serializeFlowchart(fc);
+
+    return res.json({ ok: true, flowchartId: id, flowchart: serialized });
   } catch (err) {
     console.error("get flowchart error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
-
 
 /**
  * POST /flowchart/execute
