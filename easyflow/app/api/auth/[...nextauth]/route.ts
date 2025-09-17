@@ -10,31 +10,26 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      // ปล่อยให้ NextAuth จัดการ profile เอง
     }),
   ],
   callbacks: {
-  async jwt({ token, user }) {
-    if (user) {
-      console.log("jwt callback user:", user);
-      token.id = user.id;
-      token.email = user.email;
-      token.name = user.name;
-      token.picture = user.image;
-    } else {
-      console.log("jwt callback no user, token:", token);
-    }
-    return token;
-  },
-  async session({ session, token }) {
-    console.log("session callback token:", token);
-    if (token) {
-      session.user.id = token.id as string;
-      session.user.email = token.email as string;
-      session.user.name = token.name as string;
-      session.user.image = token.picture as string;
-    }
-    return session;
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.email = user.email;
+        token.name = user.name;
+        token.picture = user.image;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (token) {
+        session.user.id = token.id ?? "";
+        session.user.email = token.email ?? "";
+        session.user.name = token.name ?? "";
+        session.user.image = token.picture ?? "";
+      }
+      return session;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
