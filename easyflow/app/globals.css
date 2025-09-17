@@ -25,3 +25,8 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+.react-flow__node {
+  border: none !important;      /* ลบเส้นขอบในสถานะปกติ */
+  box-shadow: none !important; /* ลบเงาในสถานะปกติ */
+  outline: none !important;     /* ลบเส้นประตอน focus */
+}
