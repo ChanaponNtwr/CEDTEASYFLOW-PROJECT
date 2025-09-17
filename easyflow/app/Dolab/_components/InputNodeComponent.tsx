@@ -7,52 +7,60 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
 }) => {
   const baseWidth = 180;
   const baseHeight = 50;
-  const padding = 30; // เพิ่ม padding สำหรับความเอียง
-  const skew = 20; // ค่าความเอียงของรูปทรง
+  const padding = 30;
+  const skew = 20; // ค่าความเอียง
   const [width, setWidth] = useState(baseWidth);
 
   const textRef = useRef<HTMLSpanElement>(null);
 
-  // สร้างข้อความที่จะแสดงผล
-  const displayText = `Input ${data.label}`;
-
   useEffect(() => {
     if (textRef.current) {
       const textWidth = textRef.current.offsetWidth;
-      // ความกว้างใหม่ต้องเผื่อที่สำหรับความเอียง (skew) ด้วย
       const newWidth = Math.max(baseWidth, textWidth + padding * 2 + skew);
       setWidth(newWidth);
     }
-  }, [displayText]); // เปลี่ยน dependency เป็น displayText
+  }, [data.label]);
 
-  const height = baseHeight; // ความสูงคงที่สำหรับสี่เหลี่ยมด้านขนาน
+  const height = baseHeight;
 
-  // สร้างพิกัดสำหรับสี่เหลี่ยมด้านขนาน
+  // พิกัดสำหรับสี่เหลี่ยมด้านขนาน (เหมือนเดิม)
   const points = `${skew},0 ${width},0 ${width - skew},${height} 0,${height}`;
+  
+  // ✅ คำนวณค่าที่ต้องเลื่อน (offset) เพื่อให้รูปทรงอยู่ตรงกลาง
+  const xOffset = skew / 2;
+
+  const hiddenHandleStyle = {
+    width: 0,
+    height: 0,
+    background: "transparent",
+  };
 
   return (
+    // กรอบ Container หลัก ขนาดจะพอดีกับรูปทรง
     <div style={{ position: "relative", width, height }}>
-      {/* SVG Parallelogram */}
       <svg width="100%" height="100%" style={{ overflow: "visible" }}>
-        <polygon
-          points={points}
-          fill="transparent"
-          stroke="#000000"
-          strokeWidth="1"
-        />
-        <text
-          x={width / 2} // จัดข้อความให้อยู่กึ่งกลางตามแนวนอน
-          y={height / 2} // จัดข้อความให้อยู่กึ่งกลางตามแนวตั้ง
-          textAnchor="middle"
-          alignmentBaseline="middle"
-          fontSize="14"
-        >
-          {/* แสดงผลข้อความใหม่ */}
-          {displayText}
-        </text>
+        {/* ✅ ใช้ transform="translate(x, y)" เพื่อเลื่อน group ของ element ทั้งหมด */}
+        <g transform={`translate(-${xOffset}, 0)`}>
+          <polygon
+            points={points}
+            fill="#D0E8FF" // ใส่สีพื้นหลังกลับเข้าไป
+            stroke="#000000"
+            strokeWidth="1"
+          />
+          <text
+            x={width / 2}
+            y={height / 2}
+            textAnchor="middle"
+            alignmentBaseline="middle"
+            fontSize="14"
+            fill="black" // ใส่สีตัวอักษร
+          >
+            {data.label}
+          </text>
+        </g>
       </svg>
 
-      {/* Hidden span สำหรับวัดขนาดข้อความ */}
+      {/* Hidden span สำหรับวัดขนาดข้อความ (เหมือนเดิม) */}
       <span
         ref={textRef}
         style={{
@@ -60,24 +68,22 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
           visibility: "hidden",
           whiteSpace: "nowrap",
           fontSize: 14,
-          fontWeight: "normal",
         }}
       >
-        {/* ใช้ข้อความใหม่ในการคำนวณความกว้าง */}
-        {displayText}
+        {data.label}
       </span>
 
-      {/* Handles for connections */}
+      {/* ✅ Handles for connections (ปรับตำแหน่ง left ให้เป็น 50% เพื่อให้อยู่กึ่งกลาง) */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ left: `${(width / 2 + skew / 2) * 90 / width}%` }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "43.5%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         id="bottom"
         position={Position.Bottom}
-        style={{ left: `${(width / 2 - skew / 2) * 110 / width}%` }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "43.5%", transform: "translateX(-50%)" }}
       />
     </div>
   );

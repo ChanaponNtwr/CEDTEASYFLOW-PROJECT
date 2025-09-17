@@ -1,27 +1,23 @@
-// _components/WhileNodeComponent.tsx
 "use client";
 import React from "react";
 import { Handle, Position } from "@xyflow/react";
 
 // Define the type for the data prop for better type-checking
-interface WhileNodeData {
+interface ForNodeData {
   label: string;
   width?: number; // Make width an optional property
 }
 
-const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
-  const { label, width = 176 } = data; // Set a default width of 150
+const ForNodeComponent: React.FC<{ data: ForNodeData }> = ({ data }) => {
+  const { label, width = 176 } = data; // Set a default width
   const borderWidth = 1;
 
-  const handleStyle = {
-    // You can add common styles for handles here if needed
-  };
-
-
-    const hiddenHandleStyle = {
+  // This style makes the handles invisible but still functional
+  const hiddenHandleStyle = {
     width: 0,
     height: 0,
     background: "transparent",
+    border: "none",
   };
 
   return (
@@ -43,7 +39,7 @@ const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
         style={{
           // This inner div contains the content
           padding: "10px 20px",
-          background: "#FFE0B0", // Node background color
+          background: "#B0D4FF", // A slightly different color for distinction
           textAlign: "center",
           width: width, // Use the dynamic width
           clipPath:
@@ -56,37 +52,37 @@ const WhileNodeComponent: React.FC<{ data: WhileNodeData }> = ({ data }) => {
           type="target"
           position={Position.Top}
           id="top"
-          style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
+          style={{ ...hiddenHandleStyle, top: -8 }}
         />
 
         <div>{label}</div>
 
-        {/* "True" condition output for the loop body */}
+        {/* Output for the loop body (each iteration) */}
         <Handle
           type="source"
           position={Position.Right}
-          id="true"
-          style={{ ...hiddenHandleStyle, right: -8, top: "50%", transform: "translateY(-50%)" }}
+          id="loop_body"
+          style={{ ...hiddenHandleStyle, right: -8 }}
         />
 
-        {/* "False" condition output to the next node */}
+        {/* Output for when the loop finishes */}
         <Handle
           type="source"
           position={Position.Bottom}
-          id="false"
-          style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }} 
+          id="next"
+          style={{ ...hiddenHandleStyle, bottom: -8, left: "50%" }}
         />
 
         {/* Input handle for the returning loop connection */}
         <Handle
           type="target"
           position={Position.Bottom}
-          id="loop_in"
-          style={{ ...handleStyle, bottom: -8, left: "75%", transform: "translateX(-50%)" }}
+          id="loop_return"
+          style={{ ...hiddenHandleStyle, bottom: -8, left: "75%" }}
         />
       </div>
     </div>
   );
 };
 
-export default WhileNodeComponent;
+export default ForNodeComponent;

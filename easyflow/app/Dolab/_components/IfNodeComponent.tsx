@@ -36,7 +36,7 @@ const IfNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
       <svg width="100%" height="100%">
         <polygon
           points={`${cx},0 ${width},${cy} ${cx},${height} 0,${cy}`}
-          fill="#FFFFFF"
+          fill="#FFD8D8"
           stroke="#000000"
           strokeWidth="1"
         />

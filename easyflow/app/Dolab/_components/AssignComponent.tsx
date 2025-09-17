@@ -2,8 +2,8 @@
 import React, { useRef, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 
-const ProcessComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
-  const baseWidth = 150;
+const AssignComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
+  const baseWidth = 176;
   const baseHeight = 60;
   const padding = 30;
   const [width, setWidth] = useState(baseWidth);
@@ -21,28 +21,34 @@ const ProcessComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
 
   const height = baseHeight;
 
+  const hiddenHandleStyle = {
+    width: 0,
+    height: 0,
+    background: "transparent",
+  }
+
   return (
-    <div style={{ position: "relative", width, height, fontFamily: 'sans-serif' }}>
+    <div style={{ position: "relative", width, height }}>
       {/* SVG Rectangle for Process Symbol */}
-      <svg width="100%" height="100%" style={{ overflow: "visible" }}>
+      <svg width="100%" height="100%">
         <rect
           x="0"
           y="0"
           width={width}
           height={height}
-          fill="#ffffff" // สีฟ้าอ่อน
-          stroke="#333"
-          strokeWidth="1"
+          fill="#FFFFD8" // ✅ เปลี่ยนเป็นสีส้มพีช
+          stroke="#000000"
+          strokeWidth="2"
           rx="4" // ทำให้มุมโค้งมนเล็กน้อย
           ry="4"
         />
         <text
-          x={width / 2} // จัดข้อความให้อยู่กึ่งกลางแนวนอน
-          y={height / 2} // จัดข้อความให้อยู่กึ่งกลางแนวตั้ง
+          x={width / 2}
+          y={height / 2}
           textAnchor="middle"
           alignmentBaseline="middle"
           fontSize="14"
-          fill="#00000"
+          fill="#000000"
         >
           {data.label}
         </text>
@@ -61,19 +67,19 @@ const ProcessComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
         {data.label}
       </span>
 
-      {/* Handles for connections (on all 4 sides) */}
+      {/* ✅ Handles for connections - ทำให้ครบ 4 ด้านและกำหนดตำแหน่งชัดเจน */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ background: "#555" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         position={Position.Bottom}
-        style={{ background: "#555" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }} 
       />
     </div>
   );
 };
 
-export default ProcessComponent;
+export default AssignComponent;
