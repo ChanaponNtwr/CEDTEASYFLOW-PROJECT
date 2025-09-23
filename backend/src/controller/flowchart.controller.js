@@ -1,4 +1,3 @@
-// src/controller/flowchart.controller.js
 import express from "express";
 import { Flowchart, Executor, Context, Node, Edge } from "../service/flowchart/index.js";
 
@@ -61,11 +60,6 @@ function hasPathStartToEnd(fc) {
 }
 
 /* ---------------- hydrateFlowchart ---------------- */
-/**
- * Build Flowchart instance from payload.nodes / payload.edges
- * - supports array or object-map
- * - preserves provided edge ids when possible
- */
 export function hydrateFlowchart(payload = {}) {
   const fc = new Flowchart();
 
@@ -157,10 +151,6 @@ export function hydrateFlowchart(payload = {}) {
 }
 
 /* ---------------- serializeFlowchart ---------------- */
-/**
- * Convert Flowchart instance -> plain JSON { nodes:[], edges:[], limits:{} }
- * This is used to persist back into savedFlowcharts map.
- */
 function serializeFlowchart(fc) {
   // include all nodes (including start/end) and edges
   const nodes = Object.values(fc.nodes).map(n => ({
@@ -193,13 +183,73 @@ function serializeFlowchart(fc) {
   };
 }
 
+/* ---------------- diff helper ---------------- */
+function computeDiffs(before = { nodes: [], edges: [] }, after = { nodes: [], edges: [] }) {
+  const mapById = (arr) => {
+    const m = new Map();
+    for (const o of arr || []) m.set(o.id, o);
+    return m;
+  };
+
+  const beforeNodes = mapById(before.nodes || []);
+  const afterNodes = mapById(after.nodes || []);
+  const beforeEdges = mapById(before.edges || []);
+  const afterEdges = mapById(after.edges || []);
+
+  const addedNodes = [];
+  const removedNodeIds = [];
+  const updatedNodes = [];
+
+  for (const [id, node] of afterNodes.entries()) {
+    if (!beforeNodes.has(id)) {
+      addedNodes.push(node);
+    } else {
+      const bn = beforeNodes.get(id);
+      if (JSON.stringify(bn) !== JSON.stringify(node)) updatedNodes.push(node);
+    }
+  }
+  for (const id of beforeNodes.keys()) if (!afterNodes.has(id)) removedNodeIds.push(id);
+
+  const addedEdges = [];
+  const removedEdgeIdsRaw = [];
+  const updatedEdges = [];
+
+  for (const [id, edge] of afterEdges.entries()) {
+    if (!beforeEdges.has(id)) {
+      addedEdges.push(edge);
+    } else {
+      const be = beforeEdges.get(id);
+      if (JSON.stringify(be) !== JSON.stringify(edge)) updatedEdges.push(edge);
+    }
+  }
+  for (const id of beforeEdges.keys()) if (!afterEdges.has(id)) removedEdgeIdsRaw.push(id);
+
+  // Filter removed edges: if an edge was removed solely because one of its nodes was removed,
+  // don't report it separately (UI already sees node removed). Keep removed edges where both
+  // endpoints still exist in 'after'.
+  const removedNodeSet = new Set(removedNodeIds);
+  const removedEdgeIds = removedEdgeIdsRaw.filter(eid => {
+    const be = beforeEdges.get(eid);
+    if (!be) return false;
+    // if either endpoint was removed, skip reporting this edge removed
+    if (removedNodeSet.has(be.source) || removedNodeSet.has(be.target)) return false;
+    // otherwise include it
+    return true;
+  });
+
+  return {
+    nodes: { added: addedNodes, removed: removedNodeIds, updated: updatedNodes },
+    edges: { added: addedEdges, removed: removedEdgeIds, updated: updatedEdges }
+  };
+}
+
 /* ---------------- routes ---------------- */
 
-/**
- * POST /flowchart/create
- * - Creates an empty flowchart entry (with empty nodes/edges) and returns flowchartId plus hydrated start/end/edges
- * - body: { id?: string, limits?: {}, overwrite?: boolean }
- */
+// NOTE: only insert-node and delete-node responses were modified to return *only* the diffs
+// (i.e. the nodes/edges that changed) so the frontend receives a minimal payload.
+// Response shape for these endpoints:
+// { ok: true, flowchartId, diffs: { nodes: { added:[], removed:[], updated:[] }, edges: { added:[], removed:[], updated:[] } }, message }
+
 router.post("/create", (req, res) => {
   try {
     let raw = req.body;
@@ -231,14 +281,6 @@ router.post("/create", (req, res) => {
   }
 });
 
-/**
- * POST /flowchart/insert-node
- * - body.flowchartId (required)
- * - body.edgeId (required): the existing edge id to insert at
- * - body.node (required): spec of node to insert (type, label, data, optional id)
- *
- * After insertion the saved flowchart is updated in-memory.
- */
 router.post("/insert-node", (req, res) => {
   try {
     let raw = req.body;
@@ -274,6 +316,9 @@ router.post("/insert-node", (req, res) => {
       return res.status(400).json({ ok: false, error: `Edge '${edgeId}' not found in flowchart.` });
     }
 
+    // snapshot before
+    const beforeSerialized = serializeFlowchart(fc);
+
     // build Node instance (id optionally from client or generate)
     const typ = normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH");
     const nodeId = nodeSpec.id || fc.genId();
@@ -297,16 +342,19 @@ router.post("/insert-node", (req, res) => {
       return res.status(500).json({ ok: false, error: String(err.message ?? err) });
     }
 
-    // serialize and save back
-    savedFlowcharts.set(flowchartId, serializeFlowchart(fc));
+    // snapshot after and compute diffs
+    const afterSerialized = serializeFlowchart(fc);
+    const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
+    // save updated serialized graph
+    savedFlowcharts.set(flowchartId, afterSerialized);
+
+    // Return only diffs (no full flowchart payload)
     return res.json({
       ok: true,
       message: `Inserted node ${newNode.id} at edge ${edgeId}`,
-      insertedNode: { id: newNode.id, type: newNode.type, label: newNode.label, data: newNode.data },
       flowchartId,
-      nodes: fc.nodes,
-      edges: fc.edges
+      diffs
     });
   } catch (err) {
     console.error("insert-node error:", err);
@@ -314,11 +362,6 @@ router.post("/insert-node", (req, res) => {
   }
 });
 
-/**
- * DELETE /flowchart/:flowchartId/node/:nodeId
- * - deletes node (not allowed for n_start/n_end)
- * - uses Flowchart.removeNode to rewire safely
- */
 router.delete("/:flowchartId/node/:nodeId", (req, res) => {
   try {
     const { flowchartId, nodeId } = req.params;
@@ -334,6 +377,9 @@ router.delete("/:flowchartId/node/:nodeId", (req, res) => {
     const fc = hydrateFlowchart(saved);
     const targetNode = fc.getNode(nodeId);
     if (!targetNode) return res.status(404).json({ ok: false, error: `Node ${nodeId} not found` });
+
+    // snapshot before
+    const beforeSerialized = serializeFlowchart(fc);
 
     try {
       if (typeof fc.removeNode === "function") {
@@ -351,20 +397,21 @@ router.delete("/:flowchartId/node/:nodeId", (req, res) => {
       return res.status(500).json({ ok: false, error: String(err.message ?? err) });
     }
 
-    // save updated serialized graph
-    savedFlowcharts.set(flowchartId, serializeFlowchart(fc));
+    // snapshot after and compute diffs
+    const afterSerialized = serializeFlowchart(fc);
+    const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
-    return res.json({ ok: true, message: `Node ${nodeId} deleted`, flowchartId, flowchart: serializeFlowchart(fc) });
+    // save updated serialized graph
+    savedFlowcharts.set(flowchartId, afterSerialized);
+
+    // Return only diffs (no full flowchart payload)
+    return res.json({ ok: true, message: `Node ${nodeId} deleted`, flowchartId, diffs });
   } catch (err) {
     console.error("delete node error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
-/**
- * GET /flowchart/:id
- * - return saved flowchart JSON (serialized from hydrated Flowchart so it includes start/end)
- */
 router.get("/:id", (req, res) => {
   try {
     const id = req.params.id;
@@ -382,10 +429,6 @@ router.get("/:id", (req, res) => {
   }
 });
 
-/**
- * GET /flowchart/:id/edges
- * - return just the serialized edges array for quick UI use
- */
 router.get("/:id/edges", (req, res) => {
   try {
     const id = req.params.id;
@@ -401,11 +444,6 @@ router.get("/:id/edges", (req, res) => {
   }
 });
 
-/**
- * POST /flowchart/execute
- * - body.flowchartId (required) -> run saved flowchart
- * - body.variables, inputMap, inputDefaults etc. (same as before)
- */
 router.post("/execute", (req, res) => {
   try {
     let raw = req.body;
