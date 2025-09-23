@@ -4,6 +4,8 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import Link from "next/link";
+import { apiPostFlowchart } from "@/app/service/FlowchartService";
+import { useRouter } from "next/navigation";
 
 // Define TestCase interface
 interface TestCase {
@@ -16,6 +18,8 @@ interface TestCase {
 
 function Studentlab() {
   // State for test cases
+  const router = useRouter();
+
   const [testCases, setTestCases] = useState<TestCase[]>([
     { no: 1, input: "n = 8", output: "32", score: 5 },
     { no: 2, input: "i = 1", output: "true", score: 4 },
@@ -47,6 +51,24 @@ function Studentlab() {
     setSymbols(newSymbols);
   };
 
+    const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault(); // ป้องกัน default behavior
+    try {
+      const data = {
+        name: "Example Flowchart",
+      };
+      const result = await apiPostFlowchart(data);
+      // console.log("API response:", result.flowchartId);
+      console.log("API response:", result);
+
+
+      // router.push(`/Dolab/${result.flowchartId}`);
+      router.push(`/Dolab`);
+    } catch (error) {
+      console.error("Failed to post flowchart:", error);
+    }
+  };
+
   return (
     <div className="min-h-screen w-full bg-gray-100">
       <div className="pt-20 pl-52">
@@ -57,12 +79,12 @@ function Studentlab() {
             <div className="w-full max-w-5xl bg-white p-6 rounded-lg shadow-md">
               {/* Buttons */}
                 <div className="flex justify-end mb-2">
-                  <Link
-                    href="/Dolab"
+              <button
                     className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-blue-700 w-24"
+                    onClick={handleClick}
                   >
                     Do lab
-                  </Link>
+                  </button>
                 </div>
                 <div className="flex justify-end mb-2">
                   <Link
