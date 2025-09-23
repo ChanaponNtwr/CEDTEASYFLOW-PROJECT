@@ -59,7 +59,7 @@ function Classwork() {
             {/* Assignments List */}
             <div className="flex flex-col space-y-4">
               {assignments.map((assignment, index) => (
-                <Link href="/labinclass" key={index}>
+                <Link href="/labviewscore" key={index}>
                   <AssignmentItem
                     title={assignment.title}
                     due={assignment.due}

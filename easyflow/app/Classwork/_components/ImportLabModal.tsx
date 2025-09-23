@@ -151,7 +151,7 @@ function ImportLabModal({ isOpen, onClose, onAddClick, formData, setFormData }: 
                 onClick={handleSubmit}
                 className="px-6 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all duration-200 cursor-pointer"
               >
-                Create
+                Import
               </button>
             </div>
           </motion.div>

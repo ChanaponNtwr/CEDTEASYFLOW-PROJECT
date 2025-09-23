@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
+import { log } from "console";
 
 interface SymbolItem {
+  key: string;
   label: string;
   imageSrc: string;
 }
@@ -12,228 +14,133 @@ interface SymbolItem {
 interface SymbolSectionProps {
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
-
-  // editing support
   nodeToEdit?: Node | null;
   onUpdateNode?: (id: string, type: string, label: string) => void;
   onDeleteNode?: (id: string) => void;
   onCloseModal?: () => void;
 }
 
-// --- Validation Helper Functions ---
+/* --- Validation Helpers --- */
 const validateConditionalExpression = (exp: string): string => {
   const trimmedExp = exp.trim();
-  if (trimmedExp === "") {
-    return "กรุณาใส่เงื่อนไข (Condition)";
-  }
+  if (trimmedExp === "") return "กรุณาใส่เงื่อนไข (Condition)";
 
   const operators = /==|!=|>=|<=|>|</;
-  if (!operators.test(trimmedExp)) {
-    return "เงื่อนไขไม่ถูกต้อง (ต้องมีตัวเปรียบเทียบ เช่น >, <, ==)";
-  }
+  if (!operators.test(trimmedExp)) return "เงื่อนไขไม่ถูกต้อง (ต้องมีตัวเปรียบเทียบ เช่น >, <, ==)";
 
   const parts = trimmedExp.split(operators);
   if (parts.length < 2 || parts.some((p) => p.trim() === "")) {
     return "เงื่อนไขไม่สมบูรณ์ (เช่น 'a >' หรือ '< 10')";
   }
 
-  return ""; // No error
+  return "";
 };
 
 const validateOutput = (output: string): string => {
   const trimmedOutput = output.trim();
-  if (trimmedOutput === "") {
-    return "กรุณาใส่ค่าที่ต้องการแสดงผล";
-  }
+  if (trimmedOutput === "") return "กรุณาใส่ค่าที่ต้องการแสดงผล";
 
   const startsWithQuote = trimmedOutput.startsWith('"');
   const endsWithQuote = trimmedOutput.endsWith('"');
 
-  if (startsWithQuote && !endsWithQuote) {
-    return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " ปิดท้าย)';
-  }
-  if (!startsWithQuote && endsWithQuote) {
-    return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " เปิด)';
-  }
+  if (startsWithQuote && !endsWithQuote) return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " ปิดท้าย)';
+  if (!startsWithQuote && endsWithQuote) return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " เปิด)';
 
   return "";
 };
 
+/* --- Field types (ชัดเจน) --- */
+type FieldSimple = {
+  kind: "simple";
+  key: string;
+  placeholder?: string;
+  value: string;
+  setValue: Dispatch<SetStateAction<string>>;
+};
+
+type FieldGroup = {
+  kind: "group";
+  key: string;
+  fields: FieldSimple[]; // reuse FieldSimple inside group
+};
+
+type FieldDef = FieldSimple | FieldGroup;
+
+type ModalConfig = {
+  key: string;
+  title: string;
+  description: string;
+  icon: string;
+  fields: FieldDef[];
+  onSubmit: (e: React.FormEvent) => void;
+  onClose: () => void;
+};
+
+/* --- Component --- */
 const SymbolSection: React.FC<SymbolSectionProps> = ({
   onAddNode,
-  edge,
   nodeToEdit,
   onUpdateNode,
   onDeleteNode,
   onCloseModal,
 }) => {
-  const [showInputModal, setShowInputModal] = useState(false);
-  const [showOutputModal, setShowOutputModal] = useState(false);
-  const [showDeclareModal, setShowDeclareModal] = useState(false);
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [showIfModal, setShowIfModal] = useState(false);
-  const [showWhileModal, setShowWhileModal] = useState(false);
-  const [showForModal, setShowForModal] = useState(false);
-  const [showDoModal, setShowDoModal] = useState(false);
+  const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
-  // States for modal inputs
+  // fields
   const [inputValue, setInputValue] = useState("");
   const [outputValue, setOutputValue] = useState("");
   const [ifExpression, setIfExpression] = useState("");
   const [whileExpression, setWhileExpression] = useState("");
-
-  // Declare states
   const [declareVariable, setDeclareVariable] = useState("");
   const [declareDataType, setDeclareDataType] = useState("Integer");
-
-  // Assign states
   const [assignVariable, setAssignVariable] = useState("");
   const [assignExpression, setAssignExpression] = useState("");
-
-  // For loop states
   const [forVariable, setForVariable] = useState("");
   const [forStart, setForStart] = useState("");
   const [forEnd, setForEnd] = useState("");
   const [forStep, setForStep] = useState("");
-
-  // Do-While state
   const [doExpression, setDoExpression] = useState("");
 
-  const [error, setError] = useState("");
-
-  const symbols: Record<string, SymbolItem> = {
-    input: { label: "Input", imageSrc: "/images/input.png" },
-    output: { label: "Output", imageSrc: "/images/output.png" },
-    declare: { label: "Declare", imageSrc: "/images/declare.png" },
-    assign: { label: "Assign", imageSrc: "/images/assign.png" },
-    if: { label: "IF", imageSrc: "/images/if.png" },
-    call: { label: "Call", imageSrc: "/images/call.png" },
-    while: { label: "While", imageSrc: "/images/while.png" },
-    for: { label: "For", imageSrc: "/images/for.png" },
-    do: { label: "Do", imageSrc: "/images/do.png" },
-  };
-
-  // Handlers
-  const handleInputClick = () => openModal("input");
-  const handleOutputClick = () => openModal("output");
-  const handleDeclareClick = () => openModal("declare");
-  const handleAssignClick = () => openModal("assign");
-  const handleIfClick = () => openModal("if");
-  const handleWhileClick = () => openModal("while");
-  const handleForClick = () => openModal("for");
-  const handleDoClick = () => openModal("do");
-
-  const openModal = (type: string) => {
-    closeAll();
-    setError("");
-    switch (type) {
-      case "input":
-        setShowInputModal(true);
-        break;
-      case "output":
-        setShowOutputModal(true);
-        break;
-      case "declare":
-        setShowDeclareModal(true);
-        break;
-      case "assign":
-        setShowAssignModal(true);
-        break;
-      case "if":
-        setShowIfModal(true);
-        break;
-      case "while":
-        setShowWhileModal(true);
-        break;
-      case "for":
-        setShowForModal(true);
-        break;
-      case "do":
-        setShowDoModal(true);
-        break;
-      default:
-        break;
+  const callUpdateOrAdd = (nodeId: string | undefined, type: string, label: string) => {
+    if (nodeToEdit && onUpdateNode && nodeId) {
+      onUpdateNode(nodeId, type, label);
+    } else {
+      onAddNode?.(type, label, nodeToEdit?.id);
     }
+    // reset
+    setInputValue("");
+    setOutputValue("");
+    setIfExpression("");
+    setWhileExpression("");
+    setDeclareVariable("");
+    setDeclareDataType("Integer");
+    setAssignVariable("");
+    setAssignExpression("");
+    setForVariable("");
+    setForStart("");
+    setForEnd("");
+    setForStep("");
+    setDoExpression("");
   };
 
-  const closeAll = () => {
-    setShowInputModal(false);
-    setShowOutputModal(false);
-    setShowDeclareModal(false);
-    setShowAssignModal(false);
-    setShowIfModal(false);
-    setShowWhileModal(false);
-    setShowForModal(false);
-    setShowDoModal(false);
-    setError("");
+  const handleDeleteClick = () => {
+    if (!nodeToEdit || !onDeleteNode) return;
+    const ok = window.confirm(
+      "ต้องการลบ node นี้ใช่หรือไม่? การลบจะลบ node นี้พร้อม edges ที่เกี่ยวข้องและ nodes ที่ไม่สามารถเข้าถึงได้จาก Start"
+    );
+    if (!ok) return;
+    onDeleteNode(nodeToEdit.id);
+    onCloseModal?.();
   };
 
-  const handleCloseInputModal = () => {
-    setShowInputModal(false);
-    setError("");
-    if (onCloseModal) onCloseModal();
-  };
-  const handleCloseOutputModal = () => {
-    setShowOutputModal(false);
-    setError("");
-    if (onCloseModal) onCloseModal();
-  };
-  const handleCloseDeclareModal = () => {
-    setShowDeclareModal(false);
-    setError("");
-    if (onCloseModal) onCloseModal();
-  };
-  const handleCloseAssignModal = () => {
-    setShowAssignModal(false);
-    setError("");
-    if (onCloseModal) onCloseModal();
-  };
-  const handleCloseIfModal = () => {
-    setShowIfModal(false);
-    setError("");
-    if (onCloseModal) onCloseModal();
-  };
-  const handleCloseWhileModal = () => {
-    setShowWhileModal(false);
-    setError("");
-    if (onCloseModal) onCloseModal();
-  };
-  const handleCloseForModal = () => {
-    setShowForModal(false);
-    setError("");
-    if (onCloseModal) onCloseModal();
-  };
-  const handleCloseDoModal = () => {
-    setShowDoModal(false);
-    setError("");
-    if (onCloseModal) onCloseModal();
-  };
-
-  const handlers: Record<string, () => void> = {
-    Input: handleInputClick,
-    Output: handleOutputClick,
-    Declare: handleDeclareClick,
-    Assign: handleAssignClick,
-    IF: handleIfClick,
-    While: handleWhileClick,
-    For: handleForClick,
-    Do: handleDoClick,
-  };
-
-  const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
-    <div className="flex flex-col items-center gap-1 cursor-pointer" onClick={handlers[item.label]}>
-      <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
-      <span className="text-sm text-gray-700">{item.label}</span>
-    </div>
-  );
-
-  // When nodeToEdit changes, prefill fields & open correct modal
+  // prefill on edit
   useEffect(() => {
     if (!nodeToEdit) return;
     const t = nodeToEdit.type;
     const label = String(nodeToEdit.data?.label ?? "");
 
-    // reset all fields first
+    // reset fields
     setInputValue("");
     setOutputValue("");
     setIfExpression("");
@@ -248,15 +155,13 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     setForStep("");
     setDoExpression("");
     setError("");
-    // open corresponding modal and try to parse label
+
     if (t === "input") {
-      const v = label.replace(/^Input\s+/i, "");
-      setInputValue(v);
-      openModal("input");
+      setInputValue(label.replace(/^Input\s+/i, ""));
+      setActiveModal("input");
     } else if (t === "output") {
-      const v = label.replace(/^Output\s+/i, "");
-      setOutputValue(v);
-      openModal("output");
+      setOutputValue(label.replace(/^Output\s+/i, ""));
+      setActiveModal("output");
     } else if (t === "declare") {
       const parts = label.split(/\s+/);
       if (parts.length >= 2) {
@@ -265,7 +170,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       } else {
         setDeclareVariable(label);
       }
-      openModal("declare");
+      setActiveModal("declare");
     } else if (t === "assign") {
       const m = label.split("=");
       if (m.length >= 2) {
@@ -274,15 +179,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       } else {
         setAssignVariable(label);
       }
-      openModal("assign");
+      setActiveModal("assign");
     } else if (t === "ifNode" || t === "if") {
       setIfExpression(label);
-      openModal("if");
+      setActiveModal("if");
     } else if (t === "whileNode" || t === "while") {
       setWhileExpression(label);
-      openModal("while");
+      setActiveModal("while");
     } else if (t === "forNode" || t === "for") {
-      // expect: "a = 0 to 10" or similar
       const forMatch = label.match(/^(.+?)\s*=\s*(.+?)\s+to\s+(.+)$/i);
       if (forMatch) {
         setForVariable(forMatch[1].trim());
@@ -291,445 +195,363 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       } else {
         setForVariable(label);
       }
-      openModal("for");
+      setActiveModal("for");
     } else if (t === "do") {
       setDoExpression(label);
-      openModal("do");
-    } else {
-      // fallback: don't open anything
+      setActiveModal("do");
     }
   }, [nodeToEdit]);
 
-  // --- Submit Handlers ---
-  const callUpdateOrAdd = (nodeId: string | undefined, type: string, label: string) => {
-    if (nodeToEdit && onUpdateNode && nodeId) {
-      onUpdateNode(nodeId, type, label);
-    } else {
-      // pass anchorId when adding from inside node edit modal
-      onAddNode?.(type, label, nodeToEdit?.id);
-    }
-    // reset internal fields
-    setInputValue("");
-    setOutputValue("");
-    setIfExpression("");
-    setWhileExpression("");
-    setDeclareVariable("");
-    setDeclareDataType("Integer");
-    setAssignVariable("");
-    setAssignExpression("");
-    setForVariable("");
-    setForStart("");
-    setForEnd("");
-    setForStep("");
-    setDoExpression("");
+  const closeAll = () => {
+    setActiveModal(null);
+    setError("");
+    onCloseModal?.();
   };
 
-  const handleInputSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (inputValue.trim() === "") {
-      setError("กรุณาใส่ชื่อ Variable");
-      return;
-    }
-    const label = `Input ${inputValue}`;
-    callUpdateOrAdd(nodeToEdit?.id, "input", label);
-    handleCloseInputModal();
-  };
+  // modal configs (ใช้ FieldSimple / FieldGroup)
+  const modalConfigs: ModalConfig[] = [
+    {
+      key: "input",
+      title: "Input Properties",
+      description: "A Input Statement reads a value from the keyboard and stores it in a variable.",
+      icon: "/images/Rectangle.png",
+      fields: [
+        { kind: "simple", key: "variable", placeholder: "Variable name", value: inputValue, setValue: setInputValue },
+      ],
+      onSubmit: (e) => {
+        e.preventDefault();
+        if (inputValue.trim() === "") {
+          setError("กรุณาใส่ชื่อ Variable");
+          return;
+        }
+        callUpdateOrAdd(nodeToEdit?.id, "input", `Input ${inputValue}`);
+        closeAll();
+      },
+      onClose: () => {
+        setInputValue("");
+        closeAll();
+      },
+    },
+    {
+      key: "output",
+      title: "Output Properties",
+      description: "An Output Statement displays the result of an expression to the screen.",
+      icon: "/images/Rectangle.png",
+      fields: [
+        { kind: "simple", key: "value", placeholder: 'Variable or "string"', value: outputValue, setValue: setOutputValue },
+      ],
+      onSubmit: (e) => {
+        e.preventDefault();
+        const validationError = validateOutput(outputValue);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
+        callUpdateOrAdd(nodeToEdit?.id, "output", `Output ${outputValue}`);
+        closeAll();
+      },
+      onClose: () => {
+        setOutputValue("");
+        closeAll();
+      },
+    },
+    {
+      key: "declare",
+      title: "Declare Properties",
+      description: "A Declare Statement is used to create variables and arrays.",
+      icon: "/images/shape_Declare.png",
+      fields: [{ kind: "simple", key: "variable", placeholder: "e.g., a", value: declareVariable, setValue: setDeclareVariable }],
+      onSubmit: (e) => {
+        e.preventDefault();
+        if (declareVariable.trim() === "") {
+          setError("กรุณาใส่ชื่อ Variable");
+          return;
+        }
+        callUpdateOrAdd(nodeToEdit?.id, "declare", `${declareDataType} ${declareVariable}`);
+        closeAll();
+      },
+      onClose: () => {
+        setDeclareVariable("");
+        setDeclareDataType("Integer");
+        closeAll();
+      },
+    },
+    {
+      key: "assign",
+      title: "Assign Properties",
+      description: "An Assignment Statement stores the result of an expression in a variable.",
+      icon: "/images/square.png",
+      fields: [
+        { kind: "simple", key: "variable", placeholder: "e.g., a", value: assignVariable, setValue: setAssignVariable },
+        { kind: "simple", key: "expression", placeholder: "e.g., 10", value: assignExpression, setValue: setAssignExpression },
+      ],
+      onSubmit: (e) => {
+        e.preventDefault();
+        if (assignVariable.trim() === "" || assignExpression.trim() === "") {
+          setError("กรุณากรอกข้อมูลทั้ง Variable และ Expression");
+          return;
+        }
+        callUpdateOrAdd(nodeToEdit?.id, "assign", `${assignVariable} = ${assignExpression}`);
+        closeAll();
+      },
+      onClose: () => {
+        setAssignVariable("");
+        setAssignExpression("");
+        closeAll();
+      },
+    },
+    {
+      key: "if",
+      title: "If Properties",
+      description: "An IF Statement checks a Boolean expression and executes a branch based on the result.",
+      icon: "/images/shape_if.png",
+      fields: [{ kind: "simple", key: "condition", placeholder: "e.g., a > 10", value: ifExpression, setValue: setIfExpression }],
+      onSubmit: (e) => {
+        e.preventDefault();
+        const validationError = validateConditionalExpression(ifExpression);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
+        callUpdateOrAdd(nodeToEdit?.id, "if", ifExpression);
+        closeAll();
+      },
+      onClose: () => {
+        setIfExpression("");
+        closeAll();
+      },
+    },
+    {
+      key: "while",
+      title: "While Properties",
+      description: "A WHILE Statement repeatedly executes code as long as the condition is true.",
+      icon: "/images/shape_while.png",
+      fields: [{ kind: "simple", key: "condition", placeholder: "e.g., count < 10", value: whileExpression, setValue: setWhileExpression }],
+      onSubmit: (e) => {
+        e.preventDefault();
+        const validationError = validateConditionalExpression(whileExpression);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
+        callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression);
+        closeAll();
+      },
+      onClose: () => {
+        setWhileExpression("");
+        closeAll();
+      },
+    },
+    {
+      key: "for",
+      title: "For Properties",
+      description: "A For Loop increments or decrements a variable through a range of values.",
+      icon: "/images/shape_while.png",
+      fields: [
+        {
+          kind: "group",
+          key: "group",
+          fields: [
+            { kind: "simple", key: "variable", placeholder: "e.g., a", value: forVariable, setValue: setForVariable },
+            { kind: "simple", key: "step", placeholder: "e.g., 1", value: forStep, setValue: setForStep },
+            { kind: "simple", key: "start", placeholder: "e.g., 0", value: forStart, setValue: setForStart },
+            { kind: "simple", key: "end", placeholder: "e.g., 10", value: forEnd, setValue: setForEnd },
+          ],
+        },
+      ],
+      onSubmit: (e) => {
+        e.preventDefault();
+        if (!forVariable.trim() || !forStart.trim() || !forEnd.trim() || !forStep.trim()) {
+          setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
+          return;
+        }
+        if (isNaN(Number(forStart)) || isNaN(Number(forEnd)) || isNaN(Number(forStep))) {
+          setError("ค่า Start, End, และ Step By ต้องเป็นตัวเลขเท่านั้น");
+          return;
+        }
+        callUpdateOrAdd(nodeToEdit?.id, "for", `${forVariable} = ${forStart} to ${forEnd}`);
+        closeAll();
+      },
+      onClose: () => {
+        setForVariable("");
+        setForStart("");
+        setForEnd("");
+        setForStep("");
+        closeAll();
+      },
+    },
+    {
+      key: "do",
+      title: "Do-While Properties",
+      description: "A Do-While loop executes body then checks condition.",
+      icon: "/images/shape_while.png",
+      fields: [{ kind: "simple", key: "condition", placeholder: "e.g., i < 10", value: doExpression, setValue: setDoExpression }],
+      onSubmit: (e) => {
+        e.preventDefault();
+        const validationError = validateConditionalExpression(doExpression);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
+        callUpdateOrAdd(nodeToEdit?.id, "do", doExpression);
+        closeAll();
+      },
+      onClose: () => {
+        setDoExpression("");
+        closeAll();
+      },
+    },
+  ];
 
-  const handleOutputSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const validationError = validateOutput(outputValue);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    const label = `Output ${outputValue}`;
-    callUpdateOrAdd(nodeToEdit?.id, "output", label);
-    handleCloseOutputModal();
-  };
+  /* --- Symbols --- */
+  const symbols: SymbolItem[] = [
+    { key: "input", label: "Input", imageSrc: "/images/input.png" },
+    { key: "output", label: "Output", imageSrc: "/images/output.png" },
+    { key: "declare", label: "Declare", imageSrc: "/images/declare.png" },
+    { key: "assign", label: "Assign", imageSrc: "/images/assign.png" },
+    { key: "if", label: "IF", imageSrc: "/images/if.png" },
+    { key: "while", label: "While", imageSrc: "/images/while.png" },
+    { key: "for", label: "For", imageSrc: "/images/for.png" },
+    { key: "do", label: "Do", imageSrc: "/images/do.png" },
+  ];
 
-  const handleDeclareSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (declareVariable.trim() === "") {
-      setError("กรุณาใส่ชื่อ Variable");
-      return;
-    }
-    const label = `${declareDataType} ${declareVariable}`;
-    callUpdateOrAdd(nodeToEdit?.id, "declare", label);
-    handleCloseDeclareModal();
-  };
+  const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
+    <div
+      className="flex flex-col items-center gap-1 cursor-pointer"
+      onClick={() => {
+        setError("");
+        setActiveModal(item.key);
+      }}
+    >
+      <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
+      <span className="text-sm text-gray-700">{item.label}</span>
+    </div>
+  );
 
-  const handleAssignSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (assignVariable.trim() === "" || assignExpression.trim() === "") {
-      setError("กรุณากรอกข้อมูลทั้ง Variable และ Expression");
-      return;
-    }
-    const label = `${assignVariable} = ${assignExpression}`;
-    callUpdateOrAdd(nodeToEdit?.id, "assign", label);
-    handleCloseAssignModal();
-  };
+  /* --- Render active modal if any --- */
+  if (activeModal) {
+    const cfg = modalConfigs.find((m) => m.key === activeModal);
+    console.log(cfg);
+    
+    if (!cfg) return null;
 
-  const handleIfSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const validationError = validateConditionalExpression(ifExpression);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    callUpdateOrAdd(nodeToEdit?.id, "if", ifExpression);
-    handleCloseIfModal();
-  };
-
-  const handleWhileSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const validationError = validateConditionalExpression(whileExpression);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression);
-    handleCloseWhileModal();
-  };
-
-  const handleForSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!forVariable.trim() || !forStart.trim() || !forEnd.trim() || !forStep.trim()) {
-      setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
-      return;
-    }
-    if (isNaN(Number(forStart)) || isNaN(Number(forEnd)) || isNaN(Number(forStep))) {
-      setError("ค่า Start, End, และ Step By ต้องเป็นตัวเลขเท่านั้น");
-      return;
-    }
-    const label = `${forVariable} = ${forStart} to ${forEnd}`;
-    callUpdateOrAdd(nodeToEdit?.id, "for", label);
-    handleCloseForModal();
-  };
-
-  const handleDoSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const validationError = validateConditionalExpression(doExpression);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    callUpdateOrAdd(nodeToEdit?.id, "do", doExpression);
-    handleCloseDoModal();
-  };
-
-  // DELETE helper (only when editing)
-  const handleDeleteClick = () => {
-    if (!nodeToEdit || !onDeleteNode) return;
-    const ok = window.confirm("ต้องการลบ node นี้ใช่หรือไม่? การลบจะลบ node นี้พร้อม edges ที่เกี่ยวข้องและ nodes ที่ไม่สามารถเข้าถึงได้จาก Start");
-    if (!ok) return;
-    onDeleteNode(nodeToEdit.id);
-    if (onCloseModal) onCloseModal();
-  };
-
-  // --- Rendering modals (same UI as before) ---
-  if (showInputModal) {
     return (
       <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <form onSubmit={handleInputSubmit}>
+        <form onSubmit={cfg.onSubmit}>
           <div className="flex items-center justify-between">
-            <div className="text-xl font-semibold text-gray-800 mb-4">Input Properties</div>
+            <div className="text-xl font-semibold text-gray-800 mb-4">{cfg.title}</div>
             {nodeToEdit && (
-              <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">Delete</button>
+              <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">
+                Delete
+              </button>
             )}
           </div>
-          <input
-            type="text"
-            placeholder="Variable name"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-          />
+
+          {/* render fields */}
+          {cfg.fields.map((f) => {
+            if (f.kind === "group") {
+              return (
+                <div key={f.key} className="grid grid-cols-2 gap-4 ml-6 mb-4">
+                  {f.fields.map((g) => (
+                    <input
+                      key={g.key}
+                      type="text"
+                      placeholder={g.placeholder}
+                      value={g.value}
+                      onChange={(e) => g.setValue(e.target.value)}
+                      className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"
+                    />
+                  ))}
+                </div>
+              );
+            }
+
+            // f is FieldSimple here (narrowed)
+            return (
+              <input
+                key={f.key}
+                type="text"
+                placeholder={f.placeholder}
+                value={f.value}
+                onChange={(e) => f.setValue(e.target.value)}
+                className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            );
+          })}
+
+          {/* declare modal: render data type radios */}
+          {activeModal === "declare" && (
+            <>
+              <div className="text-gray-700 mb-2 ml-4">Data Type</div>
+              <div className="grid grid-cols-2 gap-2 ml-6 mb-4">
+                {["Integer", "Real", "String", "Boolean"].map((dt) => (
+                  <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
+                    <input
+                      type="radio"
+                      name="dataType"
+                      value={dt}
+                      checked={declareDataType === dt}
+                      onChange={(e) => setDeclareDataType(e.target.value)}
+                      className="w-4 h-4"
+                    />
+                    {dt}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+
           {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+
           <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button
-              type="button"
-              onClick={() => {
-                handleCloseInputModal();
-                setInputValue("");
-              }}
-              className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-            >
+            <button type="button" onClick={() => modalConfigs.find(m => m.key === activeModal)!.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
               Cancel
             </button>
-            <button
-              type="submit"
-              className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-            >
+            <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">
               Ok
             </button>
           </div>
         </form>
+
         <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
-          <span className="text-gray-600 text-sm">A Input Statement reads a value from the keyboard and stores it in a variable.</span>
+          <img src={cfg.icon} alt="Icon" className="w-50 h-7" />
+          <span className="text-gray-600 text-sm">{cfg.description}</span>
         </div>
       </div>
     );
   }
 
-  if (showOutputModal) {
-    return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <form onSubmit={handleOutputSubmit}>
-          <div className="flex items-center justify-between">
-            <div className="text-xl font-semibold text-gray-800 mb-4">Output Properties</div>
-            {nodeToEdit && (
-              <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">Delete</button>
-            )}
-          </div>
-          <input
-            type="text"
-            placeholder='Variable or "string"'
-            value={outputValue}
-            onChange={(e) => setOutputValue(e.target.value)}
-            className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-          />
-          {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
-          <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button
-              type="button"
-              onClick={() => {
-                handleCloseOutputModal();
-                setOutputValue("");
-              }}
-              className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-            >
-              Ok
-            </button>
-          </div>
-        </form>
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/Rectangle.png" alt="Icon" className="w-50 h-7" />
-          <span className="text-gray-600 text-sm">An Output Statement displays the result of an expression to the screen.</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (showDeclareModal) {
-    return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <form onSubmit={handleDeclareSubmit}>
-          <div className="flex items-center justify-between">
-            <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">Declare Properties</div>
-            {nodeToEdit && <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">Delete</button>}
-          </div>
-          <div className="text-gray-700 mb-2 ml-4">Variable Name</div>
-          <input type="text" placeholder="e.g., a" value={declareVariable} onChange={(e) => setDeclareVariable(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"/>
-          {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
-          <div className="text-gray-700 mb-2 ml-4">Data Type</div>
-          <div className="grid grid-cols-2 gap-2 ml-6 mb-4">
-            <label className="flex items-center gap-1 text-sm text-gray-700"><input type="radio" name="dataType" value="Integer" checked={declareDataType === "Integer"} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4"/> Integer</label>
-            <label className="flex items-center gap-1 text-sm text-gray-700"><input type="radio" name="dataType" value="Real" checked={declareDataType === "Real"} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4"/> Real</label>
-            <label className="flex items-center gap-1 text-sm text-gray-700"><input type="radio" name="dataType" value="String" checked={declareDataType === "String"} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4"/> String</label>
-            <label className="flex items-center gap-1 text-sm text-gray-700"><input type="radio" name="dataType" value="Boolean" checked={declareDataType === "Boolean"} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4"/> Boolean</label>
-          </div>
-          <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button type="button" onClick={handleCloseDeclareModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">Cancel</button>
-            <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">Ok</button>
-          </div>
-        </form>
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/shape_Declare.png" alt="Icon" className="w-50 h-7" />
-          <span className="text-gray-600 text-sm">A Declare Statement is used to create variables and arrays.</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (showAssignModal) {
-    return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <form onSubmit={handleAssignSubmit}>
-          <div className="flex items-center justify-between">
-            <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">Assign Properties</div>
-            {nodeToEdit && <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">Delete</button>}
-          </div>
-          <div className="text-gray-700 mb-2 ml-4">Variable</div>
-          <input type="text" placeholder="e.g., a" value={assignVariable} onChange={(e) => setAssignVariable(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"/>
-          <div className="text-gray-700 mb-2 ml-4">Expression</div>
-          <input type="text" placeholder="e.g., 10" value={assignExpression} onChange={(e) => setAssignExpression(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"/>
-          {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
-          <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button type="button" onClick={handleCloseAssignModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">Cancel</button>
-            <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">Ok</button>
-          </div>
-        </form>
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/square.png" alt="Icon" className="w-50 h-7" />
-          <span className="text-gray-600 text-sm">An Assignment Statement stores the result of an expression in a variable.</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (showIfModal) {
-    return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <form onSubmit={handleIfSubmit}>
-          <div className="flex items-center justify-between">
-            <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">If Properties</div>
-            {nodeToEdit && <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">Delete</button>}
-          </div>
-          <div className="text-gray-700 mb-2 ml-4">Enter a conditional expression below</div>
-          <input
-            type="text"
-            placeholder="e.g., a > 10"
-            value={ifExpression}
-            onChange={(e) => setIfExpression(e.target.value)}
-            className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-          />
-          {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
-          <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button type="button" onClick={handleCloseIfModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-            >
-              Ok
-            </button>
-          </div>
-        </form>
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/shape_if.png" alt="Icon" className="w-50 h-10" />
-          <span className="text-gray-600 text-sm">An IF Statement checks a Boolean expression and executes a branch based on the result.</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (showWhileModal) {
-    return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <form onSubmit={handleWhileSubmit}>
-          <div className="flex items-center justify-between">
-            <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">While Properties</div>
-            {nodeToEdit && <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">Delete</button>}
-          </div>
-          <div className="text-gray-700 mb-2 ml-4">Enter a loop condition below</div>
-          <input
-            type="text"
-            placeholder="e.g., count < 10"
-            value={whileExpression}
-            onChange={(e) => setWhileExpression(e.target.value)}
-            className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-          />
-          {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
-          <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button type="button" onClick={handleCloseWhileModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-            >
-              Ok
-            </button>
-          </div>
-        </form>
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/shape_while.png" alt="Icon" className="w-50 h-10" />
-          <span className="text-gray-600 text-sm">A WHILE Statement repeatedly executes code as long as the condition is true.</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (showForModal) {
-    return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <form onSubmit={handleForSubmit}>
-          <div className="flex items-center justify-between">
-            <div className="text-xl font-semibold text-gray-800 mb-4 ml-2 mt-1">For Properties</div>
-            {nodeToEdit && <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">Delete</button>}
-          </div>
-          <div className="grid grid-cols-2 gap-4 ml-6 mb-4">
-            <div className="flex flex-col mr-4">
-              <label className="text-gray-700 text-sm mb-1">Variable</label>
-              <input type="text" placeholder="e.g., a" value={forVariable} onChange={(e) => setForVariable(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"/>
-            </div>
-            <div className="flex flex-col mr-3">
-              <label className="text-gray-700 text-sm mb-1">Step By</label>
-              <input type="text" placeholder="e.g., 1" value={forStep} onChange={(e) => setForStep(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"/>
-            </div>
-            <div className="flex flex-col mr-4">
-              <label className="text-gray-700 text-sm mb-1">Start</label>
-              <input type="text" placeholder="e.g., 0" value={forStart} onChange={(e) => setForStart(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"/>
-            </div>
-            <div className="flex flex-col mr-3">
-              <label className="text-gray-700 text-sm mb-1">End</label>
-              <input type="text" placeholder="e.g., 10" value={forEnd} onChange={(e) => setForEnd(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"/>
-            </div>
-          </div>
-          {error && <div className="text-red-500 text-xs ml-6 mb-2">{error}</div>}
-          <div className="text-gray-700 mb-2 ml-6 text-sm">Direction</div>
-          <label className="flex items-center gap-1 text-sm text-gray-700 ml-8">
-            <input type="radio" name="direction" value="increasing" defaultChecked className="w-4 h-4" /> Increasing
-          </label>
-          <label className="flex items-center gap-1 text-sm text-gray-700 ml-8 mt-3">
-            <input type="radio" name="direction" value="decreasing" className="w-4 h-4" /> decreasing
-          </label>
-          <div className="flex justify-end gap-3 mt-3 mr-4 text-xs">
-            <button type="button" onClick={handleCloseForModal} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-            >
-              Ok
-            </button>
-          </div>
-        </form>
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src="/images/shape_while.png" alt="Icon" className="w-50 h-10" />
-          <span className="text-gray-600 text-sm">A For Loop increments or decrements a variable through a range of values.</span>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Symbol Section (palette) ---
+  /* --- Palette --- */
   return (
     <div className="w-full bg-white p-4 flex flex-col gap-4 rounded-lg shadow-lg border-1">
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Input / Output</h3>
         <div className="flex gap-4">
-          <SymbolItemComponent item={symbols.input} />
-          <SymbolItemComponent item={symbols.output} />
+          <SymbolItemComponent item={symbols.find((s) => s.key === "input")!} />
+          <SymbolItemComponent item={symbols.find((s) => s.key === "output")!} />
         </div>
       </div>
+
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Variables</h3>
         <div className="flex gap-4">
-          <SymbolItemComponent item={symbols.declare} />
-          <SymbolItemComponent item={symbols.assign} />
+          <SymbolItemComponent item={symbols.find((s) => s.key === "declare")!} />
+          <SymbolItemComponent item={symbols.find((s) => s.key === "assign")!} />
         </div>
       </div>
+
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Control</h3>
         <div className="flex gap-4">
-          <SymbolItemComponent item={symbols.if} />
+          <SymbolItemComponent item={symbols.find((s) => s.key === "if")!} />
         </div>
       </div>
+
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Looping</h3>
         <div className="flex gap-4">
-          <SymbolItemComponent item={symbols.while} />
-          <SymbolItemComponent item={symbols.for} />
+          <SymbolItemComponent item={symbols.find((s) => s.key === "while")!} />
+          <SymbolItemComponent item={symbols.find((s) => s.key === "for")!} />
         </div>
       </div>
     </div>
