@@ -1,20 +1,22 @@
-// next-auth.d.ts
-import NextAuth from "next-auth";
+import NextAuth, { DefaultSession } from "next-auth";
+import { DefaultJWT } from "next-auth/jwt";
 
 declare module "next-auth" {
   interface Session {
     user: {
-      id: string;
-      email: string;
-      image: string;
+      userId: string; // ใช้ string ถ้าเป็น UUID
       name: string;
-    };
+      email: string;
+      image?: string | null;
+    } & DefaultSession["user"];
   }
+}
 
-  interface User {
-    id: string;
-    email: string;
-    image: string;
+declare module "next-auth/jwt" {
+  interface JWT extends DefaultJWT {
+    userId: string; // ใช้ string ถ้าเป็น UUID
     name: string;
+    email: string;
+    picture?: string | null;
   }
 }
