@@ -13,16 +13,16 @@ function Addpeople() {
     { name: "อ.ธนา", email: "tana@kmitl.ac.th" },
   ]);
   const [tas, setTAs] = useState([{ name: "TA", email: "ta01@kmitl.ac.th" }]);
-  const [classmates, setClassmates] = useState([
+  const [students, setStudents] = useState([
     { name: "นิสิต A", email: "stu01@kmitl.ac.th" },
     { name: "นิสิต B", email: "stu02@kmitl.ac.th" },
     { name: "นิสิต C", email: "stu03@kmitl.ac.th" },
   ]);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalRole, setModalRole] = useState<"Teacher" | "TA" | "Classmates">("Teacher");
+  const [modalRole, setModalRole] = useState<"Teacher" | "TA" | "Students">("Teacher");
 
-  const openModal = (role: "Teacher" | "TA" | "Classmates") => {
+  const openModal = (role: "Teacher" | "TA" | "Students") => {
     setModalRole(role);
     setModalOpen(true);
   };
@@ -30,13 +30,13 @@ function Addpeople() {
   const closeModal = () => setModalOpen(false);
 
   const getPeople = (role: string) =>
-    role === "Teacher" ? teachers : role === "TA" ? tas : classmates;
+    role === "Teacher" ? teachers : role === "TA" ? tas : students;
 
   const getSetter = (
     role: string
   ): React.Dispatch<
     React.SetStateAction<{ name: string; email: string; position?: string }[]>
-  > => (role === "Teacher" ? setTeachers : role === "TA" ? setTAs : setClassmates);
+  > => (role === "Teacher" ? setTeachers : role === "TA" ? setTAs : setStudents);
 
   return (
     <div className="pt-20 min-h-screen bg-gray-100">
@@ -50,7 +50,7 @@ function Addpeople() {
           </div>
           <PeopleList title="Teacher" people={teachers} onAdd={() => openModal("Teacher")} />
           <PeopleList title="TA" people={tas} onAdd={() => openModal("TA")} />
-          <PeopleList title="Classmates" people={classmates} onAdd={() => openModal("Classmates")} />
+          <PeopleList title="Students" people={students} onAdd={() => openModal("Students")} />
 
 
         </div>

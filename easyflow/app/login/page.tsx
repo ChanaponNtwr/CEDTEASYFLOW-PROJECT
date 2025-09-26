@@ -1,23 +1,25 @@
 "use client";
 import Navbar from "@/components/Navbar";
 import { signIn } from "next-auth/react";
+import Image from "next/image";
 
 function Login() {
   return (
     <div 
       className="min-h-screen flex flex-col"
-      style={{
-        backgroundImage: "url('https://img5.pic.in.th/file/secure-sv1/1dac286e1af55b21b.jpg')",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-      }}
     >
+              <Image
+                src="/images/Login.png"
+                alt="Background"
+                fill
+                className="object-cover"
+                priority
+              />
       <Navbar />
       <div className="flex items-center justify-center flex-1 relative">
-        <div className="absolute inset-0 bg-black/40 rounded-lg shadow-lg overflow-hidden" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 80%, 90% 100%, 10% 100%, 0 80%)' }}></div>
+        
         <div className="relative bg-white/20 backdrop-blur-md rounded-lg shadow-lg p-8 w-full max-w-md z-10">
-          <h2 className="text-3xl font-bold text-center mb-6 text-white">Login</h2>
+          <h2 className="text-3xl font-bold text-center mb-6 text-white bo">Login</h2>
           
           <div className="space-y-4">
             <button

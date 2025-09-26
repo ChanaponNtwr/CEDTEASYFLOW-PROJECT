@@ -9,7 +9,7 @@ type Person = { name: string; email: string; position?: string };
 interface AddPersonModalProps {
   visible: boolean;
   onClose: () => void;
-  role: "Teacher" | "TA" | "Classmates";
+  role: "Teacher" | "TA" | "Students";
   addedPeople: Person[];
   setAddedPeople: React.Dispatch<React.SetStateAction<Person[]>>;
 }
