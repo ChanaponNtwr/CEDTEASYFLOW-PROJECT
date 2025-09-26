@@ -261,25 +261,62 @@ router.post("/create", (req, res) => {
     const overwrite = Boolean(body.overwrite);
     const limits = body.limits && typeof body.limits === "object" ? body.limits : {};
 
+    // read userId and labId from body (required)
+    const userId = body.userId ?? body.userid ?? body.user_id;
+    const labId = body.labId ?? body.labid ?? body.lab_id;
+
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: "Missing 'userId' in request body." });
+    }
+    if (!labId) {
+      return res.status(400).json({ ok: false, error: "Missing 'labId' in request body." });
+    }
+
+    // determine flowchart id early so we can compare when checking duplicates
     const id = providedId || `flow_${Date.now()}`;
+
+    // check: prevent creating a NEW flowchart if another flowchart with same userId+labId exists
+    // (allow if the existing one is exactly the same id we're creating/overwriting)
+    const existingPair = [...savedFlowcharts.entries()].find(([fid, val]) => {
+      if (!val) return false;
+      // if the existing entry is the same id we're about to create/overwrite, ignore it
+      if (fid === id) return false;
+      return val.userId === userId && val.labId === labId;
+    });
+    if (existingPair) {
+      const [existingId] = existingPair;
+      return res.status(409).json({
+        ok: false,
+        error: `A flowchart for userId='${userId}' and labId='${labId}' already exists (flowchartId='${existingId}'). Only one flowchart per user+lab is allowed.`
+      });
+    }
+
+    // existing behavior: prevent creating if id exists and overwrite not set
     if (savedFlowcharts.has(id) && !overwrite) {
       return res.status(409).json({ ok: false, error: `Flowchart id '${id}' already exists. Provide overwrite=true to replace.` });
     }
 
-    // store minimal empty graph (hydrateFlowchart will create start/end when hydrated)
-    savedFlowcharts.set(id, { nodes: [], edges: [], limits });
+    // store minimal empty graph and also record owner metadata
+    savedFlowcharts.set(id, { nodes: [], edges: [], limits, userId, labId });
 
     // hydrate + serialize to return canonical start/end and edges
     const saved = savedFlowcharts.get(id);
     const fc = hydrateFlowchart(saved);
     const serialized = serializeFlowchart(fc);
 
-    return res.json({ ok: true, flowchartId: id, flowchart: serialized });
+    // include owner metadata in response
+    return res.json({
+      ok: true,
+      flowchartId: id,
+      member: { userId, labId },
+      flowchart: serialized
+    });
   } catch (err) {
     console.error("create error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
 
 router.post("/insert-node", (req, res) => {
   try {
@@ -440,6 +477,96 @@ router.get("/:id/edges", (req, res) => {
     return res.json({ ok: true, flowchartId: id, edges: serialized.edges });
   } catch (err) {
     console.error("get edges error:", err);
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+  }
+});
+
+// Update node data
+router.put("/:flowchartId/node/:nodeId", (req, res) => {
+  try {
+    let raw = req.body;
+    if (typeof raw === "string") {
+      try { raw = JSON.parse(raw); } catch (e) { /* keep raw */ }
+    }
+    const body = raw || {};
+
+    const { flowchartId, nodeId } = req.params;
+    if (!flowchartId) return res.status(400).json({ ok: false, error: "Missing flowchartId in path." });
+    if (!nodeId) return res.status(400).json({ ok: false, error: "Missing nodeId in path." });
+
+    const saved = savedFlowcharts.get(flowchartId);
+    if (!saved) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
+
+    // hydrate current saved flowchart
+    const fc = hydrateFlowchart(saved);
+
+    const node = fc.getNode(nodeId);
+    if (!node) return res.status(404).json({ ok: false, error: `Node '${nodeId}' not found in flowchart.` });
+
+    // type must be provided in body (for validation)
+    const rawType = body.type ?? body.typeShort ?? body.typeFull;
+    if (!rawType) {
+      return res.status(400).json({ ok: false, error: "Missing 'type' in request body. Provide node type for validation." });
+    }
+    const providedType = normalizeType(rawType);
+
+    // ensure provided type matches existing node.type
+    if (providedType !== node.type) {
+      return res.status(400).json({
+        ok: false,
+        error: `Type mismatch: provided type '${providedType}' does not match existing node type '${node.type}'.`
+      });
+    }
+
+    // data must be an object
+    const newData = body.data;
+    if (!newData || typeof newData !== "object") {
+      return res.status(400).json({ ok: false, error: "Missing or invalid 'data' object in request body." });
+    }
+
+    // validate required keys per Node.getDefaultData
+    const defaultData = Node.getDefaultData(node.type) || {};
+    const requiredKeys = Object.keys(defaultData);
+    const missingKeys = requiredKeys.filter(k => !(k in newData));
+    if (missingKeys.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: `Data missing required keys for type '${node.type}': ${missingKeys.join(", ")}`
+      });
+    }
+
+    // perform update (merges)
+    try {
+      node.updateData(newData);
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: `Failed to update node data: ${String(err.message ?? err)}` });
+    }
+
+    // serialize and save updated flowchart (keep same pattern as other endpoints)
+    const afterSerialized = serializeFlowchart(fc);
+    savedFlowcharts.set(flowchartId, afterSerialized);
+
+    // return updated node info
+    const updatedNode = {
+      id: node.id,
+      type: node.type,
+      label: node.label,
+      data: node.data,
+      position: node.position,
+      incomingEdgeIds: node.incomingEdgeIds || [],
+      outgoingEdgeIds: node.outgoingEdgeIds || [],
+      loopEdge: node.loopEdge ?? null,
+      loopExitEdge: node.loopExitEdge ?? null
+    };
+
+    return res.json({
+      ok: true,
+      message: `Node ${nodeId} updated`,
+      flowchartId,
+      node: updatedNode
+    });
+  } catch (err) {
+    console.error("update-node error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
