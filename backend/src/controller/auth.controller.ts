@@ -1,8 +1,8 @@
-import NextAuth, { type NextAuthOptions } from "next-auth";
+import { prisma } from "../lib/prisma";
+import { type JWT } from "next-auth/jwt";
+import { type NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
-import { prisma } from "@/lib/prisma";
-import { type JWT } from "next-auth/jwt";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -11,12 +11,11 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       profile(profile) {
-        // ใช้ profile.picture แทน user.image
         return {
           id: profile.sub,
           name: profile.name,
           email: profile.email,
-          image: profile.picture, // <- รับรูปจาก Google
+          image: profile.picture,
         };
       },
     }),
@@ -25,7 +24,6 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user }) {
       if (!user.email) return false;
 
-      // ตรวจสอบ user ใน database
       let dbUser = await prisma.user.findUnique({
         where: { email: user.email },
       });
@@ -54,7 +52,6 @@ export const authOptions: NextAuthOptions = {
         });
       }
 
-      // ตรวจสอบ account provider
       const existingAccount = await prisma.account.findUnique({
         where: {
           provider_providerAccountId: {
@@ -67,7 +64,7 @@ export const authOptions: NextAuthOptions = {
       if (!existingAccount) {
         await prisma.account.create({
           data: {
-            userId: dbUser.id,
+            userId: dbUser.id, // Prisma จะรับ UUID หรือ Int ตาม schema
             provider: "google",
             providerAccountId: user.id.toString(),
             type: "oauth",
@@ -99,18 +96,16 @@ export const authOptions: NextAuthOptions = {
     },
 
     async session({ session, token }) {
-      session.user = {
-        userId: token.userId as string,
-        name: token.name as string ?? "Unknown",
-        email: token.email as string ?? "",
-        image: token.picture as string | null ?? null,
-      };
-      return session;
+  session.user = {
+    ...(session.user as any), // cast เป็น any ชั่วคราวเพื่อ spread ค่าเดิม
+    userId: token.userId,      // ตอนนี้ TS รู้จัก userId
+    name: token.name ?? "Unknown",
+    email: token.email ?? "",
+    image: token.picture ?? null,
+  };
+  return session;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
 };
-
-const handler = NextAuth(authOptions);
-export { handler as GET, handler as POST };
