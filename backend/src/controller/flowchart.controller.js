@@ -1,6 +1,6 @@
 import express from "express";
 import { Flowchart, Executor, Context, Node, Edge } from "../service/flowchart/index.js";
-
+import prisma from "../lib/prisma.js";
 const router = express.Router();
 
 /* ---------------- In-memory store ----------------
@@ -70,7 +70,6 @@ export function hydrateFlowchart(payload = {}) {
   const nodesInput = normalizeList(payload.nodes);
   const edgesInput = normalizeList(payload.edges);
 
-  // add nodes (skip start/end — constructor created them)
   for (const n of nodesInput) {
     if (!n || !n.id) continue;
     if (n.id === "n_start" || n.id === "n_end") continue;
@@ -89,35 +88,27 @@ export function hydrateFlowchart(payload = {}) {
     fc.addNode(node);
   }
 
-  // add edges (preserve id when provided)
   for (const e of edgesInput) {
     if (!e || !e.source || !e.target) continue;
     if (e.id && typeof fc._addEdgeInternal === "function") {
       try {
         fc._addEdgeInternal(new Edge(e.id, e.source, e.target, e.condition ?? "auto"));
         continue;
-      } catch (err) {
-        // fallback to addEdge
-      }
+      } catch (err) {}
     }
     fc.addEdge(e.source, e.target, e.condition ?? "auto");
   }
 
-  // --- remove default start->end if start has other outgoing edges ---
   try {
     const startNode = fc.getNode("n_start");
     if (startNode) {
       const others = (startNode.outgoingEdgeIds || []).filter(id => id !== "n_start-n_end");
       if (others.length > 0 && fc.getEdge("n_start-n_end")) {
         fc.removeEdge("n_start-n_end");
-        console.log("hydrateFlowchart: removed default n_start-n_end because other start outgoing edges exist");
       }
     }
-  } catch (e) {
-    console.warn("hydrateFlowchart: failed to remove default start->end:", e);
-  }
+  } catch (e) {}
 
-  // best-effort: if nodes provided but only start->end exists, insert sequentially
   const meaningfulEdges = Object.keys(fc.edges || {}).filter(id => id !== "n_start-n_end");
   if (nodesInput.length > 0 && meaningfulEdges.length === 0) {
     let currentEdgeId;
@@ -144,7 +135,7 @@ export function hydrateFlowchart(payload = {}) {
   }
 
   if (!hasPathStartToEnd(fc)) {
-    throw new Error("Graph invalid: no path from n_start to n_end. Ensure edges connect nodes from start to end.");
+    throw new Error("Graph invalid: no path from n_start to n_end.");
   }
 
   return fc;
@@ -152,7 +143,6 @@ export function hydrateFlowchart(payload = {}) {
 
 /* ---------------- serializeFlowchart ---------------- */
 function serializeFlowchart(fc) {
-  // include all nodes (including start/end) and edges
   const nodes = Object.values(fc.nodes).map(n => ({
     id: n.id,
     type: n.type,
@@ -201,9 +191,8 @@ function computeDiffs(before = { nodes: [], edges: [] }, after = { nodes: [], ed
   const updatedNodes = [];
 
   for (const [id, node] of afterNodes.entries()) {
-    if (!beforeNodes.has(id)) {
-      addedNodes.push(node);
-    } else {
+    if (!beforeNodes.has(id)) addedNodes.push(node);
+    else {
       const bn = beforeNodes.get(id);
       if (JSON.stringify(bn) !== JSON.stringify(node)) updatedNodes.push(node);
     }
@@ -215,25 +204,19 @@ function computeDiffs(before = { nodes: [], edges: [] }, after = { nodes: [], ed
   const updatedEdges = [];
 
   for (const [id, edge] of afterEdges.entries()) {
-    if (!beforeEdges.has(id)) {
-      addedEdges.push(edge);
-    } else {
+    if (!beforeEdges.has(id)) addedEdges.push(edge);
+    else {
       const be = beforeEdges.get(id);
       if (JSON.stringify(be) !== JSON.stringify(edge)) updatedEdges.push(edge);
     }
   }
   for (const id of beforeEdges.keys()) if (!afterEdges.has(id)) removedEdgeIdsRaw.push(id);
 
-  // Filter removed edges: if an edge was removed solely because one of its nodes was removed,
-  // don't report it separately (UI already sees node removed). Keep removed edges where both
-  // endpoints still exist in 'after'.
   const removedNodeSet = new Set(removedNodeIds);
   const removedEdgeIds = removedEdgeIdsRaw.filter(eid => {
     const be = beforeEdges.get(eid);
     if (!be) return false;
-    // if either endpoint was removed, skip reporting this edge removed
     if (removedNodeSet.has(be.source) || removedNodeSet.has(be.target)) return false;
-    // otherwise include it
     return true;
   });
 
@@ -250,131 +233,131 @@ function computeDiffs(before = { nodes: [], edges: [] }, after = { nodes: [], ed
 // Response shape for these endpoints:
 // { ok: true, flowchartId, diffs: { nodes: { added:[], removed:[], updated:[] }, edges: { added:[], removed:[], updated:[] } }, message }
 
-router.post("/create", (req, res) => {
+router.post("/create", async (req, res) => {
   try {
     let raw = req.body;
-    if (typeof raw === "string") {
-      try { raw = JSON.parse(raw); } catch (e) { /* keep raw */ }
-    }
+    if (typeof raw === "string") raw = JSON.parse(raw);
     const body = raw || {};
-    const providedId = body.id;
+
+    const userId = body.userId;
+    if (!userId) return res.status(400).json({ ok: false, error: "Missing userId" });
+
+    const userExists = await prisma.user.findUnique({ where: { id: userId } });
+    if (!userExists) return res.status(404).json({ ok: false, error: `User '${userId}' not found` });
+
+    const labId = body.labId ?? "lab_mock_1";
     const overwrite = Boolean(body.overwrite);
-    const limits = body.limits && typeof body.limits === "object" ? body.limits : {};
 
-    // read userId and labId from body (required)
-    const userId = body.userId ?? body.userid ?? body.user_id;
-    const labId = body.labId ?? body.labid ?? body.lab_id;
+    // ตรวจสอบ flowchart เดิม
+    const existingFC = await prisma.flowchart.findFirst({ where: { userId, labId } });
 
-    if (!userId) {
-      return res.status(400).json({ ok: false, error: "Missing 'userId' in request body." });
-    }
-    if (!labId) {
-      return res.status(400).json({ ok: false, error: "Missing 'labId' in request body." });
-    }
-
-    // determine flowchart id early so we can compare when checking duplicates
-    const id = providedId || `flow_${Date.now()}`;
-
-    // check: prevent creating a NEW flowchart if another flowchart with same userId+labId exists
-    // (allow if the existing one is exactly the same id we're creating/overwriting)
-    const existingPair = [...savedFlowcharts.entries()].find(([fid, val]) => {
-      if (!val) return false;
-      // if the existing entry is the same id we're about to create/overwrite, ignore it
-      if (fid === id) return false;
-      return val.userId === userId && val.labId === labId;
-    });
-
-    if (existingPair) {
-      // ---> เปลี่ยนพฤติกรรมตรงนี้: แทนที่จะ return 409 ให้คืน flowchart เดิมกลับไป
-      const [existingId, existingSaved] = existingPair;
-
-      // hydrate + serialize the existing saved flowchart so response matches created format
-      try {
-        const fcExisting = hydrateFlowchart(existingSaved);
-        const serializedExisting = serializeFlowchart(fcExisting);
-        return res.json({
-          ok: true,
-          message: `Flowchart already exists for userId='${userId}' labId='${labId}'`,
-          flowchartId: existingId,
-          member: { userId, labId },
-          flowchart: serializedExisting
-        });
-      } catch (err) {
-        // if hydration fails for some reason, still return the id as fallback
-        return res.json({
-          ok: true,
-          message: `Flowchart already exists (id='${existingId}'), but failed to hydrate stored flowchart: ${String(err)}`,
-          flowchartId: existingId,
-          member: { userId, labId }
-        });
+    // สร้าง Start/End node + edge
+    const fcPayload = {
+      nodes: [
+        {
+          id: "n_start",
+          type: "ST",
+          label: "Start",
+          data: { label: "Start" },
+          position: { x: 0, y: 0 },
+          incomingEdgeIds: [],
+          outgoingEdgeIds: ["n_start-n_end"]
+        },
+        {
+          id: "n_end",
+          type: "EN",
+          label: "End",
+          data: { label: "End" },
+          position: { x: 0, y: 0 },
+          incomingEdgeIds: ["n_start-n_end"],
+          outgoingEdgeIds: []
+        }
+      ],
+      edges: [
+        { id: "n_start-n_end", source: "n_start", target: "n_end", condition: "auto" }
+      ],
+      limits: {
+        maxSteps: 100000,
+        maxTimeMs: 5000,
+        maxLoopIterationsPerNode: 20000
       }
+    };
+
+    let newFC;
+    if (existingFC && overwrite) {
+      newFC = await prisma.flowchart.update({
+        where: { flowchartId: existingFC.flowchartId },
+        data: { content: fcPayload }
+      });
+    } else if (!existingFC) {
+      newFC = await prisma.flowchart.create({
+        data: { userId, labId, content: fcPayload }
+      });
+    } else {
+      // มี flowchart อยู่แล้ว และไม่ได้ overwrite
+      const fcHydrated = hydrateFlowchart(existingFC.content);
+      const serialized = serializeFlowchart(fcHydrated);
+      savedFlowcharts.set(existingFC.flowchartId, existingFC.content);
+
+      return res.json({
+        ok: true,
+        message: "Flowchart already exists",
+        flowchartId: existingFC.flowchartId,
+        member: { userId, labId },
+        flowchart: serialized
+      });
     }
 
-    // existing behavior: prevent creating if id exists and overwrite not set
-    if (savedFlowcharts.has(id) && !overwrite) {
-      return res.status(409).json({ ok: false, error: `Flowchart id '${id}' already exists. Provide overwrite=true to replace.` });
-    }
+    // save in-memory
+    savedFlowcharts.set(newFC.flowchartId, fcPayload);
 
-    // store minimal empty graph and also record owner metadata
-    savedFlowcharts.set(id, { nodes: [], edges: [], limits, userId, labId });
+    // hydrate + serialize
+    const fcHydrated = hydrateFlowchart(fcPayload);
+    const serialized = serializeFlowchart(fcHydrated);
 
-    // hydrate + serialize to return canonical start/end and edges
-    const saved = savedFlowcharts.get(id);
-    const fc = hydrateFlowchart(saved);
-    const serialized = serializeFlowchart(fc);
-
-    // include owner metadata in response
     return res.json({
       ok: true,
-      flowchartId: id,
+      flowchartId: newFC.flowchartId,
       member: { userId, labId },
       flowchart: serialized
     });
+
   } catch (err) {
     console.error("create error:", err);
-    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+    return res.status(500).json({ ok: false, error: String(err) });
   }
 });
 
-router.post("/insert-node", (req, res) => {
+
+router.post("/insert-node", async (req, res) => {
   try {
     let raw = req.body;
-    if (typeof raw === "string") {
-      try { raw = JSON.parse(raw); } catch (e) { /* keep as-is */ }
-    }
+    if (typeof raw === "string") raw = JSON.parse(raw);
     const body = raw || {};
 
     const flowchartId = body.flowchartId;
     const edgeId = body.edgeId;
     const nodeSpec = body.node;
 
-    if (!flowchartId) {
-      return res.status(400).json({ ok: false, error: "Missing 'flowchartId' - specify which saved flowchart to modify." });
-    }
-    if (!edgeId) {
-      return res.status(400).json({ ok: false, error: "Missing 'edgeId' - specify the edge to insert at." });
-    }
-    if (!nodeSpec || typeof nodeSpec !== "object") {
-      return res.status(400).json({ ok: false, error: "Missing 'node' object in request body." });
-    }
+    if (!flowchartId) return res.status(400).json({ ok: false, error: "Missing 'flowchartId'." });
+    if (!edgeId) return res.status(400).json({ ok: false, error: "Missing 'edgeId'." });
+    if (!nodeSpec || typeof nodeSpec !== "object") return res.status(400).json({ ok: false, error: "Missing 'node' object." });
 
-    const saved = savedFlowcharts.get(flowchartId);
+    // โหลดจาก memory หรือ DB
+    let saved = savedFlowcharts.get(flowchartId);
     if (!saved) {
-      return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
+      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: Number(flowchartId) } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
+      saved = fcFromDB.content;
+      savedFlowcharts.set(flowchartId, saved);
     }
 
-    // hydrate current saved flowchart
     const fc = hydrateFlowchart(saved);
 
-    // check edge exists
-    if (!fc.getEdge(edgeId)) {
-      return res.status(400).json({ ok: false, error: `Edge '${edgeId}' not found in flowchart.` });
-    }
+    if (!fc.getEdge(edgeId)) return res.status(400).json({ ok: false, error: `Edge '${edgeId}' not found in flowchart.` });
 
-    // snapshot before
     const beforeSerialized = serializeFlowchart(fc);
 
-    // build Node instance (id optionally from client or generate)
     const typ = normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH");
     const nodeId = nodeSpec.id || fc.genId();
     const newNode = new Node(
@@ -386,31 +369,27 @@ router.post("/insert-node", (req, res) => {
       nodeSpec.incomingEdgeIds ?? [],
       nodeSpec.outgoingEdgeIds ?? []
     );
+
     if (nodeSpec.loopEdge) newNode.loopEdge = nodeSpec.loopEdge;
     if (nodeSpec.loopExitEdge) newNode.loopExitEdge = nodeSpec.loopExitEdge;
 
-    // insert
-    try {
-      fc.insertNodeAtEdge(edgeId, newNode);
-    } catch (err) {
-      console.error("insertNodeAtEdge error:", err);
-      return res.status(500).json({ ok: false, error: String(err.message ?? err) });
-    }
+    try { fc.insertNodeAtEdge(edgeId, newNode); }
+    catch (err) { return res.status(500).json({ ok: false, error: String(err.message ?? err) }); }
 
-    // snapshot after and compute diffs
     const afterSerialized = serializeFlowchart(fc);
     const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
-    // save updated serialized graph
+    // save memory
     savedFlowcharts.set(flowchartId, afterSerialized);
 
-    // Return only diffs (no full flowchart payload)
-    return res.json({
-      ok: true,
-      message: `Inserted node ${newNode.id} at edge ${edgeId}`,
-      flowchartId,
-      diffs
+    // update DB
+    await prisma.flowchart.update({
+      where: { flowchartId: Number(flowchartId) },
+      data: { content: afterSerialized }
     });
+
+    return res.json({ ok: true, message: `Inserted node ${newNode.id} at edge ${edgeId}`, flowchartId, diffs });
+
   } catch (err) {
     console.error("insert-node error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
@@ -467,35 +446,47 @@ router.delete("/:flowchartId/node/:nodeId", (req, res) => {
   }
 });
 
-router.get("/:id", (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
-    const id = req.params.id;
-    const saved = savedFlowcharts.get(id);
-    if (!saved) return res.status(404).json({ ok: false, error: "Not found" });
+    const id = Number(req.params.id);
 
-    // hydrate then serialize to include generated Start/End and canonical edges
-    const fc = hydrateFlowchart(saved);
-    const serialized = serializeFlowchart(fc);
+    // ใช้ memory serialized เลย
+    let serialized = savedFlowcharts.get(id);
+    if (serialized) {
+      return res.json({ ok: true, flowchartId: id, flowchart: serialized });
+    }
+
+    // ถ้าไม่มีใน memory โหลดจาก DB
+    const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: id } });
+    if (!fcFromDB) return res.status(404).json({ ok: false, error: "Flowchart not found" });
+
+    // save serialized ลง memory แบบตรง ๆ
+    serialized = fcFromDB.content;
+    savedFlowcharts.set(id, serialized);
 
     return res.json({ ok: true, flowchartId: id, flowchart: serialized });
   } catch (err) {
     console.error("get flowchart error:", err);
-    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+    return res.status(500).json({ ok: false, error: String(err) });
   }
 });
 
-router.get("/:id/edges", (req, res) => {
+router.get("/:id/edges", async (req, res) => {
   try {
-    const id = req.params.id;
-    const saved = savedFlowcharts.get(id);
-    if (!saved) return res.status(404).json({ ok: false, error: "Not found" });
+    const id = Number(req.params.id);
 
-    const fc = hydrateFlowchart(saved);
-    const serialized = serializeFlowchart(fc);
+    let serialized = savedFlowcharts.get(id);
+    if (!serialized) {
+      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: id } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: "Flowchart not found" });
+      serialized = fcFromDB.content;
+      savedFlowcharts.set(id, serialized);
+    }
+
     return res.json({ ok: true, flowchartId: id, edges: serialized.edges });
   } catch (err) {
     console.error("get edges error:", err);
-    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+    return res.status(500).json({ ok: false, error: String(err) });
   }
 });
 
