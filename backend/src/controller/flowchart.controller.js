@@ -283,12 +283,31 @@ router.post("/create", (req, res) => {
       if (fid === id) return false;
       return val.userId === userId && val.labId === labId;
     });
+
     if (existingPair) {
-      const [existingId] = existingPair;
-      return res.status(409).json({
-        ok: false,
-        error: `A flowchart for userId='${userId}' and labId='${labId}' already exists (flowchartId='${existingId}'). Only one flowchart per user+lab is allowed.`
-      });
+      // ---> เปลี่ยนพฤติกรรมตรงนี้: แทนที่จะ return 409 ให้คืน flowchart เดิมกลับไป
+      const [existingId, existingSaved] = existingPair;
+
+      // hydrate + serialize the existing saved flowchart so response matches created format
+      try {
+        const fcExisting = hydrateFlowchart(existingSaved);
+        const serializedExisting = serializeFlowchart(fcExisting);
+        return res.json({
+          ok: true,
+          message: `Flowchart already exists for userId='${userId}' labId='${labId}'`,
+          flowchartId: existingId,
+          member: { userId, labId },
+          flowchart: serializedExisting
+        });
+      } catch (err) {
+        // if hydration fails for some reason, still return the id as fallback
+        return res.json({
+          ok: true,
+          message: `Flowchart already exists (id='${existingId}'), but failed to hydrate stored flowchart: ${String(err)}`,
+          flowchartId: existingId,
+          member: { userId, labId }
+        });
+      }
     }
 
     // existing behavior: prevent creating if id exists and overwrite not set
@@ -316,7 +335,6 @@ router.post("/create", (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
-
 
 router.post("/insert-node", (req, res) => {
   try {
