@@ -5,7 +5,7 @@ import { FaTrash, FaEllipsisV, FaUserPlus } from "react-icons/fa";
 type Person = { name: string; email: string; position?: string };
 
 interface PeopleListProps {
-  title: "Teacher" | "TA" | "Classmates";
+  title: "Teacher" | "TA" | "Students";
   people: Person[];
   onAdd: () => void;
 }

@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  fname         String?
+  lname         String?
+  name          String?
+  email         String         @unique
+  createdAt     DateTime       @default(now())
+  image         String?
+  accounts      Account[]
+  flowcharts    Flowchart[]
+  labs          Lab[]          @relation("OwnerLabs")
+  notifications Notification[]
+  sessions      Session[]
+  submissions   Submission[]
+  userClasses   UserClass[]
+}
+
+model Account {
+  id                Int     @id @default(autoincrement())
+  userId            Int
+  type              String
+  provider          String
+  providerAccountId String
+  access_token      String?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  expires_at        Int?
+  user              User    @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           Int      @id @default(autoincrement())
+  sessionToken String   @unique
+  userId       Int
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model Package {
+  packageId      Int            @id @default(autoincrement())
+  packageName    String
+  duration       Int
+  seats          Int
+  price          Decimal
+  packageClasses PackageClass[]
+}
+
+model Class {
+  classId        Int            @id @default(autoincrement())
+  classname      String
+  createAt       DateTime       @default(now())
+  classLabs      ClassLabs[]
+  packageClasses PackageClass[]
+  userClasses    UserClass[]
+}
+
+model PackageClass {
+  packageClassId Int      @id @default(autoincrement())
+  classId        Int
+  packageId      Int
+  purchasedAt    DateTime
+  startDate      DateTime
+  endDate        DateTime
+  class          Class    @relation(fields: [classId], references: [classId])
+  package        Package  @relation(fields: [packageId], references: [packageId])
+}
+
+model Lab {
+  labId          Int          @id @default(autoincrement())
+  ownerUserId    Int
+  labname        String
+  problemSolving String
+  inSymVal       Int          @default(0)
+  outSymVal      Int          @default(0)
+  declareSymVal  Int          @default(0)
+  assignSymVal   Int          @default(0)
+  ifSymVal       Int          @default(0)
+  forSymVal      Int          @default(0)
+  whileSymVal    Int          @default(0)
+  createAt       DateTime     @default(now())
+  dueDate        DateTime?
+  status         String       @default("active")
+  classLabs      ClassLabs[]
+  flowcharts     Flowchart[]
+  owner          User         @relation("OwnerLabs", fields: [ownerUserId], references: [id])
+  submissions    Submission[]
+  testcases      Testcase[]
+}
+
+model ClassLabs {
+  classId Int
+  labId   Int
+  class   Class @relation(fields: [classId], references: [classId])
+  lab     Lab   @relation(fields: [labId], references: [labId])
+
+  @@id([classId, labId])
+}
+
+model Testcase {
+  testcaseId   Int          @id @default(autoincrement())
+  labId        Int
+  inputVal     String
+  outputVal    String
+  inHiddenVal  String?
+  outHiddenVal String?
+  score        Int
+  submissions  Submission[]
+  lab          Lab          @relation(fields: [labId], references: [labId])
+}
+
+model Submission {
+  userId     Int
+  labId      Int
+  testcaseId Int
+  status     String
+  createAt   DateTime @default(now())
+  lab        Lab      @relation(fields: [labId], references: [labId])
+  testcase   Testcase @relation(fields: [testcaseId], references: [testcaseId])
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@id([userId, labId, testcaseId])
+}
+
+model UserClass {
+  userId  Int
+  classId Int
+  roleId  Int
+  class   Class @relation(fields: [classId], references: [classId])
+  role    Role  @relation(fields: [roleId], references: [roleId])
+  user    User  @relation(fields: [userId], references: [id])
+
+  @@id([userId, classId])
+}
+
+model Role {
+  roleId      Int         @id @default(autoincrement())
+  roleName    String
+  userClasses UserClass[]
+}
+
+model Notification {
+  notiId   Int      @id @default(autoincrement())
+  userId   Int
+  message  String
+  createAt DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id])
+}
+
+model Flowchart {
+  flowchartId Int      @id @default(autoincrement())
+  userId      Int
+  labId       Int
+  createdAt   DateTime @default(now())
+  content     Json
+  lab         Lab      @relation(fields: [labId], references: [labId])
+  user        User     @relation(fields: [userId], references: [id])
+}
