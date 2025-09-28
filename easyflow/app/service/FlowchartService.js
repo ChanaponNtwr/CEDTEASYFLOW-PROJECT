@@ -13,27 +13,41 @@ export const apiPostFlowchart = async (data) => {
 };
 
 
-// Get flowchart by ID
-export const getFlowchart = async (flowchartId) => {
+export const apiGetFlowchart = async (id) => {
   try {
-    const response = await axios.get(`${BASE_URL}/${flowchartId}`);
+    const response = await axios.get(`${BASE_URL}/flowchart/${id}`);
     return response.data;
-  } catch (err) {
-    console.error("getFlowchart error:", err);
-    throw err;
+  } catch (error) {
+    console.error("Error fetching flowchart:", error);
+    throw error;
   }
 };
 
-// Get only edges
-export const getEdges = async (flowchartId) => {
-  try {
-    const response = await axios.get(`${BASE_URL}/${flowchartId}/edges`);
-    return response.data;
-  } catch (err) {
-    console.error("getEdges error:", err);
-    throw err;
-  }
-};
+
+// export const apiDeleteFlowchart = async (id) => {
+//   try {
+//     const response = await axios.delete(`${BASE_URL}/flowchart/${id}`);
+//     return response.data;
+//   } catch (error) {
+//     console.error("Error fetching flowchart:", error);
+//     throw error;
+//   }
+// };
+
+
+// // --- ลบ Node ตาม flowchartId และ nodeId ---
+// export const apiDeleteNode = async (flowchartId, nodeId) => {
+//   try {
+//     const response = await axios.delete(
+//       `${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`
+//     );
+//     return response.data;
+//   } catch (error) {
+//     console.error("Error deleting node:", error);
+//     throw error;
+//   }
+// };
+
 
 // Insert node at edge
 export const insertNode = async (flowchartId, edgeId, node) => {
@@ -49,31 +63,6 @@ export const insertNode = async (flowchartId, edgeId, node) => {
     throw err;
   }
 };
-
-// Delete node
-export const deleteNode = async (flowchartId, nodeId) => {
-  try {
-    const response = await axios.delete(`${BASE_URL}/${flowchartId}/node/${nodeId}`);
-    return response.data;
-  } catch (err) {
-    console.error("deleteNode error:", err);
-    throw err;
-  }
-};
-
-/* ---------------- Execute Flowchart ---------------- */
-
-// Execute flowchart (run, step, resume, reset)
-export const executeFlowchart = async (data) => {
-  try {
-    const response = await axios.post(`${BASE_URL}/execute`, data);
-    return response.data;
-  } catch (err) {
-    console.error("executeFlowchart error:", err);
-    throw err;
-  }
-};
-
 
 
 
