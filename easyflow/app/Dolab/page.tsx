@@ -243,7 +243,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
 
   // ---------- NEW: fetch flowchart from API on mount / flowchartId change ----------
   useEffect(() => {
-    const idToFetch = flowchartId ?? "flow_1759070166630";
+    const idToFetch = flowchartId ?? "flow_1759078668094";
     let cancelled = false;
 
     const loadFlowchart = async () => {
