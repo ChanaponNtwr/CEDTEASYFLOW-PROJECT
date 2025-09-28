@@ -1,8 +1,8 @@
 // File: app/flowchart/FlowchartEditor.tsx
 "use client";
 
-import React, { useCallback, useState } from "react";
-import { useParams } from "next/navigation"; // <-- เพิ่ม
+import React, { useCallback, useEffect, useState } from "react";
+import axios from "axios";
 import {
   ReactFlow,
   addEdge,
@@ -24,7 +24,6 @@ import TopBarControls from "./_components/TopBarControls";
 import SymbolSection from "./_components/SymbolSection";
 
 // --- Custom Nodes ---
-
 import IfNodeComponent from "./_components/IfNodeComponent";
 import BreakpointNodeComponent from "./_components/BreakpointNodeComponent";
 import WhileNodeComponent from "./_components/WhileNodeComponent";
@@ -39,21 +38,15 @@ import ForNodeComponent from "./_components/ForNodeComponent";
 // --- Utility Functions ---
 import { createArrowEdge } from "./_components/createArrowEdge";
 
-import { deleteNode as apiDeleteNode } from "@/app/service/FlowchartService";
-
-// import { apiPostInsertNode } from "../service/FlowchartService";
-
 type Props = { flowchartId: string };
 
 const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   const stepY = 150;
 
   // --- State Management ---
-  const initialNodes: Node[] = [
-    { id: "start", type: "start", data: { label: "Start" }, position: { x: 300, y: 50 }, draggable: false },
-    { id: "end", type: "end", data: { label: "End" }, position: { x: 300, y: 250 }, draggable: false },
-  ];
-  const initialEdges: Edge[] = [createArrowEdge("start", "end")];
+  // initial nodes/edges left empty — will be populated from API payload
+  const initialNodes: Node[] = [];
+  const initialEdges: Edge[] = [];
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -63,6 +56,10 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   // NEW: selected node for editing
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [nodeModalPosition, setNodeModalPosition] = useState<{ x: number; y: number } | null>(null);
+
+  // loading / error state for API
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // --- Helpers (centralized, using .map for transforms) ---
   const genId = () => crypto.randomUUID();
@@ -117,6 +114,174 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     return allNodes.filter((n) => visited.has(n.id) || n.id === "end");
   };
 
+  // ---------- NEW: backend -> frontend conversion helpers ----------
+  // Map backend node.type (like "ST","EN","AS") to our node type strings used in nodeTypes prop
+  const mapBackendTypeToNodeType = (backendType?: string, label?: string) => {
+    if (!backendType) {
+      if (label === "Start") return "start";
+      if (label === "End") return "end";
+      return "assign"; // fallback
+    }
+    switch ((backendType || "").toUpperCase()) {
+      case "ST":
+        return "start";
+      case "EN":
+        return "end";
+      case "AS":
+        return "assign";
+      case "IN":
+        return "input";
+      case "OUT":
+        return "output";
+      case "DE":
+      case "DECLARE":
+        return "declare";
+      case "IF":
+        return "if";
+      case "WHILE":
+        return "while";
+      case "FOR":
+        return "for";
+      case "BP":
+        return "breakpoint";
+      default:
+        return backendType.toLowerCase();
+    }
+  };
+
+  const convertBackendFlowchart = (payload: any) => {
+    const backendNodes: any[] = payload?.flowchart?.nodes ?? [];
+    const backendEdges: any[] = payload?.flowchart?.edges ?? [];
+
+    // 1) build idMap: map backend start/end to 'start'/'end', else keep original id
+    const idMap = new Map<string, string>();
+    backendNodes.forEach((bn) => {
+      const bid = bn.id;
+      if (!bid) return;
+      if ((bn.type && bn.type.toUpperCase() === "ST") || bn.label === "Start" || String(bid).toLowerCase().includes("start")) {
+        idMap.set(bid, "start");
+      } else if ((bn.type && bn.type.toUpperCase() === "EN") || bn.label === "End" || String(bid).toLowerCase().includes("end")) {
+        idMap.set(bid, "end");
+      } else {
+        // keep original id (safe unless it collides with 'start'/'end')
+        idMap.set(bid, bid);
+      }
+    });
+
+    // 2) build Node[] (preserve backend id in data._backendId)
+    const nodesMap = new Map<string, Node>();
+    backendNodes.forEach((bn, idx) => {
+      const mappedId = idMap.get(bn.id) ?? bn.id;
+      const isStart = mappedId === "start";
+      const isEnd = mappedId === "end";
+      const nodeType = isStart ? "start" : isEnd ? "end" : mapBackendTypeToNodeType(bn.type, bn.label);
+
+      const hasPos = bn.position && (bn.position.x !== 0 || bn.position.y !== 0);
+      const pos = hasPos ? { x: bn.position.x, y: bn.position.y } : { x: 300, y: 120 + idx * stepY };
+
+      const node: Node = {
+        id: mappedId,
+        type: nodeType,
+        data: { ...bn.data, label: bn.label ?? bn.data?.label ?? mappedId, _backendId: bn.id },
+        position: pos,
+        draggable: false,
+      } as Node;
+
+      if (!nodesMap.has(mappedId)) nodesMap.set(mappedId, node);
+    });
+
+    // 3) ensure start & end nodes exist and place middle nodes between them
+    if (!nodesMap.has("start")) {
+      nodesMap.set("start", { id: "start", type: "start", data: { label: "Start" }, position: { x: 300, y: 50 }, draggable: false });
+    }
+
+    // gather middle nodes (exclude start/end)
+    const middleNodesFromMap: Node[] = Array.from(nodesMap.values()).filter((n) => n.id !== "start" && n.id !== "end");
+
+    // lay out middle nodes sequentially under start
+    let nextY = 50 + stepY; // start at below Start
+    const newMiddleNodes = middleNodesFromMap.map((n) => {
+      const x = n.position?.x ?? 300;
+      const positioned = { ...n, position: { x, y: nextY } };
+      nextY += stepY;
+      return positioned;
+    });
+
+    // compute end Y after middle nodes
+    const endY = Math.max(250, nextY);
+    const endNodeFinal = { id: "end", type: "end", data: { label: "End" }, position: { x: 300, y: endY }, draggable: false } as Node;
+
+    // start node final (keep possible existing x/y if meaningful)
+    const startNode = nodesMap.get("start")!;
+    const startNodeFinal = { ...startNode, position: startNode.position ?? { x: 300, y: 50 } };
+
+    const finalNodesArray: Node[] = [startNodeFinal, ...newMiddleNodes, endNodeFinal];
+
+    // 4) convert edges, mapping source/target via idMap (or keep if not mapped)
+    const convertedEdges: Edge[] = backendEdges.map((be) => {
+      const src = idMap.get(be.source) ?? be.source;
+      const tgt = idMap.get(be.target) ?? be.target;
+      const id = be.id ?? `${src}-${tgt}`;
+      return {
+        id,
+        source: src,
+        target: tgt,
+        label: be.condition && be.condition !== "auto" ? be.condition : undefined,
+        animated: true,
+        markerEnd: { type: MarkerType.ArrowClosed },
+        type: "smoothstep",
+      } as Edge;
+    });
+
+    // if backend has no edges, keep default start->end
+    if (convertedEdges.length === 0) {
+      convertedEdges.push(createArrowEdge("start", "end"));
+    }
+
+    return { nodes: finalNodesArray, edges: convertedEdges };
+  };
+
+  // ---------- NEW: fetch flowchart from API on mount / flowchartId change ----------
+  useEffect(() => {
+    const idToFetch = flowchartId ?? "flow_1759078668094";
+    let cancelled = false;
+
+    const loadFlowchart = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const BASE_URL = "http://localhost:8080";
+        const resp = await axios.get(`${BASE_URL}/flowchart/${idToFetch}`);
+        const payload = resp.data;
+
+        if (cancelled) return;
+
+        if (!payload || !payload.flowchart) {
+          setError("No flowchart returned from API");
+          setLoading(false);
+          return;
+        }
+
+        const converted = convertBackendFlowchart(payload);
+        setNodes(converted.nodes);
+        setEdges(converted.edges);
+        console.log("Loaded flowchart payload:", payload);
+      } catch (err: any) {
+        console.error("Error loading flowchart:", err);
+        setError(err?.message ?? "Error fetching flowchart");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadFlowchart();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowchartId]);
+
   // --- Core callbacks ---
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -163,74 +328,42 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     console.log(nodes);
   };
 
-const deleteNodeAndReconnect = async (nodeId: string) => {
-  console.log("🗑️ deleteNodeAndReconnect called for nodeId:", nodeId);
+  // unified delete + reconnect using helpers + .map
+  const deleteNodeAndReconnect = (nodeId: string) => {
+    console.log("🗑️ deleteNodeAndReconnect called for nodeId:", nodeId);
+    setNodes((nds) => {
+      const nodeToDelete = nds.find((n) => n.id === nodeId);
+      if (!nodeToDelete) return nds;
 
-  if (!flowchartId) {
-    console.warn("deleteNodeAndReconnect: missing flowchartId");
-    return;
-  }
+      setEdges((eds) => {
+        const newEdgesFromReconnect = reconnectAroundDeleted(eds, nodeId);
+        let remaining = removeEdgesTouching(eds, nodeId);
+        remaining = [...remaining, ...newEdgesFromReconnect];
 
-  // เก็บ snapshot ปัจจุบัน (เพื่อให้การคำนวณไม่พึ่งพา state ที่อาจ stale หลัง await)
-  const snapshotNodes = [...nodes];
-  const snapshotEdges = [...edges];
+        // prune nodes unreachable from start
+        setNodes((currentNodes) => {
+          const kept = pruneUnreachableNodes(currentNodes, remaining);
+          const keptIds = new Set(kept.map((n) => n.id));
+          setEdges((esAfterPrune) => esAfterPrune.filter((e) => keptIds.has(e.source) && keptIds.has(e.target)));
 
-  // ถ้า node ไม่มีใน snapshot ให้หยุดเลย
-  const exists = snapshotNodes.some((n) => n.id === nodeId);
-  if (!exists) {
-    console.warn("deleteNodeAndReconnect: node not found in current nodes:", nodeId);
-    return;
-  }
+          const endNode = kept.find((n) => n.id === "end");
+          if (endNode) {
+            const combined = kept.filter((n) => n.id !== "end");
+            const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(combined) } };
+            return [...combined, updatedEnd];
+          }
+          return kept;
+        });
 
-  try {
-    console.log("-> calling backend DELETE for node:", nodeId, "flowchartId:", flowchartId);
-    const backendResponse = await apiDeleteNode(flowchartId, nodeId);
-    console.log("✅ backend delete response:", backendResponse);
+        return remaining;
+      });
 
-    // --- คำนวณ edges ใหม่ (ลบ edges ที่ชี้ถึง node และเชื่อมรอบๆ node ที่ถูกลบ) ---
-    const remainingEdges = removeEdgesTouching(snapshotEdges, nodeId);
-    const reconnectEdges = reconnectAroundDeleted(snapshotEdges, nodeId);
-    // รวมกัน (หากมี duplicate อาจต้องกรอง แต่เริ่มต้นเอาแบบรวม)
-    const combinedEdges = [...remainingEdges, ...reconnectEdges];
+      return nds.filter((n) => n.id !== nodeId);
+    });
 
-    // --- คำนวณ nodes ใหม่ หลังลบ node ---
-    const nodesAfterRemoval = snapshotNodes.filter((n) => n.id !== nodeId);
-
-    // --- prune unreachable nodes ตามตรรกะเดิม (เริ่มจาก start) ---
-    const pruned = pruneUnreachableNodes(nodesAfterRemoval, combinedEdges);
-
-    // --- อัปเดตตำแหน่ง end node (ถ้ามี) ---
-    const keptWithoutEnd = pruned.filter((n) => n.id !== "end");
-    const endNode = pruned.find((n) => n.id === "end");
-    let finalNodes: Node[] = pruned;
-    if (endNode) {
-      const updatedEnd = { ...endNode, position: { x: endNode.position.x, y: computeEndY(keptWithoutEnd) } };
-      // replace end in finalNodes
-      finalNodes = [...keptWithoutEnd, updatedEnd];
-    }
-
-    // --- กรอง edges ให้เหลือเฉพาะที่ source/target ยังอยู่จริงใน finalNodes ---
-    const keptIds = new Set(finalNodes.map((n) => n.id));
-    const finalEdges = combinedEdges.filter((e) => keptIds.has(e.source) && keptIds.has(e.target));
-
-    // --- ทำ single state updates (ไม่ nested) ---
-    setNodes(finalNodes);
-    setEdges(finalEdges);
-
-    // ปิด modal / selection ถ้ามี
     setSelectedNode(null);
     setNodeModalPosition(null);
-    setSelectedEdge(null);
-    setModalPosition(null);
-
-    console.log("✅ frontend updated: node removed and states set");
-  } catch (err) {
-    console.error("❌ Failed to delete node:", err);
-    // แสดง error ให้ user รู้
-    alert("ลบ node ไม่สำเร็จ — ตรวจสอบ console/terminal ของ backend ด้วย");
-  }
-};
-
+  };
 
   // --- Adding nodes: unified helpers to reduce duplication ---
   const createNode = (typeKey: string, label: string, x = 300, y = 0) => ({ id: genId(), type: typeKey, data: { label }, position: { x, y }, draggable: false } as Node);
@@ -414,7 +547,7 @@ const deleteNodeAndReconnect = async (nodeId: string) => {
     const updatedEnd = { ...(nodes.find((n) => n.id === "end")!), position: { x: 300, y: computeEndY(combined) + (["while", "for"].includes(type) ? stepY : 0) } };
 
     setNodes([...combined, updatedEnd]);
-    setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge.id), ...newEdgesToAdd]);
+    setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge?.id), ...newEdgesToAdd]);
     console.log(nodes);
     closeModal();
   };
@@ -537,6 +670,8 @@ const deleteNodeAndReconnect = async (nodeId: string) => {
       <Navbar />
       <div className="mt-20 ml-4">
         <TopBarControls />
+        {loading && <div className="mt-2 text-sm text-gray-600">Loading flowchart...</div>}
+        {error && <div className="mt-2 text-sm text-red-600">Error: {error}</div>}
       </div>
 
       <div className="flex-1 relative">
@@ -544,11 +679,11 @@ const deleteNodeAndReconnect = async (nodeId: string) => {
           nodes={nodes}
           edges={edges}
           onNodesChange={(changes) => {
-            console.log("⚙️ Node Changes:", changes); // 3. Log การเปลี่ยนแปลงภายใน
+            console.log("⚙️ Node Changes:", changes);
             onNodesChange(changes);
           }}
           onEdgesChange={(changes) => {
-            console.log("⚙️ Edge Changes:", changes); // 3. Log การเปลี่ยนแปลงภายใน
+            console.log("⚙️ Edge Changes:", changes);
             onEdgesChange(changes);
           }}
           onConnect={onConnect}

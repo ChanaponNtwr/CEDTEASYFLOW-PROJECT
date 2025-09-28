@@ -17,7 +17,6 @@ interface TestCase {
 }
 
 function Studentlab() {
-  // State for test cases
   const router = useRouter();
 
   const [testCases, setTestCases] = useState<TestCase[]>([
@@ -26,7 +25,6 @@ function Studentlab() {
     { no: 3, input: "i = 2", output: "false", score: 2 },
   ]);
 
-  // Calculate and set status for each test case
   const computeStatus = (score: number): "Pass" | "Pending" | "Fail" => {
     if (score >= 5) return "Pass";
     if (score >= 3) return "Pending";
@@ -38,7 +36,6 @@ function Studentlab() {
     status: computeStatus(tc.score),
   }));
 
-  // State for symbol counts
   const [symbols, setSymbols] = useState({
     input: 0,
     output: 0,
@@ -51,21 +48,70 @@ function Studentlab() {
     setSymbols(newSymbols);
   };
 
-    const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault(); // ป้องกัน default behavior
+  // --- main handler: ส่ง payload ที่ต้องการไป backend ---
+  const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+
+    // TODO: เปลี่ยนค่า userId / labId ให้เป็นของจริง (จาก user session, props, หรือ router query)
+    const userId = "user_124";
+    const labId = "lab_456";
+
+    // สร้าง payload ที่จะส่ง (ใส่ฟิลด์อื่นๆ ได้ตามต้องการ)
+    const payload = {
+      userId,
+      labId,
+      name: "Example Flowchart",
+      // แนบข้อมูลจำลองเพิ่มเติม เช่น symbol counts และ testcases (ถ้าต้องการ)
+      symbols,
+      testCases: enhancedTestCases,
+    };
+
     try {
-      const data = {
-        name: "Example Flowchart",
-      };
-      const result = await apiPostFlowchart(data);
-      // console.log("API response:", result.flowchartId);
-      console.log("API response:", result);
+      // ---- Option A: ถ้า apiPostFlowchart รองรับการรับ payload แบบนี้ ----
+      if (typeof apiPostFlowchart === "function") {
+        try {
+          const result = await apiPostFlowchart(payload);
+          console.log("apiPostFlowchart response:", result);
+          // นำทางไปยังหน้า Dolab หรือใช้ flowchartId ถ้ามี
+          // if (result?.flowchartId) router.push(`/Dolab/${result.flowchartId}`);
+          router.push(`/Dolab`);
+          return;
+        } catch (err) {
+          console.warn("apiPostFlowchart failed, falling back to fetch:", err);
+          // ถ้า fail จะไปทำ fetch ด้านล่างเป็น fallback
+        }
+      }
 
+      // ---- Option B: ส่งตรงด้วย fetch ไปที่ endpoint (ตัวอย่าง) ----
+      const res = await fetch("http://localhost:8080/flowchart/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: payload.userId,
+          labId: payload.labId,
+          // ถ้าต้องการส่งน้อย ๆ ก็ส่งแค่ userId + labId ตามที่ระบุ
+        }),
+      });
 
-      // router.push(`/Dolab/${result.flowchartId}`);
-      router.push(`/Dolab`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status} - ${text}`);
+      }
+
+      const result = await res.json();
+      console.log("fetch response:", result);
+
+      // ถ้า backend ส่งกลับ flowchartId ให้ใช้พาไปหน้าเฉพาะ
+      if (result?.flowchartId) {
+        router.push(`/Dolab/${result.flowchartId}`);
+      } else {
+        router.push(`/Dolab`);
+      }
     } catch (error) {
       console.error("Failed to post flowchart:", error);
+      // แสดง toast / UI แจ้งข้อผิดพลาดได้ที่นี่
     }
   };
 
@@ -78,22 +124,22 @@ function Studentlab() {
           <div className="flex-1 flex justify-center p-6 md:p-10">
             <div className="w-full max-w-5xl bg-white p-6 rounded-lg shadow-md">
               {/* Buttons */}
-                <div className="flex justify-end mb-2">
-              <button
-                    className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-blue-700 w-24"
-                    onClick={handleClick}
-                  >
-                    Do lab
-                  </button>
-                </div>
-                <div className="flex justify-end mb-2">
-                  <Link
-                    href="/"
-                    className="bg-[#133384] text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-[#1945B7] w-24"
-                  >
-                    Submit
-                  </Link>
-                </div>
+              <div className="flex justify-end mb-2">
+                <button
+                  className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-blue-700 w-24"
+                  onClick={handleClick}
+                >
+                  Do lab
+                </button>
+              </div>
+              <div className="flex justify-end mb-2">
+                <Link
+                  href="/"
+                  className="bg-[#133384] text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-[#1945B7] w-24"
+                >
+                  Submit
+                </Link>
+              </div>
 
               {/* Title */}
               <div className="flex justify-between items-center border-b-2 border-gray-300 pb-1 mb-6">
@@ -144,11 +190,9 @@ function Studentlab() {
                             <td className="px-4 py-2">{tc.no}</td>
                             <td className="px-4 py-2">{tc.input}</td>
                             <td className="px-4 py-2">{tc.output}</td>
-                            {/* Score + Status */}
                             <td className="px-4 py-2 flex items-center gap-2">
                               <span>{tc.score}</span>
                             </td>
-                            {/* Separate Status column */}
                             <td className="px-4 py-2">
                               <span className={`px-2 py-1 rounded-full font-medium ${statusClasses}`}>
                                 {tc.status}
@@ -170,7 +214,7 @@ function Studentlab() {
             </div>
           </div>
         </div>
-      </div>
+      </div> 
     </div>
   );
 }
