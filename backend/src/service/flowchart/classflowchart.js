@@ -221,11 +221,34 @@ class Flowchart {
     // เพิ่ม node ใหม่ก่อน
     this.addNode(newNode);
 
-    // repoint existing edge to point to newNode (source -> newNode)
-    this.updateEdgeTarget(edgeId, newNode.id, originalCondition || edgeLabel);
+    // --- ปรับปรุง: ถ้าเป็น canonical start->end ("n_start-n_end")
+    // สร้าง edge ใหม่จาก source -> newNode แทนการ repoint id เดิม
+    if (edge.id === "n_start-n_end") {
+      // create a new edge from source -> newNode (will get a new id unless preserved by addEdge special-case)
+      const created = this.addEdge(source, newNode.id, originalCondition || edgeLabel);
+      // ensure incoming/outgoing arrays updated (addEdge already does but be safe)
+      newNode.incomingEdgeIds = newNode.incomingEdgeIds || [];
+      if (!newNode.incomingEdgeIds.includes(created.id)) newNode.incomingEdgeIds.push(created.id);
+
+      // remove the old canonical edge only if it still exists and points to oldTarget
+      // (we want to avoid leaving a dangling canonical edge pointing to the old target)
+      if (this.edges[edgeId]) {
+        // if canonical still exists and there are other outgoing edges from source,
+        // remove canonical to avoid duplicate start->end confusion
+        const srcNode = this.getNode(source);
+        const others = (srcNode && srcNode.outgoingEdgeIds) ? srcNode.outgoingEdgeIds.filter(x => x !== edgeId) : [];
+        // if there is another outgoing besides canonical, remove canonical
+        // otherwise keep (preserve compatibility) but make sure it points to newNode (handled above)
+        if (others.length > 0) {
+          this.removeEdge(edgeId);
+        }
+      }
+    } else {
+      // repoint existing edge to point to newNode (source -> newNode)
+      this.updateEdgeTarget(edgeId, newNode.id, originalCondition || edgeLabel);
+    }
 
     if (newNode.type === "IF") {
-      // แทรก IF จะมี Breakpoint node เพิ่มเข้ามาด้วย
       const bpNodeId = `bp_${newNode.id}`;
       const bpNode = new Node(bpNodeId, "BP", "Breakpoint", { note: "BP for IF" });
       this.addNode(bpNode);
@@ -241,14 +264,14 @@ class Flowchart {
       newNode.loopExitEdge = newNode.loopExitEdge || null;
 
     } else if (newNode.type === "WH" || newNode.type === "FR") {
-      // แทรก While / For → มี loopEdge + exitEdge
       const loopCond = (newNode.type === "WH") ? "true" : "next";
       const exitCond = (newNode.type === "WH") ? "false" : "done";
 
       const loopE = this.addEdge(newNode.id, newNode.id, loopCond);
       const exitE = this.addEdge(newNode.id, oldTarget, exitCond);
-      newNode.loopEdge = loopE.id;
-      newNode.loopExitEdge = exitE.id;
+      // addEdge returns an Edge object — be defensive if it returned null
+      newNode.loopEdge = loopE && loopE.id ? loopE.id : loopE;
+      newNode.loopExitEdge = exitE && exitE.id ? exitE.id : exitE;
 
     } else {
       // Node ปกติ: สร้าง newNode -> oldTarget (auto)
