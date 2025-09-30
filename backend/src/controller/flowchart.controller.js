@@ -240,75 +240,54 @@ router.post("/create", async (req, res) => {
     const body = raw || {};
 
     const userId = body.userId;
-    if (!userId) return res.status(400).json({ ok: false, error: "Missing userId" });
-
-    const userExists = await prisma.user.findUnique({ where: { id: userId } });
-    if (!userExists) return res.status(404).json({ ok: false, error: `User '${userId}' not found` });
-
-    const labId = body.labId ?? "lab_mock_1";
+    const labId = body.labId;
     const overwrite = Boolean(body.overwrite);
 
-    // ตรวจสอบ flowchart เดิม
+    if (!userId) return res.status(400).json({ ok: false, error: "Missing 'userId'." });
+    if (!labId) return res.status(400).json({ ok: false, error: "Missing 'labId'." });
+
+    // check DB
     const existingFC = await prisma.flowchart.findFirst({ where: { userId, labId } });
 
-    // สร้าง Start/End node + edge
-    const fcPayload = {
-      nodes: [
-        {
-          id: "n_start",
-          type: "ST",
-          label: "Start",
-          data: { label: "Start" },
-          position: { x: 0, y: 0 },
-          incomingEdgeIds: [],
-          outgoingEdgeIds: ["n_start-n_end"]
-        },
-        {
-          id: "n_end",
-          type: "EN",
-          label: "End",
-          data: { label: "End" },
-          position: { x: 0, y: 0 },
-          incomingEdgeIds: ["n_start-n_end"],
-          outgoingEdgeIds: []
-        }
-      ],
-      edges: [
-        { id: "n_start-n_end", source: "n_start", target: "n_end", condition: "auto" }
-      ],
-      limits: {
-        maxSteps: 100000,
-        maxTimeMs: 5000,
-        maxLoopIterationsPerNode: 20000
-      }
-    };
-
-    let newFC;
-    if (existingFC && overwrite) {
-      newFC = await prisma.flowchart.update({
-        where: { flowchartId: existingFC.flowchartId },
-        data: { content: fcPayload }
-      });
-    } else if (!existingFC) {
-      newFC = await prisma.flowchart.create({
-        data: { userId, labId, content: fcPayload }
-      });
-    } else {
-      // มี flowchart อยู่แล้ว และไม่ได้ overwrite
+    // ถ้ามีอยู่แล้ว + ไม่ overwrite → return existing (pattern insert-node)
+    if (existingFC && !overwrite) {
       const fcHydrated = hydrateFlowchart(existingFC.content);
       const serialized = serializeFlowchart(fcHydrated);
       savedFlowcharts.set(existingFC.flowchartId, existingFC.content);
 
       return res.json({
         ok: true,
-        message: "Flowchart already exists",
+        message: `Flowchart already exists for userId='${userId}' labId='${labId}'`,
         flowchartId: existingFC.flowchartId,
         member: { userId, labId },
         flowchart: serialized
       });
     }
 
-    // save in-memory
+    // สร้าง payload start/end
+    const fcPayload = {
+      nodes: [
+        { id: "n_start", type: "ST", label: "Start", data: { label: "Start" }, position: { x: 0, y: 0 }, incomingEdgeIds: [], outgoingEdgeIds: ["n_start-n_end"] },
+        { id: "n_end", type: "EN", label: "End", data: { label: "End" }, position: { x: 0, y: 0 }, incomingEdgeIds: ["n_start-n_end"], outgoingEdgeIds: [] }
+      ],
+      edges: [{ id: "n_start-n_end", source: "n_start", target: "n_end", condition: "auto" }],
+      limits: { maxSteps: 100000, maxTimeMs: 5000, maxLoopIterationsPerNode: 20000 }
+    };
+
+    // save DB
+    let newFC;
+    if (existingFC && overwrite) {
+      newFC = await prisma.flowchart.update({
+        where: { flowchartId: existingFC.flowchartId },
+        data: { content: fcPayload }
+      });
+    } else {
+      newFC = await prisma.flowchart.create({
+        data: { userId, labId, content: fcPayload }
+      });
+    }
+
+    // save memory
     savedFlowcharts.set(newFC.flowchartId, fcPayload);
 
     // hydrate + serialize
@@ -317,6 +296,7 @@ router.post("/create", async (req, res) => {
 
     return res.json({
       ok: true,
+      message: `Flowchart created for userId='${userId}' labId='${labId}'`,
       flowchartId: newFC.flowchartId,
       member: { userId, labId },
       flowchart: serialized
@@ -324,7 +304,7 @@ router.post("/create", async (req, res) => {
 
   } catch (err) {
     console.error("create error:", err);
-    return res.status(500).json({ ok: false, error: String(err) });
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
@@ -487,43 +467,26 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
-    const { id } = req.params;
+    const flowchartId = Number(req.params.id);
+    if (!flowchartId) return res.status(400).json({ ok: false, error: "Missing 'id' in path." });
 
-    // ดึงจาก DB
-    const flowchart = await prisma.flowchart.findUnique({
-      where: { id: parseInt(id) },
-      include: {
-        nodes: true,
-        edges: true,
-      },
-    });
-
-    if (!flowchart) {
-      return res.status(404).json({ ok: false, error: "Flowchart not found in DB" });
+    // load memory → fallback DB
+    let saved = savedFlowcharts.get(flowchartId);
+    if (!saved) {
+      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: `Flowchart '${flowchartId}' not found.` });
+      saved = fcFromDB.content;
+      savedFlowcharts.set(flowchartId, saved);
     }
 
-    // แปลงให้อยู่ใน format เดิม
-    const serialized = {
-      id: flowchart.id.toString(),
-      nodes: flowchart.nodes.map((n) => ({
-        id: n.id,
-        type: n.type,
-        data: n.data,
-      })),
-      edges: flowchart.edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        condition: e.condition,
-      })),
-    };
+    // hydrate + serialize
+    const fc = hydrateFlowchart(saved);
+    const serialized = serializeFlowchart(fc);
 
-    // เก็บไว้ใน memory
-    savedFlowcharts.set(flowchart.id.toString(), serialized);
+    return res.json({ ok: true, flowchartId, flowchart: serialized });
 
-    return res.json({ ok: true, flowchart: serialized });
   } catch (err) {
-    console.error("GET /:id error:", err);
+    console.error("get flowchart error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
