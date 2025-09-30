@@ -396,102 +396,155 @@ router.post("/insert-node", async (req, res) => {
   }
 });
 
-router.delete("/:flowchartId/node/:nodeId", (req, res) => {
+router.delete("/:id/node/:nodeId", async (req, res) => {
   try {
-    const { flowchartId, nodeId } = req.params;
-    const saved = savedFlowcharts.get(flowchartId);
-    if (!saved) return res.status(404).json({ ok: false, error: "Flowchart not found" });
+    const id = Number(req.params.id);
+    const nodeId = req.params.nodeId;
 
-    if (!nodeId) return res.status(400).json({ ok: false, error: "Missing nodeId" });
-    if (nodeId === "n_start" || nodeId === "n_end") {
-      return res.status(400).json({ ok: false, error: "Cannot delete start or end node" });
+    let saved = savedFlowcharts.get(id);
+
+    if (!saved) {
+      // โหลดจาก DB
+      const fcFromDB = await prisma.flowchart.findUnique({
+        where: { flowchartId: id },
+      });
+      if (!fcFromDB)
+        return res.status(404).json({ ok: false, error: "Flowchart not found" });
+      saved = fcFromDB.content;
+      savedFlowcharts.set(id, saved);
     }
 
-    // hydrate, perform removal using Flowchart logic (preserves wiring)
-    const fc = hydrateFlowchart(saved);
-    const targetNode = fc.getNode(nodeId);
-    if (!targetNode) return res.status(404).json({ ok: false, error: `Node ${nodeId} not found` });
+    // node ที่จะลบ
+    const nodeToDelete = saved.nodes.find((n) => n.id === nodeId);
+    if (!nodeToDelete) {
+      return res.status(404).json({ ok: false, error: "Node not found" });
+    }
 
-    // snapshot before
-    const beforeSerialized = serializeFlowchart(fc);
+    // หา incoming / outgoing edges
+    const incomingEdges = saved.edges.filter((e) => e.target === nodeId);
+    const outgoingEdges = saved.edges.filter((e) => e.source === nodeId);
 
-    try {
-      if (typeof fc.removeNode === "function") {
-        fc.removeNode(nodeId);
-      } else {
-        // fallback: remove node and its edges
-        for (const eid of Object.keys(fc.edges)) {
-          const e = fc.getEdge(eid);
-          if (e && (e.source === nodeId || e.target === nodeId)) fc.removeEdge(eid);
-        }
-        delete fc.nodes[nodeId];
+    // เตรียม edge ใหม่สำหรับ reconnect
+    const newEdges = [];
+    for (const inEdge of incomingEdges) {
+      for (const outEdge of outgoingEdges) {
+        newEdges.push({
+          id: `${inEdge.source}-${outEdge.target}`,
+          source: inEdge.source,
+          target: outEdge.target,
+          condition: "auto",
+        });
       }
-    } catch (err) {
-      console.error("removeNode error:", err);
-      return res.status(500).json({ ok: false, error: String(err.message ?? err) });
     }
 
-    // snapshot after and compute diffs
-    const afterSerialized = serializeFlowchart(fc);
-    const diffs = computeDiffs(beforeSerialized, afterSerialized);
+    // ลบ node
+    saved.nodes = saved.nodes.filter((n) => n.id !== nodeId);
 
-    // save updated serialized graph
-    savedFlowcharts.set(flowchartId, afterSerialized);
+    // ลบ edge ที่เกี่ยวข้อง
+    const removedEdgeIds = [...incomingEdges, ...outgoingEdges].map((e) => e.id);
+    saved.edges = saved.edges.filter((e) => !removedEdgeIds.includes(e.id));
 
-    // Return only diffs (no full flowchart payload)
-    return res.json({ ok: true, message: `Node ${nodeId} deleted`, flowchartId, diffs });
+    // เพิ่ม edge ที่ reconnect
+    for (const edge of newEdges) {
+      saved.edges.push(edge);
+    }
+
+    // อัปเดต incoming/outgoing ของ node อื่น ๆ
+    for (const node of saved.nodes) {
+      node.incomingEdgeIds = (node.incomingEdgeIds || []).filter(
+        (eid) => !removedEdgeIds.includes(eid)
+      );
+      node.outgoingEdgeIds = (node.outgoingEdgeIds || []).filter(
+        (eid) => !removedEdgeIds.includes(eid)
+      );
+    }
+    for (const edge of newEdges) {
+      const src = saved.nodes.find((n) => n.id === edge.source);
+      const tgt = saved.nodes.find((n) => n.id === edge.target);
+      if (src) src.outgoingEdgeIds.push(edge.id);
+      if (tgt) tgt.incomingEdgeIds.push(edge.id);
+    }
+
+    // อัปเดต DB
+    await prisma.flowchart.update({
+      where: { flowchartId: id },
+      data: { content: saved },
+    });
+
+    savedFlowcharts.set(id, saved);
+
+    return res.json({
+      ok: true,
+      flowchartId: id,
+      nodeDeleted: nodeId,
+      edgesRewired: newEdges.map((e) => e.id),
+    });
   } catch (err) {
     console.error("delete node error:", err);
-    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+    return res.status(500).json({ ok: false, error: String(err) });
   }
 });
 
 router.get("/:id", async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const { id } = req.params;
 
-    // ใช้ memory serialized เลย
-    let serialized = savedFlowcharts.get(id);
-    if (serialized) {
-      return res.json({ ok: true, flowchartId: id, flowchart: serialized });
+    // ดึงจาก DB
+    const flowchart = await prisma.flowchart.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        nodes: true,
+        edges: true,
+      },
+    });
+
+    if (!flowchart) {
+      return res.status(404).json({ ok: false, error: "Flowchart not found in DB" });
     }
 
-    // ถ้าไม่มีใน memory โหลดจาก DB
-    const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: id } });
-    if (!fcFromDB) return res.status(404).json({ ok: false, error: "Flowchart not found" });
+    // แปลงให้อยู่ใน format เดิม
+    const serialized = {
+      id: flowchart.id.toString(),
+      nodes: flowchart.nodes.map((n) => ({
+        id: n.id,
+        type: n.type,
+        data: n.data,
+      })),
+      edges: flowchart.edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        condition: e.condition,
+      })),
+    };
 
-    // save serialized ลง memory แบบตรง ๆ
-    serialized = fcFromDB.content;
-    savedFlowcharts.set(id, serialized);
+    // เก็บไว้ใน memory
+    savedFlowcharts.set(flowchart.id.toString(), serialized);
 
-    return res.json({ ok: true, flowchartId: id, flowchart: serialized });
+    return res.json({ ok: true, flowchart: serialized });
   } catch (err) {
-    console.error("get flowchart error:", err);
-    return res.status(500).json({ ok: false, error: String(err) });
+    console.error("GET /:id error:", err);
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
 router.get("/:id/edges", async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const { id } = req.params;
 
-    let serialized = savedFlowcharts.get(id);
-    if (!serialized) {
-      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: id } });
-      if (!fcFromDB) return res.status(404).json({ ok: false, error: "Flowchart not found" });
-      serialized = fcFromDB.content;
-      savedFlowcharts.set(id, serialized);
-    }
+    const edges = await prisma.edge.findMany({
+      where: { flowchartId: parseInt(id) },
+    });
 
-    return res.json({ ok: true, flowchartId: id, edges: serialized.edges });
+    return res.json({ ok: true, edges });
   } catch (err) {
-    console.error("get edges error:", err);
-    return res.status(500).json({ ok: false, error: String(err) });
+    console.error("GET /:id/edges error:", err);
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
 // Update node data
-router.put("/:flowchartId/node/:nodeId", (req, res) => {
+router.put("/:flowchartId/node/:nodeId", async (req, res) => {
   try {
     let raw = req.body;
     if (typeof raw === "string") {
@@ -499,27 +552,34 @@ router.put("/:flowchartId/node/:nodeId", (req, res) => {
     }
     const body = raw || {};
 
-    const { flowchartId, nodeId } = req.params;
+    const flowchartId = Number(req.params.flowchartId);
+    const nodeId = req.params.nodeId;
+
     if (!flowchartId) return res.status(400).json({ ok: false, error: "Missing flowchartId in path." });
     if (!nodeId) return res.status(400).json({ ok: false, error: "Missing nodeId in path." });
 
-    const saved = savedFlowcharts.get(flowchartId);
-    if (!saved) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
+    // โหลดจาก memory หรือ DB
+    let saved = savedFlowcharts.get(flowchartId);
+    if (!saved) {
+      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
+      saved = fcFromDB.content;
+      savedFlowcharts.set(flowchartId, saved);
+    }
 
-    // hydrate current saved flowchart
+    // hydrate
     const fc = hydrateFlowchart(saved);
+    const beforeSerialized = serializeFlowchart(fc);
 
     const node = fc.getNode(nodeId);
     if (!node) return res.status(404).json({ ok: false, error: `Node '${nodeId}' not found in flowchart.` });
 
-    // type must be provided in body (for validation)
+    // type check
     const rawType = body.type ?? body.typeShort ?? body.typeFull;
     if (!rawType) {
       return res.status(400).json({ ok: false, error: "Missing 'type' in request body. Provide node type for validation." });
     }
     const providedType = normalizeType(rawType);
-
-    // ensure provided type matches existing node.type
     if (providedType !== node.type) {
       return res.status(400).json({
         ok: false,
@@ -527,13 +587,12 @@ router.put("/:flowchartId/node/:nodeId", (req, res) => {
       });
     }
 
-    // data must be an object
+    // data validate
     const newData = body.data;
     if (!newData || typeof newData !== "object") {
       return res.status(400).json({ ok: false, error: "Missing or invalid 'data' object in request body." });
     }
 
-    // validate required keys per Node.getDefaultData
     const defaultData = Node.getDefaultData(node.type) || {};
     const requiredKeys = Object.keys(defaultData);
     const missingKeys = requiredKeys.filter(k => !(k in newData));
@@ -544,35 +603,28 @@ router.put("/:flowchartId/node/:nodeId", (req, res) => {
       });
     }
 
-    // perform update (merges)
+    // update
     try {
       node.updateData(newData);
     } catch (err) {
       return res.status(400).json({ ok: false, error: `Failed to update node data: ${String(err.message ?? err)}` });
     }
 
-    // serialize and save updated flowchart (keep same pattern as other endpoints)
     const afterSerialized = serializeFlowchart(fc);
-    savedFlowcharts.set(flowchartId, afterSerialized);
+    const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
-    // return updated node info
-    const updatedNode = {
-      id: node.id,
-      type: node.type,
-      label: node.label,
-      data: node.data,
-      position: node.position,
-      incomingEdgeIds: node.incomingEdgeIds || [],
-      outgoingEdgeIds: node.outgoingEdgeIds || [],
-      loopEdge: node.loopEdge ?? null,
-      loopExitEdge: node.loopExitEdge ?? null
-    };
+    // save memory + db
+    savedFlowcharts.set(flowchartId, afterSerialized);
+    await prisma.flowchart.update({
+      where: { flowchartId },
+      data: { content: afterSerialized }
+    });
 
     return res.json({
       ok: true,
       message: `Node ${nodeId} updated`,
       flowchartId,
-      node: updatedNode
+      diffs
     });
   } catch (err) {
     console.error("update-node error:", err);
