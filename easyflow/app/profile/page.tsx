@@ -34,12 +34,11 @@ export default function Profile() {
   console.log("Session:", session, "Status:", status);
   const user = session.user;
   const defaultImage = "https://img5.pic.in.th/file/secure-sv1/Ellipse-270.png";
-  const userImage =
-  user?.image
-    ? user.image.includes("googleusercontent.com") && user.image.includes("=s")
-      ? user.image.replace(/=s\d+-c/, "=s400-c")
-      : user.image
-    : defaultImage;
+  const userImage = user?.image
+  ? user.image.includes("googleusercontent.com") && user.image.includes("=s")
+    ? user.image.replace(/=s\d+-c/, "=s400-c")
+    : user.image
+  : defaultImage;
 
   return (
     <div className="pt-20 min-h-screen bg-gray-100">
@@ -52,12 +51,14 @@ export default function Profile() {
               <div className="flex flex-col items-center h-full">
                 <img
                   src={userImage}
-                  alt={user?.name ?? "Profile"}
+                 alt={user ? `${user.name}` : "Profile"}
                   className="w-52 h-52 rounded-full border-4 border-orange-500 object-cover shadow-md"
                 />
-                <h2 className="mt-4 text-3xl font-semibold text-gray-900">{user?.name ?? "No Name"}</h2>
+                <h2 className="mt-4 text-3xl font-semibold text-gray-900">
+                  {user.name}
+                </h2>
                 <div className="mt-2 w-64 h-px bg-gray-300" />
-                <p className="text-gray-600 text-lg">Email: {session?.user?.email}</p>
+                <p className="text-gray-600 text-lg">Email: {user.email}</p>
                 <p className="mt-4 text-2xl text-gray-800">รายละเอียด แพ็คเก็ต</p>
               </div>
             </div>
