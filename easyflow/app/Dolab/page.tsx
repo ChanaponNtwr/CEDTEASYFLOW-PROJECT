@@ -135,10 +135,12 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             className="absolute"
             onClick={(e) => e.stopPropagation()}
           >
-            <SymbolSection 
+            <SymbolSection
+              flowchartId="flow_1759305346859"
               edge={selectedEdge} 
               onAddNode={(type, label) => addNode(type, label)} 
               onDeleteNode={deleteNodeAndReconnect} 
+              
             />
           </div>
         </div>
@@ -153,6 +155,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
+              flowchartId="flow_1759305346859"
               nodeToEdit={selectedNode}
               onUpdateNode={handleUpdateNode}
               onDeleteNode={deleteNodeAndReconnect}

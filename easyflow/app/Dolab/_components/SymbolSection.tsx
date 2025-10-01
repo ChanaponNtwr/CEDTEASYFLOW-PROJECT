@@ -3,7 +3,7 @@
 import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
-import { log } from "console";
+import { insertNode } from "@/app/service/FlowchartService"; // import ฟังก์ชัน API ของคุณ
 
 interface SymbolItem {
   key: string;
@@ -12,6 +12,8 @@ interface SymbolItem {
 }
 
 interface SymbolSectionProps {
+  flowchartId: string; // เพิ่ม prop สำหรับ flowchartId
+  edgeId?: string;     // edgeId เริ่มต้น (optional)
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
   nodeToEdit?: Node | null;
@@ -24,32 +26,26 @@ interface SymbolSectionProps {
 const validateConditionalExpression = (exp: string): string => {
   const trimmedExp = exp.trim();
   if (trimmedExp === "") return "กรุณาใส่เงื่อนไข (Condition)";
-
   const operators = /==|!=|>=|<=|>|</;
   if (!operators.test(trimmedExp)) return "เงื่อนไขไม่ถูกต้อง (ต้องมีตัวเปรียบเทียบ เช่น >, <, ==)";
-
   const parts = trimmedExp.split(operators);
   if (parts.length < 2 || parts.some((p) => p.trim() === "")) {
     return "เงื่อนไขไม่สมบูรณ์ (เช่น 'a >' หรือ '< 10')";
   }
-
   return "";
 };
 
 const validateOutput = (output: string): string => {
   const trimmedOutput = output.trim();
   if (trimmedOutput === "") return "กรุณาใส่ค่าที่ต้องการแสดงผล";
-
   const startsWithQuote = trimmedOutput.startsWith('"');
   const endsWithQuote = trimmedOutput.endsWith('"');
-
   if (startsWithQuote && !endsWithQuote) return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " ปิดท้าย)';
   if (!startsWithQuote && endsWithQuote) return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " เปิด)';
-
   return "";
 };
 
-/* --- Field types (ชัดเจน) --- */
+/* --- Field types --- */
 type FieldSimple = {
   kind: "simple";
   key: string;
@@ -61,7 +57,7 @@ type FieldSimple = {
 type FieldGroup = {
   kind: "group";
   key: string;
-  fields: FieldSimple[]; // reuse FieldSimple inside group
+  fields: FieldSimple[];
 };
 
 type FieldDef = FieldSimple | FieldGroup;
@@ -78,6 +74,8 @@ type ModalConfig = {
 
 /* --- Component --- */
 const SymbolSection: React.FC<SymbolSectionProps> = ({
+  flowchartId,
+  edgeId,
   onAddNode,
   nodeToEdit,
   onUpdateNode,
@@ -102,13 +100,26 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [forStep, setForStep] = useState("");
   const [doExpression, setDoExpression] = useState("");
 
-  const callUpdateOrAdd = (nodeId: string | undefined, type: string, label: string) => {
-    if (nodeToEdit && onUpdateNode && nodeId) {
-      onUpdateNode(nodeId, type, label);
-    } else {
-      onAddNode?.(type, label, nodeToEdit?.id);
+  // ฟังก์ชันเรียก API insertNode
+  const callUpdateOrAdd = async (nodeId: string | undefined, type: string, label: string, data?: any) => {
+    try {
+      let newEdgeId = edgeId || "n_start-n_end"; // fallback
+      const payloadNode = { type, label, data };
+
+      const res = await insertNode(flowchartId, newEdgeId, payloadNode);
+      console.log("Insert node response:", res);
+
+      if (nodeToEdit && onUpdateNode && nodeId) {
+        onUpdateNode(nodeId, type, label);
+      } else {
+        onAddNode?.(type, label, nodeToEdit?.id);
+      }
+    } catch (err) {
+      console.error("Error inserting node:", err);
+      setError("เกิดข้อผิดพลาดในการเพิ่ม Node");
     }
-    // reset
+
+    // reset fields
     setInputValue("");
     setOutputValue("");
     setIfExpression("");
@@ -134,7 +145,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     onCloseModal?.();
   };
 
-  // prefill on edit
   useEffect(() => {
     if (!nodeToEdit) return;
     const t = nodeToEdit.type;
@@ -156,13 +166,13 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     setDoExpression("");
     setError("");
 
-    if (t === "input") {
+    if (t === "IN" || t === "input") {
       setInputValue(label.replace(/^Input\s+/i, ""));
       setActiveModal("input");
-    } else if (t === "output") {
+    } else if (t === "OU" || t === "output") {
       setOutputValue(label.replace(/^Output\s+/i, ""));
       setActiveModal("output");
-    } else if (t === "declare") {
+    } else if (t === "DC" || t === "declare") {
       const parts = label.split(/\s+/);
       if (parts.length >= 2) {
         setDeclareDataType(parts[0]);
@@ -171,7 +181,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         setDeclareVariable(label);
       }
       setActiveModal("declare");
-    } else if (t === "assign") {
+    } else if (t === "AS" || t === "assign") {
       const m = label.split("=");
       if (m.length >= 2) {
         setAssignVariable(m[0].trim());
@@ -180,13 +190,13 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         setAssignVariable(label);
       }
       setActiveModal("assign");
-    } else if (t === "ifNode" || t === "if") {
+    } else if (t === "IF") {
       setIfExpression(label);
       setActiveModal("if");
-    } else if (t === "whileNode" || t === "while") {
+    } else if (t === "WH") {
       setWhileExpression(label);
       setActiveModal("while");
-    } else if (t === "forNode" || t === "for") {
+    } else if (t === "FR") {
       const forMatch = label.match(/^(.+?)\s*=\s*(.+?)\s+to\s+(.+)$/i);
       if (forMatch) {
         setForVariable(forMatch[1].trim());
@@ -196,7 +206,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         setForVariable(label);
       }
       setActiveModal("for");
-    } else if (t === "do") {
+    } else if (t === "DO") {
       setDoExpression(label);
       setActiveModal("do");
     }
@@ -208,78 +218,63 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     onCloseModal?.();
   };
 
-  // modal configs (ใช้ FieldSimple / FieldGroup)
+  /* --- Modal Configs (เพิ่ม data object สำหรับ backend) --- */
   const modalConfigs: ModalConfig[] = [
     {
       key: "input",
       title: "Input Properties",
-      description: "A Input Statement reads a value from the keyboard and stores it in a variable.",
+      description: "Read a value from keyboard into a variable.",
       icon: "/images/Rectangle.png",
-      fields: [
-        { kind: "simple", key: "variable", placeholder: "Variable name", value: inputValue, setValue: setInputValue },
-      ],
+      fields: [{ kind: "simple", key: "variable", placeholder: "Variable name", value: inputValue, setValue: setInputValue }],
       onSubmit: (e) => {
         e.preventDefault();
-        if (inputValue.trim() === "") {
-          setError("กรุณาใส่ชื่อ Variable");
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "input", `Input ${inputValue}`);
+        if (!inputValue.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "IN", `Input ${inputValue}`, {
+          variable: inputValue,
+          prompt: `Enter your ${inputValue}:`,
+          varType: "string"
+        });
         closeAll();
       },
-      onClose: () => {
-        setInputValue("");
-        closeAll();
-      },
+      onClose: () => { setInputValue(""); closeAll(); },
     },
     {
       key: "output",
       title: "Output Properties",
-      description: "An Output Statement displays the result of an expression to the screen.",
+      description: "Displays result of expression.",
       icon: "/images/Rectangle.png",
-      fields: [
-        { kind: "simple", key: "value", placeholder: 'Variable or "string"', value: outputValue, setValue: setOutputValue },
-      ],
+      fields: [{ kind: "simple", key: "value", placeholder: 'Variable or "string"', value: outputValue, setValue: setOutputValue }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateOutput(outputValue);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "output", `Output ${outputValue}`);
+        if (validationError) { setError(validationError); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "OU", `Output ${outputValue}`, { message: outputValue });
         closeAll();
       },
-      onClose: () => {
-        setOutputValue("");
-        closeAll();
-      },
+      onClose: () => { setOutputValue(""); closeAll(); },
     },
     {
       key: "declare",
       title: "Declare Properties",
-      description: "A Declare Statement is used to create variables and arrays.",
+      description: "Create variables or arrays.",
       icon: "/images/shape_Declare.png",
       fields: [{ kind: "simple", key: "variable", placeholder: "e.g., a", value: declareVariable, setValue: setDeclareVariable }],
       onSubmit: (e) => {
         e.preventDefault();
-        if (declareVariable.trim() === "") {
-          setError("กรุณาใส่ชื่อ Variable");
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "declare", `${declareDataType} ${declareVariable}`);
+        if (!declareVariable.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "DC", `${declareDataType} ${declareVariable}`, {
+          name: declareVariable,
+          value: 0,
+          varType: declareDataType.toLowerCase()
+        });
         closeAll();
       },
-      onClose: () => {
-        setDeclareVariable("");
-        setDeclareDataType("Integer");
-        closeAll();
-      },
+      onClose: () => { setDeclareVariable(""); setDeclareDataType("Integer"); closeAll(); },
     },
     {
       key: "assign",
       title: "Assign Properties",
-      description: "An Assignment Statement stores the result of an expression in a variable.",
+      description: "Assignment Statement",
       icon: "/images/square.png",
       fields: [
         { kind: "simple", key: "variable", placeholder: "e.g., a", value: assignVariable, setValue: setAssignVariable },
@@ -287,119 +282,94 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       ],
       onSubmit: (e) => {
         e.preventDefault();
-        if (assignVariable.trim() === "" || assignExpression.trim() === "") {
-          setError("กรุณากรอกข้อมูลทั้ง Variable และ Expression");
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "assign", `${assignVariable} = ${assignExpression}`);
+        if (!assignVariable.trim() || !assignExpression.trim()) { setError("กรุณากรอกข้อมูล Variable และ Expression"); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "AS", `${assignVariable} = ${assignExpression}`, {
+          variable: assignVariable,
+          value: assignExpression
+        });
         closeAll();
       },
-      onClose: () => {
-        setAssignVariable("");
-        setAssignExpression("");
-        closeAll();
-      },
+      onClose: () => { setAssignVariable(""); setAssignExpression(""); closeAll(); },
     },
     {
       key: "if",
       title: "If Properties",
-      description: "An IF Statement checks a Boolean expression and executes a branch based on the result.",
+      description: "IF Statement checks condition.",
       icon: "/images/shape_if.png",
       fields: [{ kind: "simple", key: "condition", placeholder: "e.g., a > 10", value: ifExpression, setValue: setIfExpression }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(ifExpression);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "if", ifExpression);
+        if (validationError) { setError(validationError); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "IF", ifExpression, { condition: ifExpression });
         closeAll();
       },
-      onClose: () => {
-        setIfExpression("");
-        closeAll();
-      },
+      onClose: () => { setIfExpression(""); closeAll(); },
     },
     {
       key: "while",
       title: "While Properties",
-      description: "A WHILE Statement repeatedly executes code as long as the condition is true.",
+      description: "WHILE Statement executes while condition true.",
       icon: "/images/shape_while.png",
       fields: [{ kind: "simple", key: "condition", placeholder: "e.g., count < 10", value: whileExpression, setValue: setWhileExpression }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(whileExpression);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression);
+        if (validationError) { setError(validationError); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "WH", whileExpression, {
+          condition: whileExpression,
+          varName: "x",
+          increment: "x = x + 1"
+        });
         closeAll();
       },
-      onClose: () => {
-        setWhileExpression("");
-        closeAll();
-      },
+      onClose: () => { setWhileExpression(""); closeAll(); },
     },
     {
       key: "for",
       title: "For Properties",
-      description: "A For Loop increments or decrements a variable through a range of values.",
+      description: "For Loop Statement",
       icon: "/images/shape_while.png",
       fields: [
-        {
-          kind: "group",
-          key: "group",
-          fields: [
-            { kind: "simple", key: "variable", placeholder: "e.g., a", value: forVariable, setValue: setForVariable },
-            { kind: "simple", key: "step", placeholder: "e.g., 1", value: forStep, setValue: setForStep },
-            { kind: "simple", key: "start", placeholder: "e.g., 0", value: forStart, setValue: setForStart },
-            { kind: "simple", key: "end", placeholder: "e.g., 10", value: forEnd, setValue: setForEnd },
-          ],
-        },
+        { kind: "group", key: "group", fields: [
+          { kind: "simple", key: "variable", placeholder: "e.g., i", value: forVariable, setValue: setForVariable },
+          { kind: "simple", key: "step", placeholder: "e.g., 1", value: forStep, setValue: setForStep },
+          { kind: "simple", key: "start", placeholder: "e.g., 0", value: forStart, setValue: setForStart },
+          { kind: "simple", key: "end", placeholder: "e.g., 10", value: forEnd, setValue: setForEnd },
+        ]},
       ],
       onSubmit: (e) => {
         e.preventDefault();
         if (!forVariable.trim() || !forStart.trim() || !forEnd.trim() || !forStep.trim()) {
-          setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
-          return;
+          setError("กรุณากรอกข้อมูลให้ครบทุกช่อง"); return;
         }
         if (isNaN(Number(forStart)) || isNaN(Number(forEnd)) || isNaN(Number(forStep))) {
-          setError("ค่า Start, End, และ Step By ต้องเป็นตัวเลขเท่านั้น");
-          return;
+          setError("ค่า Start, End, Step ต้องเป็นตัวเลข"); return;
         }
-        callUpdateOrAdd(nodeToEdit?.id, "for", `${forVariable} = ${forStart} to ${forEnd}`);
+        callUpdateOrAdd(nodeToEdit?.id, "FR", `${forVariable} = ${forStart} to ${forEnd}`, {
+          init: `int ${forVariable} = ${forStart}`,
+          condition: `${forVariable} < ${forEnd}`,
+          increment: `${forVariable} += ${forStep}`,
+          varName: forVariable
+        });
         closeAll();
       },
-      onClose: () => {
-        setForVariable("");
-        setForStart("");
-        setForEnd("");
-        setForStep("");
-        closeAll();
-      },
+      onClose: () => { setForVariable(""); setForStart(""); setForEnd(""); setForStep(""); closeAll(); },
     },
     {
       key: "do",
       title: "Do-While Properties",
-      description: "A Do-While loop executes body then checks condition.",
+      description: "Do-While Statement",
       icon: "/images/shape_while.png",
       fields: [{ kind: "simple", key: "condition", placeholder: "e.g., i < 10", value: doExpression, setValue: setDoExpression }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(doExpression);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "do", doExpression);
+        if (validationError) { setError(validationError); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "DO", doExpression, { condition: doExpression });
         closeAll();
       },
-      onClose: () => {
-        setDoExpression("");
-        closeAll();
-      },
+      onClose: () => { setDoExpression(""); closeAll(); },
     },
   ];
 
@@ -416,23 +386,15 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   ];
 
   const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
-    <div
-      className="flex flex-col items-center gap-1 cursor-pointer"
-      onClick={() => {
-        setError("");
-        setActiveModal(item.key);
-      }}
-    >
+    <div className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => { setError(""); setActiveModal(item.key); }}>
       <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
       <span className="text-sm text-gray-700">{item.label}</span>
     </div>
   );
 
-  /* --- Render active modal if any --- */
+  /* --- Render modal --- */
   if (activeModal) {
     const cfg = modalConfigs.find((m) => m.key === activeModal);
-    console.log(cfg);
-    
     if (!cfg) return null;
 
     return (
@@ -447,53 +409,26 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             )}
           </div>
 
-          {/* render fields */}
           {cfg.fields.map((f) => {
             if (f.kind === "group") {
               return (
                 <div key={f.key} className="grid grid-cols-2 gap-4 ml-6 mb-4">
                   {f.fields.map((g) => (
-                    <input
-                      key={g.key}
-                      type="text"
-                      placeholder={g.placeholder}
-                      value={g.value}
-                      onChange={(e) => g.setValue(e.target.value)}
-                      className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"
-                    />
+                    <input key={g.key} type="text" placeholder={g.placeholder} value={g.value} onChange={(e) => g.setValue(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm" />
                   ))}
                 </div>
               );
             }
-
-            // f is FieldSimple here (narrowed)
-            return (
-              <input
-                key={f.key}
-                type="text"
-                placeholder={f.placeholder}
-                value={f.value}
-                onChange={(e) => f.setValue(e.target.value)}
-                className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            );
+            return <input key={f.key} type="text" placeholder={f.placeholder} value={f.value} onChange={(e) => f.setValue(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />;
           })}
 
-          {/* declare modal: render data type radios */}
           {activeModal === "declare" && (
             <>
               <div className="text-gray-700 mb-2 ml-4">Data Type</div>
               <div className="grid grid-cols-2 gap-2 ml-6 mb-4">
                 {["Integer", "Real", "String", "Boolean"].map((dt) => (
                   <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
-                    <input
-                      type="radio"
-                      name="dataType"
-                      value={dt}
-                      checked={declareDataType === dt}
-                      onChange={(e) => setDeclareDataType(e.target.value)}
-                      className="w-4 h-4"
-                    />
+                    <input type="radio" name="dataType" value={dt} checked={declareDataType === dt} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4" />
                     {dt}
                   </label>
                 ))}
@@ -504,12 +439,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
 
           <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button type="button" onClick={() => modalConfigs.find(m => m.key === activeModal)!.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
-              Cancel
-            </button>
-            <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">
-              Ok
-            </button>
+            <button type="button" onClick={() => cfg.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">Cancel</button>
+            <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">Ok</button>
           </div>
         </form>
 
@@ -531,7 +462,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           <SymbolItemComponent item={symbols.find((s) => s.key === "output")!} />
         </div>
       </div>
-
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Variables</h3>
         <div className="flex gap-4">
@@ -539,14 +469,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           <SymbolItemComponent item={symbols.find((s) => s.key === "assign")!} />
         </div>
       </div>
-
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Control</h3>
         <div className="flex gap-4">
           <SymbolItemComponent item={symbols.find((s) => s.key === "if")!} />
         </div>
       </div>
-
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Looping</h3>
         <div className="flex gap-4">

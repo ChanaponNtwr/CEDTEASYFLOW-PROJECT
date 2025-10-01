@@ -24,6 +24,22 @@ export const apiGetFlowchart = async (id) => {
 };
 
 
+export const insertNode = async (flowchartId, edgeId, node) => {
+  try {
+    const response = await axios.post(`${BASE_URL}/insert-node`, {
+      flowchartId,
+      edgeId,
+      node,
+    });
+    return response.data;
+  } catch (err) {
+    console.error("insertNode error:", err);
+    throw err;
+  }
+};
+
+
+
 // export const apiDeleteFlowchart = async (id) => {
 //   try {
 //     const response = await axios.delete(`${BASE_URL}/flowchart/${id}`);
@@ -47,22 +63,3 @@ export const apiGetFlowchart = async (id) => {
 //     throw error;
 //   }
 // };
-
-
-// Insert node at edge
-export const insertNode = async (flowchartId, edgeId, node) => {
-  try {
-    const response = await axios.post(`${BASE_URL}/insert-node`, {
-      flowchartId,
-      edgeId,
-      node,
-    });
-    return response.data;
-  } catch (err) {
-    console.error("insertNode error:", err);
-    throw err;
-  }
-};
-
-
-

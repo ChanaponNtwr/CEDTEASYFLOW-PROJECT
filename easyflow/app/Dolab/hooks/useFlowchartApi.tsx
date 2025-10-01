@@ -18,7 +18,7 @@ export const useFlowchartApi = ({ flowchartId, setNodes, setEdges }: UseFlowchar
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const idToFetch = flowchartId ?? "flow_1759237866124";
+    const idToFetch = flowchartId ?? "flow_1759305346859";
     let cancelled = false;
 
     const loadFlowchart = async () => {
