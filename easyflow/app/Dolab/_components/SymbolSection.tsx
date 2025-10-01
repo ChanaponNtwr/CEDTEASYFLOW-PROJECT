@@ -1,9 +1,10 @@
+// File: app/flowchart/_components/SymbolSection.tsx
 "use client";
 
 import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
-import { insertNode } from "@/app/service/FlowchartService"; // import ฟังก์ชัน API ของคุณ
+import { insertNode } from "@/app/service/FlowchartService";
 
 interface SymbolItem {
   key: string;
@@ -12,17 +13,18 @@ interface SymbolItem {
 }
 
 interface SymbolSectionProps {
-  flowchartId: string; // เพิ่ม prop สำหรับ flowchartId
-  edgeId?: string;     // edgeId เริ่มต้น (optional)
+  flowchartId: string;
+  selectedEdgeId?: string;
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
   nodeToEdit?: Node | null;
   onUpdateNode?: (id: string, type: string, label: string) => void;
   onDeleteNode?: (id: string) => void;
   onCloseModal?: () => void;
+  onRefresh?: () => Promise<void>;
 }
 
-/* --- Validation Helpers --- */
+/* --- helpers --- */
 const validateConditionalExpression = (exp: string): string => {
   const trimmedExp = exp.trim();
   if (trimmedExp === "") return "กรุณาใส่เงื่อนไข (Condition)";
@@ -43,6 +45,40 @@ const validateOutput = (output: string): string => {
   if (startsWithQuote && !endsWithQuote) return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " ปิดท้าย)';
   if (!startsWithQuote && endsWithQuote) return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " เปิด)';
   return "";
+};
+
+// Mapping UI types -> Backend codes
+const toBackendType = (uiType: string) => {
+  const t = uiType?.toLowerCase();
+  switch (t) {
+    case "input":
+    case "in":
+      return "IN";
+    case "output":
+    case "out":
+      return "OU";
+    case "declare":
+    case "dc":
+      return "DC";
+    case "assign":
+    case "as":
+      return "AS";
+    case "if":
+      return "IF";
+    case "while":
+    case "wh":
+      return "WH";
+    case "for":
+    case "fr":
+      return "FR";
+    case "do":
+      return "DO";
+    case "breakpoint":
+    case "bp":
+      return "BP";
+    default:
+      return uiType.toUpperCase();
+  }
 };
 
 /* --- Field types --- */
@@ -75,15 +111,18 @@ type ModalConfig = {
 /* --- Component --- */
 const SymbolSection: React.FC<SymbolSectionProps> = ({
   flowchartId,
-  edgeId,
+  selectedEdgeId,
+  edge,
   onAddNode,
   nodeToEdit,
   onUpdateNode,
   onDeleteNode,
   onCloseModal,
+  onRefresh,
 }) => {
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   // fields
   const [inputValue, setInputValue] = useState("");
@@ -100,39 +139,66 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [forStep, setForStep] = useState("");
   const [doExpression, setDoExpression] = useState("");
 
-  // ฟังก์ชันเรียก API insertNode
-  const callUpdateOrAdd = async (nodeId: string | undefined, type: string, label: string, data?: any) => {
-    try {
-      let newEdgeId = edgeId || "n_start-n_end"; // fallback
-      const payloadNode = { type, label, data };
-
-      const res = await insertNode(flowchartId, newEdgeId, payloadNode);
-      console.log("Insert node response:", res);
-
-      if (nodeToEdit && onUpdateNode && nodeId) {
-        onUpdateNode(nodeId, type, label);
-      } else {
-        onAddNode?.(type, label, nodeToEdit?.id);
-      }
-    } catch (err) {
-      console.error("Error inserting node:", err);
-      setError("เกิดข้อผิดพลาดในการเพิ่ม Node");
+  // central insert function that maps to backend codes and calls API
+  const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
+    setError("");
+    if (!flowchartId) {
+      setError("Missing flowchartId");
+      return;
+    }
+    if (!selectedEdgeId) {
+      setError("กรุณาเลือกเส้น (edge) ที่ต้องการแทรก node ก่อน");
+      return;
     }
 
-    // reset fields
-    setInputValue("");
-    setOutputValue("");
-    setIfExpression("");
-    setWhileExpression("");
-    setDeclareVariable("");
-    setDeclareDataType("Integer");
-    setAssignVariable("");
-    setAssignExpression("");
-    setForVariable("");
-    setForStart("");
-    setForEnd("");
-    setForStep("");
-    setDoExpression("");
+    const backendType = toBackendType(uiType);
+    const payloadNode = { type: backendType, label, data };
+
+    try {
+      setLoading(true);
+      console.info("Call insertNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
+      const res = await insertNode(flowchartId, selectedEdgeId, payloadNode);
+      console.info("insertNode result:", res);
+
+      // Prefer refresh from backend
+      if (onRefresh) {
+        try {
+          await onRefresh();
+        } catch (refreshErr) {
+          console.warn("refresh failed:", refreshErr);
+        }
+      } else {
+        // fallback local update (less preferred)
+        onAddNode?.(backendType, label, nodeToEdit?.id);
+      }
+
+      if (nodeToEdit && onUpdateNode && nodeId) {
+        onUpdateNode(nodeId, backendType, label);
+      }
+
+      onCloseModal?.();
+    } catch (err) {
+      console.error("Error inserting node:", err);
+      // Try to provide a helpful message
+      const msg = (err as any)?.response?.data?.message ?? (err as any)?.message ?? "เกิดข้อผิดพลาดในการเรียก insert-node";
+      setError(String(msg));
+    } finally {
+      setLoading(false);
+      // reset fields
+      setInputValue("");
+      setOutputValue("");
+      setIfExpression("");
+      setWhileExpression("");
+      setDeclareVariable("");
+      setDeclareDataType("Integer");
+      setAssignVariable("");
+      setAssignExpression("");
+      setForVariable("");
+      setForStart("");
+      setForEnd("");
+      setForStep("");
+      setDoExpression("");
+    }
   };
 
   const handleDeleteClick = () => {
@@ -147,7 +213,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
   useEffect(() => {
     if (!nodeToEdit) return;
-    const t = nodeToEdit.type;
+    const t = String(nodeToEdit.type ?? "").toUpperCase();
     const label = String(nodeToEdit.data?.label ?? "");
 
     // reset fields
@@ -166,13 +232,13 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     setDoExpression("");
     setError("");
 
-    if (t === "IN" || t === "input") {
+    if (t === "IN") {
       setInputValue(label.replace(/^Input\s+/i, ""));
       setActiveModal("input");
-    } else if (t === "OU" || t === "output") {
+    } else if (t === "OU") {
       setOutputValue(label.replace(/^Output\s+/i, ""));
       setActiveModal("output");
-    } else if (t === "DC" || t === "declare") {
+    } else if (t === "DC") {
       const parts = label.split(/\s+/);
       if (parts.length >= 2) {
         setDeclareDataType(parts[0]);
@@ -181,7 +247,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         setDeclareVariable(label);
       }
       setActiveModal("declare");
-    } else if (t === "AS" || t === "assign") {
+    } else if (t === "AS") {
       const m = label.split("=");
       if (m.length >= 2) {
         setAssignVariable(m[0].trim());
@@ -218,63 +284,60 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     onCloseModal?.();
   };
 
-  /* --- Modal Configs (เพิ่ม data object สำหรับ backend) --- */
+  /* --- Modal Configs --- */
   const modalConfigs: ModalConfig[] = [
     {
       key: "input",
       title: "Input Properties",
-      description: "Read a value from keyboard into a variable.",
+      description: "A Input Statement reads a value from the keyboard and stores it in a variable.",
       icon: "/images/Rectangle.png",
       fields: [{ kind: "simple", key: "variable", placeholder: "Variable name", value: inputValue, setValue: setInputValue }],
       onSubmit: (e) => {
         e.preventDefault();
         if (!inputValue.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
-        callUpdateOrAdd(nodeToEdit?.id, "IN", `Input ${inputValue}`, {
+        callUpdateOrAdd(nodeToEdit?.id, "input", `Input ${inputValue}`, {
           variable: inputValue,
           prompt: `Enter your ${inputValue}:`,
           varType: "string"
         });
-        closeAll();
       },
       onClose: () => { setInputValue(""); closeAll(); },
     },
     {
       key: "output",
       title: "Output Properties",
-      description: "Displays result of expression.",
+      description: "An Output Statement displays the result of an expression to the screen.",
       icon: "/images/Rectangle.png",
       fields: [{ kind: "simple", key: "value", placeholder: 'Variable or "string"', value: outputValue, setValue: setOutputValue }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateOutput(outputValue);
         if (validationError) { setError(validationError); return; }
-        callUpdateOrAdd(nodeToEdit?.id, "OU", `Output ${outputValue}`, { message: outputValue });
-        closeAll();
+        callUpdateOrAdd(nodeToEdit?.id, "output", `Output ${outputValue}`, { message: outputValue });
       },
       onClose: () => { setOutputValue(""); closeAll(); },
     },
     {
       key: "declare",
       title: "Declare Properties",
-      description: "Create variables or arrays.",
+      description: "A Declare Statement is used to create variables and arrays.",
       icon: "/images/shape_Declare.png",
       fields: [{ kind: "simple", key: "variable", placeholder: "e.g., a", value: declareVariable, setValue: setDeclareVariable }],
       onSubmit: (e) => {
         e.preventDefault();
         if (!declareVariable.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
-        callUpdateOrAdd(nodeToEdit?.id, "DC", `${declareDataType} ${declareVariable}`, {
+        callUpdateOrAdd(nodeToEdit?.id, "declare", `${declareDataType} ${declareVariable}`, {
           name: declareVariable,
           value: 0,
           varType: declareDataType.toLowerCase()
         });
-        closeAll();
       },
       onClose: () => { setDeclareVariable(""); setDeclareDataType("Integer"); closeAll(); },
     },
     {
       key: "assign",
       title: "Assign Properties",
-      description: "Assignment Statement",
+      description: "An Assignment Statement stores the result of an expression in a variable.",
       icon: "/images/square.png",
       fields: [
         { kind: "simple", key: "variable", placeholder: "e.g., a", value: assignVariable, setValue: setAssignVariable },
@@ -283,52 +346,49 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         if (!assignVariable.trim() || !assignExpression.trim()) { setError("กรุณากรอกข้อมูล Variable และ Expression"); return; }
-        callUpdateOrAdd(nodeToEdit?.id, "AS", `${assignVariable} = ${assignExpression}`, {
+        callUpdateOrAdd(nodeToEdit?.id, "assign", `${assignVariable} = ${assignExpression}`, {
           variable: assignVariable,
           value: assignExpression
         });
-        closeAll();
       },
       onClose: () => { setAssignVariable(""); setAssignExpression(""); closeAll(); },
     },
     {
       key: "if",
       title: "If Properties",
-      description: "IF Statement checks condition.",
+      description: "An IF Statement checks a Boolean expression and executes a branch based on the result.",
       icon: "/images/shape_if.png",
       fields: [{ kind: "simple", key: "condition", placeholder: "e.g., a > 10", value: ifExpression, setValue: setIfExpression }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(ifExpression);
         if (validationError) { setError(validationError); return; }
-        callUpdateOrAdd(nodeToEdit?.id, "IF", ifExpression, { condition: ifExpression });
-        closeAll();
+        callUpdateOrAdd(nodeToEdit?.id, "if", ifExpression, { condition: ifExpression });
       },
       onClose: () => { setIfExpression(""); closeAll(); },
     },
     {
       key: "while",
       title: "While Properties",
-      description: "WHILE Statement executes while condition true.",
+      description: "A WHILE Statement repeatedly executes code as long as the condition is true.",
       icon: "/images/shape_while.png",
       fields: [{ kind: "simple", key: "condition", placeholder: "e.g., count < 10", value: whileExpression, setValue: setWhileExpression }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(whileExpression);
         if (validationError) { setError(validationError); return; }
-        callUpdateOrAdd(nodeToEdit?.id, "WH", whileExpression, {
+        callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression, {
           condition: whileExpression,
           varName: "x",
           increment: "x = x + 1"
         });
-        closeAll();
       },
       onClose: () => { setWhileExpression(""); closeAll(); },
     },
     {
       key: "for",
       title: "For Properties",
-      description: "For Loop Statement",
+      description: "A For Loop increments or decrements a variable through a range of values.",
       icon: "/images/shape_while.png",
       fields: [
         { kind: "group", key: "group", fields: [
@@ -346,13 +406,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         if (isNaN(Number(forStart)) || isNaN(Number(forEnd)) || isNaN(Number(forStep))) {
           setError("ค่า Start, End, Step ต้องเป็นตัวเลข"); return;
         }
-        callUpdateOrAdd(nodeToEdit?.id, "FR", `${forVariable} = ${forStart} to ${forEnd}`, {
+        callUpdateOrAdd(nodeToEdit?.id, "for", `${forVariable} = ${forStart} to ${forEnd}`, {
           init: `int ${forVariable} = ${forStart}`,
           condition: `${forVariable} < ${forEnd}`,
           increment: `${forVariable} += ${forStep}`,
           varName: forVariable
         });
-        closeAll();
       },
       onClose: () => { setForVariable(""); setForStart(""); setForEnd(""); setForStep(""); closeAll(); },
     },
@@ -366,8 +425,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         e.preventDefault();
         const validationError = validateConditionalExpression(doExpression);
         if (validationError) { setError(validationError); return; }
-        callUpdateOrAdd(nodeToEdit?.id, "DO", doExpression, { condition: doExpression });
-        closeAll();
+        callUpdateOrAdd(nodeToEdit?.id, "do", doExpression, { condition: doExpression });
       },
       onClose: () => { setDoExpression(""); closeAll(); },
     },
@@ -392,7 +450,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     </div>
   );
 
-  /* --- Render modal --- */
+  /* --- Render active modal if any --- */
   if (activeModal) {
     const cfg = modalConfigs.find((m) => m.key === activeModal);
     if (!cfg) return null;
@@ -409,6 +467,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             )}
           </div>
 
+          {/* render fields */}
           {cfg.fields.map((f) => {
             if (f.kind === "group") {
               return (
@@ -419,9 +478,13 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                 </div>
               );
             }
-            return <input key={f.key} type="text" placeholder={f.placeholder} value={f.value} onChange={(e) => f.setValue(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />;
+
+            return (
+              <input key={f.key} type="text" placeholder={f.placeholder} value={f.value} onChange={(e) => f.setValue(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            );
           })}
 
+          {/* declare modal: render data type radios */}
           {activeModal === "declare" && (
             <>
               <div className="text-gray-700 mb-2 ml-4">Data Type</div>
@@ -439,8 +502,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
 
           <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button type="button" onClick={() => cfg.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">Cancel</button>
-            <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">Ok</button>
+            <button type="button" onClick={() => cfg.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading} className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">
+              {loading ? "Saving..." : "Ok"}
+            </button>
           </div>
         </form>
 
@@ -462,6 +529,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           <SymbolItemComponent item={symbols.find((s) => s.key === "output")!} />
         </div>
       </div>
+
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Variables</h3>
         <div className="flex gap-4">
@@ -469,12 +537,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           <SymbolItemComponent item={symbols.find((s) => s.key === "assign")!} />
         </div>
       </div>
+
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Control</h3>
         <div className="flex gap-4">
           <SymbolItemComponent item={symbols.find((s) => s.key === "if")!} />
         </div>
       </div>
+
       <div>
         <h3 className="text-lg font-bold text-gray-700 mb-2">Looping</h3>
         <div className="flex gap-4">

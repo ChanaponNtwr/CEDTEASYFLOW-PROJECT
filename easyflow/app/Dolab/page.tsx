@@ -32,6 +32,10 @@ import { useFlowchartState } from "./hooks/useFlowchartState";
 import { useFlowchartApi } from "./hooks/useFlowchartApi";
 import { useNodeMutations } from "./hooks/useNodeMutations";
 
+// --- Services / Utils for refresh ---
+import { apiGetFlowchart } from "@/app/service/FlowchartService";
+import { convertBackendFlowchart } from "./utils/backendConverter";
+
 // --- Custom Node Types ---
 const nodeTypes = {
   if: IfNodeComponent,
@@ -69,7 +73,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     closeNodeModal,
   } = useFlowchartState();
 
-  // 2. จัดการการดึงข้อมูลจาก API
+  // 2. จัดการการดึงข้อมูลจาก API (initial load)
   const { loading, error } = useFlowchartApi({ flowchartId, setNodes, setEdges });
 
   // 3. จัดการ Logic การแก้ไขข้อมูลทั้งหมด
@@ -82,6 +86,22 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     closeModal,
     closeNodeModal,
   });
+
+  // --- Refresh function: ดึงข้อมูลจริงจาก backend และอัปเดต state ---
+  const refreshFlowchart = React.useCallback(async () => {
+    try {
+      const payload = await apiGetFlowchart(flowchartId);
+      if (!payload || !payload.flowchart) {
+        console.warn("No flowchart payload returned from API");
+        return;
+      }
+      const converted = convertBackendFlowchart(payload);
+      setNodes(converted.nodes);
+      setEdges(converted.edges);
+    } catch (err) {
+      console.error("refreshFlowchart error:", err);
+    }
+  }, [flowchartId, setNodes, setEdges]);
 
   // Handlers ที่ต้อง set state โดยตรง จะยังคงอยู่ที่นี่
   const onEdgeClick = (event: React.MouseEvent, edge: Edge) => {
@@ -136,11 +156,12 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId="flow_1759305346859"
-              edge={selectedEdge} 
-              onAddNode={(type, label) => addNode(type, label)} 
-              onDeleteNode={deleteNodeAndReconnect} 
-              
+              flowchartId="flow_1759331411918"
+              selectedEdgeId={selectedEdge?.id}
+              edge={selectedEdge}
+              onAddNode={(type, label) => addNode(type, label)}
+              onDeleteNode={deleteNodeAndReconnect}
+              onRefresh={refreshFlowchart}
             />
           </div>
         </div>
@@ -155,12 +176,15 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId="flow_1759305346859"
+              flowchartId="flow_1759331411918"
+              // For node edit there may be no selected edge; parent can still pass selectedEdge if needed
+              selectedEdgeId={undefined}
               nodeToEdit={selectedNode}
               onUpdateNode={handleUpdateNode}
               onDeleteNode={deleteNodeAndReconnect}
               onCloseModal={closeNodeModal}
               onAddNode={(type, label) => addNode(type, label, selectedNode.id)}
+              onRefresh={refreshFlowchart}
             />
           </div>
         </div>
