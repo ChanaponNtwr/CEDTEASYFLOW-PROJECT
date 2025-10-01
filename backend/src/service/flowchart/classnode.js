@@ -121,7 +121,7 @@ class Node {
                     this.label = `while (${d.condition || ""})`.trim();
                     break;
                 case "IN":
-                    this.label = `input ${d.variable || ""}${d.prompt ? `: ${d.prompt}` : ""}`.trim();
+                    this.label = (d.variable || "").toString().trim();
                     break;
                 case "OU":
                     this.label = `${d.message || ""}`.trim();
