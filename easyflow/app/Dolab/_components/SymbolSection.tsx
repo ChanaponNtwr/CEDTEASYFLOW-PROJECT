@@ -4,7 +4,8 @@
 import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
-import { insertNode } from "@/app/service/FlowchartService";
+import { insertNode, deleteNode  } from "@/app/service/FlowchartService";
+
 
 interface SymbolItem {
   key: string;
@@ -12,12 +13,19 @@ interface SymbolItem {
   imageSrc: string;
 }
 
+type FlowNode = Node & {
+  id?: string;
+  type?: string;
+  label?: string;
+  data?: any;
+};
+
 interface SymbolSectionProps {
   flowchartId: string;
   selectedEdgeId?: string;
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
-  nodeToEdit?: Node | null;
+  nodeToEdit?: FlowNode | null;
   onUpdateNode?: (id: string, type: string, label: string) => void;
   onDeleteNode?: (id: string) => void;
   onCloseModal?: () => void;
@@ -30,7 +38,7 @@ const validateConditionalExpression = (exp: string): string => {
   if (trimmedExp === "") return "กรุณาใส่เงื่อนไข (Condition)";
   const operators = /==|!=|>=|<=|>|</;
   if (!operators.test(trimmedExp)) return "เงื่อนไขไม่ถูกต้อง (ต้องมีตัวเปรียบเทียบ เช่น >, <, ==)";
-  const parts = trimmedExp.split(operators);
+  const parts = trimmedExp.split(/==|!=|>=|<=|>|</);
   if (parts.length < 2 || parts.some((p) => p.trim() === "")) {
     return "เงื่อนไขไม่สมบูรณ์ (เช่น 'a >' หรือ '< 10')";
   }
@@ -47,7 +55,6 @@ const validateOutput = (output: string): string => {
   return "";
 };
 
-// Mapping UI types -> Backend codes
 const toBackendType = (uiType: string) => {
   const t = uiType?.toLowerCase();
   switch (t) {
@@ -130,7 +137,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [ifExpression, setIfExpression] = useState("");
   const [whileExpression, setWhileExpression] = useState("");
   const [declareVariable, setDeclareVariable] = useState("");
+  // single legacy state (kept for label building/backwards compat)
   const [declareDataType, setDeclareDataType] = useState("Integer");
+  // NEW: allow multiple checkboxes for declare data types
+  const [declareDataTypes, setDeclareDataTypes] = useState<Record<string, boolean>>({
+    Integer: true,
+    Real: false,
+    String: false,
+    Boolean: false,
+  });
+
   const [assignVariable, setAssignVariable] = useState("");
   const [assignExpression, setAssignExpression] = useState("");
   const [forVariable, setForVariable] = useState("");
@@ -139,7 +155,25 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [forStep, setForStep] = useState("");
   const [doExpression, setDoExpression] = useState("");
 
-  // central insert function that maps to backend codes and calls API
+  // helper to reset fields (for creating new node)
+  const resetFields = () => {
+    setInputValue("");
+    setOutputValue("");
+    setIfExpression("");
+    setWhileExpression("");
+    setDeclareVariable("");
+    setDeclareDataType("Integer");
+    setDeclareDataTypes({ Integer: true, Real: false, String: false, Boolean: false });
+    setAssignVariable("");
+    setAssignExpression("");
+    setForVariable("");
+    setForStart("");
+    setForEnd("");
+    setForStep("");
+    setDoExpression("");
+    setError("");
+  };
+
   const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
     setError("");
     if (!flowchartId) {
@@ -155,125 +189,226 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     const payloadNode = { type: backendType, label, data };
 
     try {
-    setLoading(true);
-    console.info("Call insertNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
-    const res = await insertNode(flowchartId, selectedEdgeId, payloadNode);
-    console.info("insertNode result:", res);
+      setLoading(true);
+      console.info("Call insertNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
+      const res = await insertNode(flowchartId, selectedEdgeId, payloadNode);
+      console.info("insertNode result:", res);
 
-    // เรียก refreshFlowchart เสมอหลัง insert/update
-    // SymbolSection.tsx
+      if (onRefresh) {
+        try {
+          console.info("Calling onRefresh after insert, flowchartId:", flowchartId);
+          await onRefresh();
+        } catch (refreshErr) {
+          console.warn("refresh failed:", refreshErr);
+        }
+      }
+
+      if (nodeToEdit && onUpdateNode && nodeId) {
+        onUpdateNode(nodeId, backendType, label);
+      }
+
+      setActiveModal(null);
+      onCloseModal?.();
+    } catch (err) {
+      console.error("Error inserting node:", err);
+      const msg = (err as any)?.response?.data?.message ?? (err as any)?.message ?? "เกิดข้อผิดพลาดในการเรียก insert-node";
+      setError(String(msg));
+    } finally {
+      setLoading(false);
+      resetFields();
+    }
+  };
+
+const handleDeleteClick = async () => {
+  if (!nodeToEdit) return;
+  if (!flowchartId) {
+    setError("Missing flowchartId");
+    return;
+  }
+
+  const ok = window.confirm(
+    "ต้องการลบ node นี้ใช่หรือไม่? การลบจะลบ node นี้พร้อม edges ที่เกี่ยวข้องและ nodes ที่ไม่สามารถเข้าถึงได้จาก Start"
+  );
+  if (!ok) return;
+
+  const nodeId = nodeToEdit.id;
+  if (!nodeId) {
+    setError("Node id not found");
+    return;
+  }
+
+  try {
+    setError("");
+    setLoading(true);
+    console.info("Deleting node:", nodeId, "from flowchart:", flowchartId);
+    const res = await deleteNode(flowchartId, nodeId);
+    console.info("deleteNode response:", res);
+
+    // ถ้ามี onRefresh ให้ใช้เพื่อโหลดข้อมูลใหม่ทั้งหมดจาก backend (recommended)
     if (onRefresh) {
       try {
-        console.info("Calling onRefresh after insert, flowchartId:", flowchartId);
         await onRefresh();
       } catch (refreshErr) {
-        console.warn("refresh failed:", refreshErr);
+        console.warn("onRefresh failed after delete:", refreshErr);
       }
+    } else {
+      // ถ้าไม่มี onRefresh ให้ notify parent เพื่อให้เค้าลบ node ทันทีจาก local state
+      onDeleteNode?.(nodeId);
     }
 
-
-    if (nodeToEdit && onUpdateNode && nodeId) {
-      onUpdateNode(nodeId, backendType, label);
-    }
-
+    // ปิด modal
+    setActiveModal(null);
     onCloseModal?.();
-  } catch (err) {
-    console.error("Error inserting node:", err);
-    const msg = (err as any)?.response?.data?.message ?? (err as any)?.message ?? "เกิดข้อผิดพลาดในการเรียก insert-node";
+  } catch (err: any) {
+    console.error("Failed to delete node:", err);
+    // ถ้า backend ส่ง object { message: ... } ให้เอา message มาแสดง
+    const msg = err?.message ?? (err?.response?.data?.message ?? "เกิดข้อผิดพลาดในการลบ node");
     setError(String(msg));
   } finally {
     setLoading(false);
-    // reset fields
-    setInputValue("");
-    setOutputValue("");
-    setIfExpression("");
-    setWhileExpression("");
-    setDeclareVariable("");
-    setDeclareDataType("Integer");
-    setAssignVariable("");
-    setAssignExpression("");
-    setForVariable("");
-    setForStart("");
-    setForEnd("");
-    setForStep("");
-    setDoExpression("");
   }
-  };
+};
 
-  const handleDeleteClick = () => {
-    if (!nodeToEdit || !onDeleteNode) return;
-    const ok = window.confirm(
-      "ต้องการลบ node นี้ใช่หรือไม่? การลบจะลบ node นี้พร้อม edges ที่เกี่ยวข้องและ nodes ที่ไม่สามารถเข้าถึงได้จาก Start"
-    );
-    if (!ok) return;
-    onDeleteNode(nodeToEdit.id);
-    onCloseModal?.();
-  };
 
   useEffect(() => {
+    resetFields();
     if (!nodeToEdit) return;
-    const t = String(nodeToEdit.type ?? "").toUpperCase();
-    const label = String(nodeToEdit.data?.label ?? "");
 
-    // reset fields
-    setInputValue("");
-    setOutputValue("");
-    setIfExpression("");
-    setWhileExpression("");
-    setDeclareVariable("");
-    setDeclareDataType("Integer");
-    setAssignVariable("");
-    setAssignExpression("");
-    setForVariable("");
-    setForStart("");
-    setForEnd("");
-    setForStep("");
-    setDoExpression("");
-    setError("");
+    const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase().trim();
+    const rawLabel = String(
+      nodeToEdit.label ??
+        nodeToEdit.data?.label ??
+        nodeToEdit.data?.message ??
+        nodeToEdit.data?.condition ??
+        ""
+    ).trim();
 
-    if (t === "IN") {
-      setInputValue(label.replace(/^Input\s+/i, ""));
+    const stripQuotes = (s: any) => {
+      const str = String(s ?? "");
+      return str.startsWith('"') && str.endsWith('"') ? str.slice(1, -1) : str;
+    };
+
+    if (rawType === "IN" || rawType === "INPUT" || rawType === "INPUT_STATEMENT") {
+      const varName =
+        nodeToEdit.data?.variable ??
+        nodeToEdit.data?.name ??
+        rawLabel.replace(/^Input\s+/i, "").replace(/^IN\s+/i, "");
+      setInputValue(String(varName ?? "").trim());
       setActiveModal("input");
-    } else if (t === "OU") {
-      setOutputValue(label.replace(/^Output\s+/i, ""));
+      return;
+    }
+
+    if (rawType === "OU" || rawType === "OUT" || rawType === "OUTPUT" || rawType === "OUTPUT_STATEMENT") {
+      const rawMsg =
+        nodeToEdit.data?.message ??
+        nodeToEdit.data?.value ??
+        rawLabel.replace(/^Output\s+/i, "").replace(/^OUT\s+/i, "");
+      setOutputValue(String(stripQuotes(rawMsg ?? "")).trim());
       setActiveModal("output");
-    } else if (t === "DC") {
-      const parts = label.split(/\s+/);
-      if (parts.length >= 2) {
-        setDeclareDataType(parts[0]);
-        setDeclareVariable(parts.slice(1).join(" "));
+      return;
+    }
+
+    if (rawType === "DC" || rawType === "DECLARE" || rawType === "DECL") {
+      if (nodeToEdit.data?.name) {
+        setDeclareVariable(String(nodeToEdit.data.name ?? ""));
+        const vtRaw = nodeToEdit.data?.varType ?? nodeToEdit.data?.type ?? "integer";
+        // ถ้า backend ส่ง "integer,real" ให้เอาแค่ค่าแรก
+        const first = String(vtRaw).split(/[,|;\/\s]+/)[0] ?? "integer";
+        setDeclareDataType(first.charAt(0).toUpperCase() + first.slice(1));
       } else {
-        setDeclareVariable(label);
+        const parts = rawLabel.split(/\s+/);
+        if (parts.length >= 2) {
+          setDeclareDataType(parts[0]);
+          setDeclareVariable(parts.slice(1).join(" "));
+        } else {
+          setDeclareVariable(rawLabel);
+        }
       }
       setActiveModal("declare");
-    } else if (t === "AS") {
-      const m = label.split("=");
-      if (m.length >= 2) {
-        setAssignVariable(m[0].trim());
-        setAssignExpression(m.slice(1).join("=").trim());
-      } else {
-        setAssignVariable(label);
+      return;
+    }
+
+
+    if (rawType === "AS" || rawType === "ASSIGN") {
+      if (nodeToEdit.data?.variable) setAssignVariable(String(nodeToEdit.data.variable ?? ""));
+      if (nodeToEdit.data?.value) setAssignExpression(String(nodeToEdit.data.value ?? ""));
+      if (!nodeToEdit.data?.variable && !nodeToEdit.data?.value) {
+        const m = rawLabel.split("=");
+        if (m.length >= 2) {
+          setAssignVariable(m[0].trim());
+          setAssignExpression(m.slice(1).join("=").trim());
+        } else {
+          setAssignVariable(rawLabel);
+        }
       }
       setActiveModal("assign");
-    } else if (t === "IF") {
-      setIfExpression(label);
+      return;
+    }
+
+    if (rawType === "IF" || rawType === "IF_STATEMENT") {
+      setIfExpression(String(nodeToEdit.data?.condition ?? rawLabel));
       setActiveModal("if");
-    } else if (t === "WH") {
-      setWhileExpression(label);
+      return;
+    }
+
+    if (rawType === "WH" || rawType === "WHILE") {
+      setWhileExpression(String(nodeToEdit.data?.condition ?? rawLabel));
       setActiveModal("while");
-    } else if (t === "FR") {
-      const forMatch = label.match(/^(.+?)\s*=\s*(.+?)\s+to\s+(.+)$/i);
-      if (forMatch) {
-        setForVariable(forMatch[1].trim());
-        setForStart(forMatch[2].trim());
-        setForEnd(forMatch[3].trim());
+      return;
+    }
+
+    if (rawType === "FR" || rawType === "FOR") {
+      const init = String(nodeToEdit.data?.init ?? "");
+      const condition = String(nodeToEdit.data?.condition ?? "");
+      const increment = String(nodeToEdit.data?.increment ?? "");
+
+      if (init || condition || increment) {
+        const initMatch = init.match(/([a-zA-Z_]\w*)\s*=\s*([-\d]+)/);
+        if (initMatch) {
+          setForVariable(String(initMatch[1] ?? ""));
+          setForStart(String(initMatch[2] ?? ""));
+        } else {
+          const forMatch = String(rawLabel).match(/^(.+?)\s*=\s*(.+?)\s+to\s+(.+)$/i);
+          if (forMatch) {
+            setForVariable(String(forMatch[1].trim() ?? ""));
+            setForStart(String(forMatch[2].trim() ?? ""));
+            setForEnd(String(forMatch[3].trim() ?? ""));
+          } else {
+            setForVariable(rawLabel);
+          }
+        }
+
+        const condMatch =
+          condition.match(/<\s*([-\d]+)/) ||
+          condition.match(/<=\s*([-\d]+)/) ||
+          condition.match(/to\s+([-\d]+)/i);
+        if (condMatch) {
+          setForEnd(String(condMatch[1] ?? ""));
+        } else if (nodeToEdit.data?.end !== undefined) {
+          setForEnd(String(nodeToEdit.data.end));
+        }
+
+        const stepMatch = increment.match(/(?:\+=|=\s*.+\+\s*)([-\d]+)/);
+        if (stepMatch) setForStep(String(stepMatch[1] ?? ""));
+        else if (nodeToEdit.data?.step !== undefined) setForStep(String(nodeToEdit.data.step));
       } else {
-        setForVariable(label);
+        const forMatch = String(rawLabel).match(/^(.+?)\s*=\s*(.+?)\s+to\s+(.+)$/i);
+        if (forMatch) {
+          setForVariable(String(forMatch[1].trim() ?? ""));
+          setForStart(String(forMatch[2].trim() ?? ""));
+          setForEnd(String(forMatch[3].trim() ?? ""));
+        } else {
+          setForVariable(rawLabel);
+        }
       }
       setActiveModal("for");
-    } else if (t === "DO") {
-      setDoExpression(label);
+      return;
+    }
+
+    if (rawType === "DO") {
+      setDoExpression(String(nodeToEdit.data?.condition ?? rawLabel));
       setActiveModal("do");
+      return;
     }
   }, [nodeToEdit]);
 
@@ -321,17 +456,23 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       title: "Declare Properties",
       description: "A Declare Statement is used to create variables and arrays.",
       icon: "/images/shape_Declare.png",
-      fields: [{ kind: "simple", key: "variable", placeholder: "e.g., a", value: declareVariable, setValue: setDeclareVariable }],
+      // NOTE: we include a dummy dataType field so UI renderer recognizes it and uses the special checkbox block
+      fields: [
+        { kind: "simple", key: "variable", placeholder: "e.g., a", value: declareVariable, setValue: setDeclareVariable },
+        { kind: "simple", key: "dataType", placeholder: "", value: declareDataType, setValue: setDeclareDataType },
+      ],
       onSubmit: (e) => {
         e.preventDefault();
         if (!declareVariable.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
-        callUpdateOrAdd(nodeToEdit?.id, "declare", `${declareDataType} ${declareVariable}`, {
+        const varTypePayload = declareDataType.toLowerCase(); // e.g., "integer"
+        const labelPrefix = declareDataType; // e.g., "Integer"
+        callUpdateOrAdd(nodeToEdit?.id, "declare", `${labelPrefix} ${declareVariable}`, {
           name: declareVariable,
           value: 0,
-          varType: declareDataType.toLowerCase()
+          varType: varTypePayload
         });
       },
-      onClose: () => { setDeclareVariable(""); setDeclareDataType("Integer"); closeAll(); },
+      onClose: () => { setDeclareVariable(""); setDeclareDataType("Integer"); setDeclareDataTypes({ Integer: true, Real: false, String: false, Boolean: false }); closeAll(); },
     },
     {
       key: "assign",
@@ -443,7 +584,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   ];
 
   const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
-    <div className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => { setError(""); setActiveModal(item.key); }}>
+    <div className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => { setError(""); resetFields(); setActiveModal(item.key); }}>
       <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
       <span className="text-sm text-gray-700">{item.label}</span>
     </div>
@@ -466,37 +607,58 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             )}
           </div>
 
-          {/* render fields */}
+          {/* Render fields dynamically */}
           {cfg.fields.map((f) => {
             if (f.kind === "group") {
               return (
                 <div key={f.key} className="grid grid-cols-2 gap-4 ml-6 mb-4">
                   {f.fields.map((g) => (
-                    <input key={g.key} type="text" placeholder={g.placeholder} value={g.value} onChange={(e) => g.setValue(e.target.value)} className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm" />
+                    <input
+                      key={g.key}
+                      type="text"
+                      placeholder={g.placeholder}
+                      value={g.value}
+                      onChange={(e) => g.setValue(e.target.value)}
+                      className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"
+                    />
                   ))}
                 </div>
               );
-            }
+                } else if (f.kind === "simple" && f.key === "dataType") {
+                  return (
+                    <div key={f.key} className="ml-6 mb-4">
+                      <div className="text-gray-700 mb-2">Data Type (เลือกได้ 1 ค่า)</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Integer", "Real", "String", "Boolean"].map((dt) => (
+                          <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
+                            <input
+                              type="radio"
+                              name="dataType"
+                              value={dt}
+                              checked={declareDataType === dt}
+                              onChange={(e) => setDeclareDataType(e.target.value)}
+                              className="w-4 h-4"
+                            />
+                            {dt}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+
 
             return (
-              <input key={f.key} type="text" placeholder={f.placeholder} value={f.value} onChange={(e) => f.setValue(e.target.value)} className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input
+                key={f.key}
+                type="text"
+                placeholder={f.placeholder}
+                value={f.value}
+                onChange={(e) => f.setValue(e.target.value)}
+                className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             );
           })}
-
-          {/* declare modal: render data type radios */}
-          {activeModal === "declare" && (
-            <>
-              <div className="text-gray-700 mb-2 ml-4">Data Type</div>
-              <div className="grid grid-cols-2 gap-2 ml-6 mb-4">
-                {["Integer", "Real", "String", "Boolean"].map((dt) => (
-                  <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
-                    <input type="radio" name="dataType" value={dt} checked={declareDataType === dt} onChange={(e) => setDeclareDataType(e.target.value)} className="w-4 h-4" />
-                    {dt}
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
 
           {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
 

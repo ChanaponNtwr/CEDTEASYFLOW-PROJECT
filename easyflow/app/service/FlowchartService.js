@@ -44,3 +44,16 @@ export const insertNode = async (flowchartId, edgeId, node) => {
     throw err;
   }
 };
+
+
+export const deleteNode = async (flowchartId, nodeId) => {
+  try {
+    const resp = await axios.delete(`${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`
+    );
+    return resp.data; // { ok: true, message: "...", diffs: {...} }
+  } catch (error) {
+    console.error("Error deleting node:", error);
+    throw error;
+  }
+};
+
