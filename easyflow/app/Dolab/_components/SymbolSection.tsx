@@ -155,50 +155,46 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     const payloadNode = { type: backendType, label, data };
 
     try {
-      setLoading(true);
-      console.info("Call insertNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
-      const res = await insertNode(flowchartId, selectedEdgeId, payloadNode);
-      console.info("insertNode result:", res);
+    setLoading(true);
+    console.info("Call insertNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
+    const res = await insertNode(flowchartId, selectedEdgeId, payloadNode);
+    console.info("insertNode result:", res);
 
-      // Prefer refresh from backend
-      if (onRefresh) {
-        try {
-          await onRefresh();
-        } catch (refreshErr) {
-          console.warn("refresh failed:", refreshErr);
-        }
-      } else {
-        // fallback local update (less preferred)
-        onAddNode?.(backendType, label, nodeToEdit?.id);
+    // เรียก refreshFlowchart เสมอหลัง insert/update
+    if (onRefresh) {
+      try {
+        await onRefresh();
+      } catch (refreshErr) {
+        console.warn("refresh failed:", refreshErr);
       }
-
-      if (nodeToEdit && onUpdateNode && nodeId) {
-        onUpdateNode(nodeId, backendType, label);
-      }
-
-      onCloseModal?.();
-    } catch (err) {
-      console.error("Error inserting node:", err);
-      // Try to provide a helpful message
-      const msg = (err as any)?.response?.data?.message ?? (err as any)?.message ?? "เกิดข้อผิดพลาดในการเรียก insert-node";
-      setError(String(msg));
-    } finally {
-      setLoading(false);
-      // reset fields
-      setInputValue("");
-      setOutputValue("");
-      setIfExpression("");
-      setWhileExpression("");
-      setDeclareVariable("");
-      setDeclareDataType("Integer");
-      setAssignVariable("");
-      setAssignExpression("");
-      setForVariable("");
-      setForStart("");
-      setForEnd("");
-      setForStep("");
-      setDoExpression("");
     }
+
+    if (nodeToEdit && onUpdateNode && nodeId) {
+      onUpdateNode(nodeId, backendType, label);
+    }
+
+    onCloseModal?.();
+  } catch (err) {
+    console.error("Error inserting node:", err);
+    const msg = (err as any)?.response?.data?.message ?? (err as any)?.message ?? "เกิดข้อผิดพลาดในการเรียก insert-node";
+    setError(String(msg));
+  } finally {
+    setLoading(false);
+    // reset fields
+    setInputValue("");
+    setOutputValue("");
+    setIfExpression("");
+    setWhileExpression("");
+    setDeclareVariable("");
+    setDeclareDataType("Integer");
+    setAssignVariable("");
+    setAssignExpression("");
+    setForVariable("");
+    setForStart("");
+    setForEnd("");
+    setForStep("");
+    setDoExpression("");
+  }
   };
 
   const handleDeleteClick = () => {
