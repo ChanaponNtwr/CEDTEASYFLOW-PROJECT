@@ -1,5 +1,6 @@
-// File: app/flowchart/utils/backendConverter.ts
+// File: app/flowchart/utils/backendConverter.tsx
 // ไฟล์นี้รับผิดชอบการแปลงข้อมูลที่ได้จาก API ให้อยู่ในรูปแบบที่ React Flow ใช้งานได้
+// (เวอร์ชันปรับปรุง Logic การจัดเรียงตำแหน่ง Node ใหม่ทั้งหมด)
 
 import { Node, Edge, MarkerType } from "@xyflow/react";
 import { createArrowEdge, stepY } from "./flowchartUtils";
@@ -16,150 +17,132 @@ const mapBackendTypeToNodeType = (backendType?: string, label?: string) => {
   }
 
   switch ((backendType || "").toUpperCase()) {
-    // Start / End
-    case "ST":
-    case "START":
-    case "STRT":
-      return "start";
-    case "EN":
-    case "END":
-      return "end";
-
-    // Assign / Declare / Input / Output
-    case "AS":
-    case "ASSIGN":
-      return "assign";
-    case "IN":
-    case "INPUT":
-      return "input";
-    case "OU":
-    case "OUT":
-    case "OUTPUT":
-      return "output";
-    case "DC":
-    case "DE":
-    case "DECLARE":
-    case "DECL":
-      return "declare";
-
-    // Control / Loops / Breakpoint
-    case "IF":
-      return "if";
-    case "WH":
-    case "WHILE":
-      return "while";
-    case "FR":
-    case "FOR":
-      return "for";
-    case "BP":
-    case "BREAKPOINT":
-      return "breakpoint";
-
-    // default: if backend returns a friendly name already, try to normalize it
-    default:
-      return backendType.toLowerCase();
+    case "ST": case "START": case "STRT": return "start";
+    case "EN": case "END": return "end";
+    case "AS": case "ASSIGN": return "assign";
+    case "IN": case "INPUT": return "input";
+    case "OU": case "OUT": case "OUTPUT": return "output";
+    case "DC": case "DECLARE": return "declare";
+    case "IF": return "if";
+    case "WH": case "WHILE": return "while";
+    case "FR": case "FOR": return "for";
+    case "BP": case "BREAKPOINT": return "breakpoint";
+    default: return "assign"; // fallback for unknown types
   }
 };
 
-export const convertBackendFlowchart = (payload: any): { nodes: Node[]; edges: Edge[] } => {
-  const backendNodes: any[] = payload?.flowchart?.nodes ?? [];
-  const backendEdges: any[] = payload?.flowchart?.edges ?? [];
+export const convertBackendFlowchart = (payload: any) => {
+  const backendFlowchart = payload.flowchart;
+  if (!backendFlowchart || !backendFlowchart.nodes || !backendFlowchart.edges) {
+    console.error("Invalid flowchart structure from backend:", payload);
+    return { nodes: [], edges: [] };
+  }
 
-  // map backend ids to UI ids (special-case start/end mapping)
+  const backendNodes = backendFlowchart.nodes;
+  const backendEdges = backendFlowchart.edges;
+  
+  // --- Section 1: สร้าง Node Map และจัดการ ID ---
+  const nodesMap = new Map<string, Node>();
   const idMap = new Map<string, string>();
-  backendNodes.forEach((bn) => {
-    const bid = bn.id;
-    if (!bid) return;
-    const upperType = bn.type ? String(bn.type).toUpperCase() : "";
-    if (upperType === "ST" || bn.label === "Start" || String(bid).toLowerCase().includes("start")) {
-      idMap.set(bid, "start");
-    } else if (upperType === "EN" || bn.label === "End" || String(bid).toLowerCase().includes("end")) {
-      idMap.set(bid, "end");
-    } else {
-      idMap.set(bid, bid);
+
+  backendNodes.forEach((n: any) => {
+    const originalId = n.id;
+    const newId = (n.label === "Start" ? "start" : n.label === "End" ? "end" : originalId).toLowerCase();
+    idMap.set(originalId, newId);
+
+    const nodeType = mapBackendTypeToNodeType(n.type, n.label);
+    const frontEndNode: Node = {
+      id: newId,
+      type: nodeType,
+      data: { label: n.label, ...n.data },
+      position: n.position || { x: 0, y: 0 }, // ใช้ position จาก backend ถ้ามี, ถ้าไม่มีให้เป็น (0,0)
+      draggable: false,
+      sourcePosition: "bottom",
+      targetPosition: "top",
+    };
+    nodesMap.set(newId, frontEndNode);
+  });
+
+  // --- Section 2: สร้าง Adjacency List สำหรับ Graph Traversal ---
+  const adj = new Map<string, string[]>();
+  nodesMap.forEach((_, id) => adj.set(id, []));
+
+  backendEdges.forEach((e: any) => {
+    const source = idMap.get(e.source) ?? e.source;
+    const target = idMap.get(e.target) ?? e.target;
+    if (adj.has(source)) {
+      adj.get(source)!.push(target);
     }
   });
 
-  // build Node objects with normalized types
-  const nodesMap = new Map<string, Node>();
-  backendNodes.forEach((bn, idx) => {
-    const mappedId = idMap.get(bn.id) ?? bn.id;
-    const isStart = mappedId === "start";
-    const isEnd = mappedId === "end";
+  // --- Section 3: NEW LAYOUT LOGIC - จัดเรียงตำแหน่ง Node ด้วย BFS Traversal ---
+  const positionedNodes = new Map<string, Node>();
+  const queue: { nodeId: string; y: number; x: number }[] = [{ nodeId: "start", y: 50, x: 300 }];
+  const visited = new Set<string>(["start"]);
+  let maxY = 50;
 
-    const nodeType = isStart ? "start" : isEnd ? "end" : mapBackendTypeToNodeType(bn.type, bn.label);
+  while (queue.length > 0) {
+    const { nodeId, y, x } = queue.shift()!;
+    const node = nodesMap.get(nodeId);
+    if (!node) continue;
+    
+    // กำหนดตำแหน่งและเพิ่ม vào positionedNodes
+    node.position = { x, y };
+    positionedNodes.set(nodeId, node);
+    maxY = Math.max(maxY, y);
 
-    // treat (0,0) as "no meaningful position" so we auto-layout instead
-    const hasPos = bn.position && (bn.position.x !== 0 || bn.position.y !== 0);
-    const pos = hasPos ? { x: bn.position.x, y: bn.position.y } : { x: 300, y: 120 + idx * stepY };
-
-    const node: Node = {
-      id: mappedId,
-      type: nodeType,
-      data: { ...bn.data, label: bn.label ?? bn.data?.label ?? mappedId, _backendId: bn.id },
-      position: pos,
-      draggable: false,
-    } as Node;
-
-    // keep first occurrence per mappedId
-    if (!nodesMap.has(mappedId)) nodesMap.set(mappedId, node);
-  });
-
-  // ensure start exists
-  if (!nodesMap.has("start")) {
-    nodesMap.set("start", {
-      id: "start",
-      type: "start",
-      data: { label: "Start" },
-      position: { x: 300, y: 50 },
-      draggable: false,
-    } as Node);
+    const children = adj.get(nodeId) || [];
+    
+    // จัดการการแตกแขนงของ If-node
+    if (node.type === 'if' && children.length > 1) {
+        // สมมติว่าลูกคนแรกคือ True branch (ไปทางขวา) และคนที่สองคือ False (ไปทางซ้าย)
+        const trueChildId = children[0];
+        const falseChildId = children[1];
+        if (trueChildId && !visited.has(trueChildId)) {
+            visited.add(trueChildId);
+            queue.push({ nodeId: trueChildId, y: y + stepY, x: x + 250 });
+        }
+        if (falseChildId && !visited.has(falseChildId)) {
+            visited.add(falseChildId);
+            queue.push({ nodeId: falseChildId, y: y + stepY, x: x - 250 });
+        }
+    } else { // สำหรับ Node ประเภทอื่นๆ
+        let currentY = y + stepY;
+        children.forEach((childId) => {
+            if (!visited.has(childId)) {
+                visited.add(childId);
+                // ในกรณีเส้นตรง จะใช้ x เดียวกัน แต่เพิ่ม y
+                queue.push({ nodeId: childId, y: currentY, x });
+                currentY += stepY;
+            }
+        });
+    }
   }
 
-  // build middle nodes, reflow vertically (keeps order deterministic)
-  const middleNodesFromMap: Node[] = Array.from(nodesMap.values()).filter((n) => n.id !== "start" && n.id !== "end");
-  let nextY = 50 + stepY;
-  const newMiddleNodes = middleNodesFromMap.map((n) => {
-    const x = n.position?.x ?? 300;
-    const positioned = { ...n, position: { x, y: nextY } };
-    nextY += stepY;
-    return positioned;
-  });
+  // จัดการ End Node ให้อยู่ล่างสุดเสมอ
+  const endNode = nodesMap.get("end");
+  if (endNode) {
+    endNode.position = { x: 300, y: maxY };
+    positionedNodes.set("end", endNode);
+  }
 
-  const endY = Math.max(250, nextY);
-  const endNodeFinal = {
-    id: "end",
-    type: "end",
-    data: { label: "End" },
-    position: { x: 300, y: endY },
-    draggable: false,
-  } as Node;
-
-  const startNode = nodesMap.get("start")!;
-  const startNodeFinal = { ...startNode, position: startNode.position ?? { x: 300, y: 50 } };
-
-  const finalNodesArray: Node[] = [startNodeFinal, ...newMiddleNodes, endNodeFinal];
-
-  // edges: translate backend ids using idMap
-  const convertedEdges: Edge[] = backendEdges.map((be) => {
-    const src = idMap.get(be.source) ?? be.source;
-    const tgt = idMap.get(be.target) ?? be.target;
-    const id = be.id ?? `${src}-${tgt}`;
+  // --- Section 4: แปลง Edges และสร้างผลลัพธ์สุดท้าย ---
+  const finalNodesArray = Array.from(positionedNodes.values());
+  const convertedEdges: Edge[] = backendEdges.map((be: any) => {
+    const source = idMap.get(be.source) ?? be.source;
+    const target = idMap.get(be.target) ?? be.target;
     return {
-      id,
-      source: src,
-      target: tgt,
-      label: be.condition && be.condition !== "auto" ? be.condition : undefined,
+      id: be.id ?? `e-${source}-${target}`,
+      source,
+      target,
       animated: true,
       markerEnd: { type: MarkerType.ArrowClosed },
       type: "smoothstep",
-    } as Edge;
+      data: { condition: be.condition },
+      label: be.condition === "auto" ? "" : be.condition,
+    };
   });
 
-  // fallback: if backend returned no edges, create one between start and end
-  if (convertedEdges.length === 0) {
-    convertedEdges.push(createArrowEdge("start", "end"));
-  }
-
+  console.log("Flowchart hydrated with new layout logic.");
   return { nodes: finalNodesArray, edges: convertedEdges };
 };
