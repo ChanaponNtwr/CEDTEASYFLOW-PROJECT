@@ -88,20 +88,26 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   });
 
   // --- Refresh function: ดึงข้อมูลจริงจาก backend และอัปเดต state ---
-  const refreshFlowchart = React.useCallback(async () => {
-    try {
-      const payload = await apiGetFlowchart(flowchartId);
-      if (!payload || !payload.flowchart) {
-        console.warn("No flowchart payload returned from API");
-        return;
-      }
-      const converted = convertBackendFlowchart(payload);
-      setNodes(converted.nodes);
-      setEdges(converted.edges);
-    } catch (err) {
-      console.error("refreshFlowchart error:", err);
+// page.tsx (inside FlowchartEditor)
+
+const FIXED_FLOWCHART_ID = "flow_1759402163633";
+
+const refreshFlowchart = React.useCallback(async () => {
+  try {
+    const payload = await apiGetFlowchart(FIXED_FLOWCHART_ID);
+    if (!payload || !payload.flowchart) {
+      console.warn("No flowchart payload returned from API");
+      return;
     }
-  }, [flowchartId, setNodes, setEdges]);
+    const converted = convertBackendFlowchart(payload);
+    setNodes(converted.nodes);
+    setEdges(converted.edges);
+  } catch (err) {
+    console.error("refreshFlowchart error:", err);
+  }
+}, [setNodes, setEdges]);
+
+
 
   // Handlers ที่ต้อง set state โดยตรง จะยังคงอยู่ที่นี่
   const onEdgeClick = (event: React.MouseEvent, edge: Edge) => {
@@ -156,7 +162,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId="flow_1759394615051"// จาก props ของ FlowchartEditor
+              flowchartId="flow_1759402163633"// จาก props ของ FlowchartEditor
               selectedEdgeId={selectedEdge?.id} // edge ที่ user คลิก
               edge={selectedEdge}
               onAddNode={(type, label) => addNode(type, label)}
@@ -176,7 +182,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId="flow_1759394615051" // ต้องใช้ flowchartId จาก props
+              flowchartId="flow_1759402163633" // ต้องใช้ flowchartId จาก props
               selectedEdgeId={undefined} // node edit ไม่เกี่ยวกับ edge
               nodeToEdit={selectedNode}
               onUpdateNode={handleUpdateNode}

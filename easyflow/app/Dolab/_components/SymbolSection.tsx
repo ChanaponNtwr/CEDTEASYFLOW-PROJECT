@@ -161,13 +161,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     console.info("insertNode result:", res);
 
     // เรียก refreshFlowchart เสมอหลัง insert/update
+    // SymbolSection.tsx
     if (onRefresh) {
       try {
+        console.info("Calling onRefresh after insert, flowchartId:", flowchartId);
         await onRefresh();
       } catch (refreshErr) {
         console.warn("refresh failed:", refreshErr);
       }
     }
+
 
     if (nodeToEdit && onUpdateNode && nodeId) {
       onUpdateNode(nodeId, backendType, label);
