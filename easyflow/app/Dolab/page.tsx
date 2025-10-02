@@ -156,7 +156,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId="flow_1759389752227"// จาก props ของ FlowchartEditor
+              flowchartId="flow_1759391188137"// จาก props ของ FlowchartEditor
               selectedEdgeId={selectedEdge?.id} // edge ที่ user คลิก
               edge={selectedEdge}
               onAddNode={(type, label) => addNode(type, label)}
@@ -176,7 +176,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId="flow_1759389752227" // ต้องใช้ flowchartId จาก props
+              flowchartId="flow_1759391188137" // ต้องใช้ flowchartId จาก props
               selectedEdgeId={undefined} // node edit ไม่เกี่ยวกับ edge
               nodeToEdit={selectedNode}
               onUpdateNode={handleUpdateNode}
