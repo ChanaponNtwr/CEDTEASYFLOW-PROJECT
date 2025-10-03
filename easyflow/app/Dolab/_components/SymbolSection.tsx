@@ -4,7 +4,7 @@
 import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
-import { insertNode, deleteNode  } from "@/app/service/FlowchartService";
+import { insertNode, deleteNode, editNode   } from "@/app/service/FlowchartService";
 
 
 interface SymbolItem {
@@ -174,50 +174,71 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     setError("");
   };
 
-  const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
-    setError("");
-    if (!flowchartId) {
-      setError("Missing flowchartId");
-      return;
-    }
-    if (!selectedEdgeId) {
-      setError("กรุณาเลือกเส้น (edge) ที่ต้องการแทรก node ก่อน");
-      return;
-    }
+const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
+  setError("");
+  if (!flowchartId) {
+    setError("Missing flowchartId");
+    return;
+  }
 
-    const backendType = toBackendType(uiType);
-    const payloadNode = { type: backendType, label, data };
+  const backendType = toBackendType(uiType);
+  const payloadNode = { type: backendType, label, data };
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
+    if (nodeId) {
+      // --- EDIT existing node (PUT) ---
+      console.info("Call editNode with:", { flowchartId, nodeId, payload: payloadNode });
+      const res = await editNode(flowchartId, nodeId, payloadNode);
+      console.info("editNode result:", res);
+
+      if (onRefresh) {
+        try {
+          await onRefresh();
+        } catch (refreshErr) {
+          console.warn("refresh failed after edit:", refreshErr);
+        }
+      } else {
+        // update local state via callback if provided
+        onUpdateNode?.(nodeId, backendType, label);
+      }
+    } else {
+      // --- INSERT new node (POST) ---
+      if (!selectedEdgeId) {
+        setError("กรุณาเลือกเส้น (edge) ที่ต้องการแทรก node ก่อน");
+        return;
+      }
       console.info("Call insertNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
       const res = await insertNode(flowchartId, selectedEdgeId, payloadNode);
       console.info("insertNode result:", res);
 
       if (onRefresh) {
         try {
-          console.info("Calling onRefresh after insert, flowchartId:", flowchartId);
           await onRefresh();
         } catch (refreshErr) {
-          console.warn("refresh failed:", refreshErr);
+          console.warn("refresh failed after insert:", refreshErr);
         }
       }
 
-      if (nodeToEdit && onUpdateNode && nodeId) {
-        onUpdateNode(nodeId, backendType, label);
+      // if inserting from modal while editing, call onUpdateNode to adjust parent local state label/type if needed
+      if (nodeToEdit && onUpdateNode) {
+        onUpdateNode(nodeId ?? "", backendType, label);
       }
-
-      setActiveModal(null);
-      onCloseModal?.();
-    } catch (err) {
-      console.error("Error inserting node:", err);
-      const msg = (err as any)?.response?.data?.message ?? (err as any)?.message ?? "เกิดข้อผิดพลาดในการเรียก insert-node";
-      setError(String(msg));
-    } finally {
-      setLoading(false);
-      resetFields();
     }
-  };
+
+    // close modal & reset
+    setActiveModal(null);
+    onCloseModal?.();
+  } catch (err: any) {
+    console.error("Error in callUpdateOrAdd:", err);
+    const msg = err?.response?.data?.message ?? err?.message ?? "เกิดข้อผิดพลาดในการเรียก API";
+    setError(String(msg));
+  } finally {
+    setLoading(false);
+    resetFields();
+  }
+};
+
 
 const handleDeleteClick = async () => {
   if (!nodeToEdit) return;

@@ -57,3 +57,18 @@ export const deleteNode = async (flowchartId, nodeId) => {
   }
 };
 
+
+export const editNode = async (flowchartId, nodeId, updateData) => {
+  if (!flowchartId || !nodeId) {
+    throw new Error("editNode: missing flowchartId or nodeId");
+  }
+  try {
+    const resp = await axios.put(`${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`,
+      updateData
+    );
+    return resp.data; // { ok: true, message: "...", flowchartId: "...", diffs: {...} }
+  } catch (error) {
+    console.error("Error editing node:", error);
+    throw error;
+  }
+};

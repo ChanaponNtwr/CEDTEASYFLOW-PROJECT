@@ -90,7 +90,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   // --- Refresh function: ดึงข้อมูลจริงจาก backend และอัปเดต state ---
 // page.tsx (inside FlowchartEditor)
 
-const FIXED_FLOWCHART_ID = "flow_1759423284472";
+const FIXED_FLOWCHART_ID = "flow_1759499864676";
 
 const refreshFlowchart = React.useCallback(async () => {
   try {
@@ -162,7 +162,7 @@ const refreshFlowchart = React.useCallback(async () => {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId="flow_1759423284472"// จาก props ของ FlowchartEditor
+              flowchartId="flow_1759499864676"// จาก props ของ FlowchartEditor
               selectedEdgeId={selectedEdge?.id} // edge ที่ user คลิก
               edge={selectedEdge}
               onAddNode={(type, label) => addNode(type, label)}
@@ -182,7 +182,7 @@ const refreshFlowchart = React.useCallback(async () => {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId="flow_1759423284472" // ต้องใช้ flowchartId จาก props
+              flowchartId="flow_1759499864676" // ต้องใช้ flowchartId จาก props
               selectedEdgeId={undefined} // node edit ไม่เกี่ยวกับ edge
               nodeToEdit={selectedNode}
               onUpdateNode={handleUpdateNode}
