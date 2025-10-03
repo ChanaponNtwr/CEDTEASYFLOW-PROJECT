@@ -1,4 +1,4 @@
-import { prisma } from "../lib/prisma";
+import prisma from "../lib/prisma";
 import { type JWT } from "next-auth/jwt";
 import { type NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
