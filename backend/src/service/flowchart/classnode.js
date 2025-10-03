@@ -83,7 +83,63 @@ class Node {
 
     updateData(newData) {
         if (typeof newData !== 'object') throw new Error("newData must be an object");
+
+        // merge ข้อมูล (อนุญาต partial update)
         this.data = { ...this.data, ...newData };
+
+        // validate ว่ายังมี keys ที่จำเป็นครบ
+        const required = Object.keys(Node.getDefaultData(this.type));
+        const missing = required.filter(k => !(k in this.data));
+        if (missing.length > 0) throw new Error(`Node ${this.id} type ${this.type} ขาด data keys: ${missing.join(", ")}`);
+
+        // sync label ตาม type/data ใหม่
+        this.syncLabelWithData();
+    }
+
+    // ฟังก์ชันสร้าง label จาก data ตาม type
+    syncLabelWithData() {
+        try {
+            const d = this.data || {};
+            switch (this.type) {
+                case "ST":
+                case "EN":
+                    this.label = d.label || NodeType[this.type] || this.label;
+                    break;
+                case "DC": // declare: e.g. "int x = 0"
+                    this.label = `${d.varType || ""} ${d.name || ""}${(d.value !== undefined && d.value !== null) ? ` = ${d.value}` : ""}`.trim();
+                    break;
+                case "AS": // assign: "x = 5"
+                    this.label = `${d.variable || ""} = ${d.value || ""}`.trim();
+                    break;
+                case "IF":
+                    this.label = `if (${d.condition || ""})`.trim();
+                    break;
+                case "FR":
+                    this.label = `for (${d.init || ""}; ${d.condition || ""}; ${d.increment || ""})`.trim();
+                    break;
+                case "WH":
+                    this.label = `while (${d.condition || ""})`.trim();
+                    break;
+                case "IN":
+                    this.label = `input ${(d.variable || "").toString().trim()}`;
+                    break;
+                case "OU":
+                    this.label = `${d.message || ""}`.trim();
+                    break;
+                case "BP":
+                    this.label = `${d.note || "BP"}`.trim();
+                    break;
+                case "DO":
+                    this.label = `${d.acction || ""}`.trim();
+                    break;
+                default:
+                    // default fallback: keep existing label or show type
+                    this.label = this.label || NodeType[this.type] || "";
+            }
+            if (!this.label) this.label = NodeType[this.type] || "";
+        } catch (e) {
+            console.warn(`syncLabelWithData failed for ${this.id}:`, e);
+        }
     }
 }
 export { NodeType, NodeTypeShort };

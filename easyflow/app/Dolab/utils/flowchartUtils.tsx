@@ -54,13 +54,43 @@ export const pruneUnreachableNodes = (allNodes: Node[], allEdges: Edge[]) => {
     if (!adjacency.has(e.source)) adjacency.set(e.source, []);
     adjacency.get(e.source)!.push(e.target);
   });
-  const visited = new Set<string>();
-  const stack = ["start"];
-  while (stack.length) {
-    const cur = stack.pop()!;
-    if (visited.has(cur)) continue;
-    visited.add(cur);
-    (adjacency.get(cur) ?? []).forEach((nb) => !visited.has(nb) && stack.push(nb));
+  const reachable = new Set<string>();
+  const queue = ["start"];
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    if (reachable.has(curr)) continue;
+    reachable.add(curr);
+    const neighbors = adjacency.get(curr) || [];
+    neighbors.forEach((n) => queue.push(n));
   }
-  return allNodes.filter((n) => visited.has(n.id) || n.id === "end");
+  return allNodes.filter((n) => reachable.has(n.id));
+};
+
+/**
+ * Finds all node IDs reachable from a given start node by traversing the graph.
+ * @param startNodeId The ID of the node to start the traversal from.
+ * @param allEdges The list of all edges in the graph.
+ * @returns A Set of reachable node IDs, including the start node.
+ */
+export const findReachableNodeIds = (startNodeId: string, allEdges: Edge[]): Set<string> => {
+  const reachable = new Set<string>();
+  if (!startNodeId) return reachable;
+
+  const queue: string[] = [startNodeId];
+  const visited = new Set<string>([startNodeId]);
+
+  while (queue.length > 0) {
+    const currentNodeId = queue.shift()!;
+    reachable.add(currentNodeId);
+
+    const outgoingEdges = allEdges.filter((edge) => edge.source === currentNodeId);
+    for (const edge of outgoingEdges) {
+      if (edge.target && !visited.has(edge.target)) {
+        visited.add(edge.target);
+        queue.push(edge.target);
+      }
+    }
+  }
+
+  return reachable;
 };

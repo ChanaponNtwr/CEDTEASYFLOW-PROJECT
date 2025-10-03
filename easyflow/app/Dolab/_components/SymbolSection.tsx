@@ -1,9 +1,11 @@
+// File: app/flowchart/_components/SymbolSection.tsx
 "use client";
 
 import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
-import { log } from "console";
+import { insertNode, deleteNode, editNode   } from "@/app/service/FlowchartService";
+
 
 interface SymbolItem {
   key: string;
@@ -11,45 +13,82 @@ interface SymbolItem {
   imageSrc: string;
 }
 
+type FlowNode = Node & {
+  id?: string;
+  type?: string;
+  label?: string;
+  data?: any;
+};
+
 interface SymbolSectionProps {
+  flowchartId: string;
+  selectedEdgeId?: string;
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
-  nodeToEdit?: Node | null;
+  nodeToEdit?: FlowNode | null;
   onUpdateNode?: (id: string, type: string, label: string) => void;
   onDeleteNode?: (id: string) => void;
   onCloseModal?: () => void;
+  onRefresh?: () => Promise<void>;
 }
 
-/* --- Validation Helpers --- */
+/* --- helpers --- */
 const validateConditionalExpression = (exp: string): string => {
   const trimmedExp = exp.trim();
   if (trimmedExp === "") return "กรุณาใส่เงื่อนไข (Condition)";
-
   const operators = /==|!=|>=|<=|>|</;
   if (!operators.test(trimmedExp)) return "เงื่อนไขไม่ถูกต้อง (ต้องมีตัวเปรียบเทียบ เช่น >, <, ==)";
-
-  const parts = trimmedExp.split(operators);
+  const parts = trimmedExp.split(/==|!=|>=|<=|>|</);
   if (parts.length < 2 || parts.some((p) => p.trim() === "")) {
     return "เงื่อนไขไม่สมบูรณ์ (เช่น 'a >' หรือ '< 10')";
   }
-
   return "";
 };
 
 const validateOutput = (output: string): string => {
   const trimmedOutput = output.trim();
   if (trimmedOutput === "") return "กรุณาใส่ค่าที่ต้องการแสดงผล";
-
   const startsWithQuote = trimmedOutput.startsWith('"');
   const endsWithQuote = trimmedOutput.endsWith('"');
-
   if (startsWithQuote && !endsWithQuote) return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " ปิดท้าย)';
   if (!startsWithQuote && endsWithQuote) return 'รูปแบบ String ไม่ถูกต้อง (ขาดเครื่องหมาย " เปิด)';
-
   return "";
 };
 
-/* --- Field types (ชัดเจน) --- */
+const toBackendType = (uiType: string) => {
+  const t = uiType?.toLowerCase();
+  switch (t) {
+    case "input":
+    case "in":
+      return "IN";
+    case "output":
+    case "out":
+      return "OU";
+    case "declare":
+    case "dc":
+      return "DC";
+    case "assign":
+    case "as":
+      return "AS";
+    case "if":
+      return "IF";
+    case "while":
+    case "wh":
+      return "WH";
+    case "for":
+    case "fr":
+      return "FR";
+    case "do":
+      return "DO";
+    case "breakpoint":
+    case "bp":
+      return "BP";
+    default:
+      return uiType.toUpperCase();
+  }
+};
+
+/* --- Field types --- */
 type FieldSimple = {
   kind: "simple";
   key: string;
@@ -61,7 +100,7 @@ type FieldSimple = {
 type FieldGroup = {
   kind: "group";
   key: string;
-  fields: FieldSimple[]; // reuse FieldSimple inside group
+  fields: FieldSimple[];
 };
 
 type FieldDef = FieldSimple | FieldGroup;
@@ -78,14 +117,19 @@ type ModalConfig = {
 
 /* --- Component --- */
 const SymbolSection: React.FC<SymbolSectionProps> = ({
+  flowchartId,
+  selectedEdgeId,
+  edge,
   onAddNode,
   nodeToEdit,
   onUpdateNode,
   onDeleteNode,
   onCloseModal,
+  onRefresh,
 }) => {
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   // fields
   const [inputValue, setInputValue] = useState("");
@@ -93,7 +137,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [ifExpression, setIfExpression] = useState("");
   const [whileExpression, setWhileExpression] = useState("");
   const [declareVariable, setDeclareVariable] = useState("");
+  // single legacy state (kept for label building/backwards compat)
   const [declareDataType, setDeclareDataType] = useState("Integer");
+  // NEW: allow multiple checkboxes for declare data types
+  const [declareDataTypes, setDeclareDataTypes] = useState<Record<string, boolean>>({
+    Integer: true,
+    Real: false,
+    String: false,
+    Boolean: false,
+  });
+
   const [assignVariable, setAssignVariable] = useState("");
   const [assignExpression, setAssignExpression] = useState("");
   const [forVariable, setForVariable] = useState("");
@@ -102,51 +155,15 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [forStep, setForStep] = useState("");
   const [doExpression, setDoExpression] = useState("");
 
-  const callUpdateOrAdd = (nodeId: string | undefined, type: string, label: string) => {
-    if (nodeToEdit && onUpdateNode && nodeId) {
-      onUpdateNode(nodeId, type, label);
-    } else {
-      onAddNode?.(type, label, nodeToEdit?.id);
-    }
-    // reset
+  // helper to reset fields (for creating new node)
+  const resetFields = () => {
     setInputValue("");
     setOutputValue("");
     setIfExpression("");
     setWhileExpression("");
     setDeclareVariable("");
     setDeclareDataType("Integer");
-    setAssignVariable("");
-    setAssignExpression("");
-    setForVariable("");
-    setForStart("");
-    setForEnd("");
-    setForStep("");
-    setDoExpression("");
-  };
-
-  const handleDeleteClick = () => {
-    if (!nodeToEdit || !onDeleteNode) return;
-    const ok = window.confirm(
-      "ต้องการลบ node นี้ใช่หรือไม่? การลบจะลบ node นี้พร้อม edges ที่เกี่ยวข้องและ nodes ที่ไม่สามารถเข้าถึงได้จาก Start"
-    );
-    if (!ok) return;
-    onDeleteNode(nodeToEdit.id);
-    onCloseModal?.();
-  };
-
-  // prefill on edit
-  useEffect(() => {
-    if (!nodeToEdit) return;
-    const t = nodeToEdit.type;
-    const label = String(nodeToEdit.data?.label ?? "");
-
-    // reset fields
-    setInputValue("");
-    setOutputValue("");
-    setIfExpression("");
-    setWhileExpression("");
-    setDeclareVariable("");
-    setDeclareDataType("Integer");
+    setDeclareDataTypes({ Integer: true, Real: false, String: false, Boolean: false });
     setAssignVariable("");
     setAssignExpression("");
     setForVariable("");
@@ -155,50 +172,264 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     setForStep("");
     setDoExpression("");
     setError("");
+  };
 
-    if (t === "input") {
-      setInputValue(label.replace(/^Input\s+/i, ""));
-      setActiveModal("input");
-    } else if (t === "output") {
-      setOutputValue(label.replace(/^Output\s+/i, ""));
-      setActiveModal("output");
-    } else if (t === "declare") {
-      const parts = label.split(/\s+/);
-      if (parts.length >= 2) {
-        setDeclareDataType(parts[0]);
-        setDeclareVariable(parts.slice(1).join(" "));
+const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
+  setError("");
+  if (!flowchartId) {
+    setError("Missing flowchartId");
+    return;
+  }
+
+  const backendType = toBackendType(uiType);
+  const payloadNode = { type: backendType, label, data };
+
+  try {
+    setLoading(true);
+    if (nodeId) {
+      // --- EDIT existing node (PUT) ---
+      console.info("Call editNode with:", { flowchartId, nodeId, payload: payloadNode });
+      const res = await editNode(flowchartId, nodeId, payloadNode);
+      console.info("editNode result:", res);
+
+      if (onRefresh) {
+        try {
+          await onRefresh();
+        } catch (refreshErr) {
+          console.warn("refresh failed after edit:", refreshErr);
+        }
       } else {
-        setDeclareVariable(label);
+        // update local state via callback if provided
+        onUpdateNode?.(nodeId, backendType, label);
+      }
+    } else {
+      // --- INSERT new node (POST) ---
+      if (!selectedEdgeId) {
+        setError("กรุณาเลือกเส้น (edge) ที่ต้องการแทรก node ก่อน");
+        return;
+      }
+      console.info("Call insertNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
+      const res = await insertNode(flowchartId, selectedEdgeId, payloadNode);
+      console.info("insertNode result:", res);
+
+      if (onRefresh) {
+        try {
+          await onRefresh();
+        } catch (refreshErr) {
+          console.warn("refresh failed after insert:", refreshErr);
+        }
+      }
+
+      // if inserting from modal while editing, call onUpdateNode to adjust parent local state label/type if needed
+      if (nodeToEdit && onUpdateNode) {
+        onUpdateNode(nodeId ?? "", backendType, label);
+      }
+    }
+
+    // close modal & reset
+    setActiveModal(null);
+    onCloseModal?.();
+  } catch (err: any) {
+    console.error("Error in callUpdateOrAdd:", err);
+    const msg = err?.response?.data?.message ?? err?.message ?? "เกิดข้อผิดพลาดในการเรียก API";
+    setError(String(msg));
+  } finally {
+    setLoading(false);
+    resetFields();
+  }
+};
+
+
+const handleDeleteClick = async () => {
+  if (!nodeToEdit) return;
+  if (!flowchartId) {
+    setError("Missing flowchartId");
+    return;
+  }
+
+  const ok = window.confirm(
+    "ต้องการลบ node นี้ใช่หรือไม่? การลบจะลบ node นี้พร้อม edges ที่เกี่ยวข้องและ nodes ที่ไม่สามารถเข้าถึงได้จาก Start"
+  );
+  if (!ok) return;
+
+  const nodeId = nodeToEdit.id;
+  if (!nodeId) {
+    setError("Node id not found");
+    return;
+  }
+
+  try {
+    setError("");
+    setLoading(true);
+    console.info("Deleting node:", nodeId, "from flowchart:", flowchartId);
+    const res = await deleteNode(flowchartId, nodeId);
+    console.info("deleteNode response:", res);
+
+    // ถ้ามี onRefresh ให้ใช้เพื่อโหลดข้อมูลใหม่ทั้งหมดจาก backend (recommended)
+    if (onRefresh) {
+      try {
+        await onRefresh();
+      } catch (refreshErr) {
+        console.warn("onRefresh failed after delete:", refreshErr);
+      }
+    } else {
+      // ถ้าไม่มี onRefresh ให้ notify parent เพื่อให้เค้าลบ node ทันทีจาก local state
+      onDeleteNode?.(nodeId);
+    }
+
+    // ปิด modal
+    setActiveModal(null);
+    onCloseModal?.();
+  } catch (err: any) {
+    console.error("Failed to delete node:", err);
+    // ถ้า backend ส่ง object { message: ... } ให้เอา message มาแสดง
+    const msg = err?.message ?? (err?.response?.data?.message ?? "เกิดข้อผิดพลาดในการลบ node");
+    setError(String(msg));
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  useEffect(() => {
+    resetFields();
+    if (!nodeToEdit) return;
+
+    const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase().trim();
+    const rawLabel = String(
+      nodeToEdit.label ??
+        nodeToEdit.data?.label ??
+        nodeToEdit.data?.message ??
+        nodeToEdit.data?.condition ??
+        ""
+    ).trim();
+
+    const stripQuotes = (s: any) => {
+      const str = String(s ?? "");
+      return str.startsWith('"') && str.endsWith('"') ? str.slice(1, -1) : str;
+    };
+
+    if (rawType === "IN" || rawType === "INPUT" || rawType === "INPUT_STATEMENT") {
+      const varName =
+        nodeToEdit.data?.variable ??
+        nodeToEdit.data?.name ??
+        rawLabel.replace(/^Input\s+/i, "").replace(/^IN\s+/i, "");
+      setInputValue(String(varName ?? "").trim());
+      setActiveModal("input");
+      return;
+    }
+
+    if (rawType === "OU" || rawType === "OUT" || rawType === "OUTPUT" || rawType === "OUTPUT_STATEMENT") {
+      const rawMsg =
+        nodeToEdit.data?.message ??
+        nodeToEdit.data?.value ??
+        rawLabel.replace(/^Output\s+/i, "").replace(/^OUT\s+/i, "");
+      setOutputValue(String(stripQuotes(rawMsg ?? "")).trim());
+      setActiveModal("output");
+      return;
+    }
+
+    if (rawType === "DC" || rawType === "DECLARE" || rawType === "DECL") {
+      if (nodeToEdit.data?.name) {
+        setDeclareVariable(String(nodeToEdit.data.name ?? ""));
+        const vtRaw = nodeToEdit.data?.varType ?? nodeToEdit.data?.type ?? "integer";
+        // ถ้า backend ส่ง "integer,real" ให้เอาแค่ค่าแรก
+        const first = String(vtRaw).split(/[,|;\/\s]+/)[0] ?? "integer";
+        setDeclareDataType(first.charAt(0).toUpperCase() + first.slice(1));
+      } else {
+        const parts = rawLabel.split(/\s+/);
+        if (parts.length >= 2) {
+          setDeclareDataType(parts[0]);
+          setDeclareVariable(parts.slice(1).join(" "));
+        } else {
+          setDeclareVariable(rawLabel);
+        }
       }
       setActiveModal("declare");
-    } else if (t === "assign") {
-      const m = label.split("=");
-      if (m.length >= 2) {
-        setAssignVariable(m[0].trim());
-        setAssignExpression(m.slice(1).join("=").trim());
-      } else {
-        setAssignVariable(label);
+      return;
+    }
+
+
+    if (rawType === "AS" || rawType === "ASSIGN") {
+      if (nodeToEdit.data?.variable) setAssignVariable(String(nodeToEdit.data.variable ?? ""));
+      if (nodeToEdit.data?.value) setAssignExpression(String(nodeToEdit.data.value ?? ""));
+      if (!nodeToEdit.data?.variable && !nodeToEdit.data?.value) {
+        const m = rawLabel.split("=");
+        if (m.length >= 2) {
+          setAssignVariable(m[0].trim());
+          setAssignExpression(m.slice(1).join("=").trim());
+        } else {
+          setAssignVariable(rawLabel);
+        }
       }
       setActiveModal("assign");
-    } else if (t === "ifNode" || t === "if") {
-      setIfExpression(label);
+      return;
+    }
+
+    if (rawType === "IF" || rawType === "IF_STATEMENT") {
+      setIfExpression(String(nodeToEdit.data?.condition ?? rawLabel));
       setActiveModal("if");
-    } else if (t === "whileNode" || t === "while") {
-      setWhileExpression(label);
+      return;
+    }
+
+    if (rawType === "WH" || rawType === "WHILE") {
+      setWhileExpression(String(nodeToEdit.data?.condition ?? rawLabel));
       setActiveModal("while");
-    } else if (t === "forNode" || t === "for") {
-      const forMatch = label.match(/^(.+?)\s*=\s*(.+?)\s+to\s+(.+)$/i);
-      if (forMatch) {
-        setForVariable(forMatch[1].trim());
-        setForStart(forMatch[2].trim());
-        setForEnd(forMatch[3].trim());
+      return;
+    }
+
+    if (rawType === "FR" || rawType === "FOR") {
+      const init = String(nodeToEdit.data?.init ?? "");
+      const condition = String(nodeToEdit.data?.condition ?? "");
+      const increment = String(nodeToEdit.data?.increment ?? "");
+
+      if (init || condition || increment) {
+        const initMatch = init.match(/([a-zA-Z_]\w*)\s*=\s*([-\d]+)/);
+        if (initMatch) {
+          setForVariable(String(initMatch[1] ?? ""));
+          setForStart(String(initMatch[2] ?? ""));
+        } else {
+          const forMatch = String(rawLabel).match(/^(.+?)\s*=\s*(.+?)\s+to\s+(.+)$/i);
+          if (forMatch) {
+            setForVariable(String(forMatch[1].trim() ?? ""));
+            setForStart(String(forMatch[2].trim() ?? ""));
+            setForEnd(String(forMatch[3].trim() ?? ""));
+          } else {
+            setForVariable(rawLabel);
+          }
+        }
+
+        const condMatch =
+          condition.match(/<\s*([-\d]+)/) ||
+          condition.match(/<=\s*([-\d]+)/) ||
+          condition.match(/to\s+([-\d]+)/i);
+        if (condMatch) {
+          setForEnd(String(condMatch[1] ?? ""));
+        } else if (nodeToEdit.data?.end !== undefined) {
+          setForEnd(String(nodeToEdit.data.end));
+        }
+
+        const stepMatch = increment.match(/(?:\+=|=\s*.+\+\s*)([-\d]+)/);
+        if (stepMatch) setForStep(String(stepMatch[1] ?? ""));
+        else if (nodeToEdit.data?.step !== undefined) setForStep(String(nodeToEdit.data.step));
       } else {
-        setForVariable(label);
+        const forMatch = String(rawLabel).match(/^(.+?)\s*=\s*(.+?)\s+to\s+(.+)$/i);
+        if (forMatch) {
+          setForVariable(String(forMatch[1].trim() ?? ""));
+          setForStart(String(forMatch[2].trim() ?? ""));
+          setForEnd(String(forMatch[3].trim() ?? ""));
+        } else {
+          setForVariable(rawLabel);
+        }
       }
       setActiveModal("for");
-    } else if (t === "do") {
-      setDoExpression(label);
+      return;
+    }
+
+    if (rawType === "DO") {
+      setDoExpression(String(nodeToEdit.data?.condition ?? rawLabel));
       setActiveModal("do");
+      return;
     }
   }, [nodeToEdit]);
 
@@ -208,73 +439,61 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     onCloseModal?.();
   };
 
-  // modal configs (ใช้ FieldSimple / FieldGroup)
+  /* --- Modal Configs --- */
   const modalConfigs: ModalConfig[] = [
     {
       key: "input",
       title: "Input Properties",
       description: "A Input Statement reads a value from the keyboard and stores it in a variable.",
       icon: "/images/Rectangle.png",
-      fields: [
-        { kind: "simple", key: "variable", placeholder: "Variable name", value: inputValue, setValue: setInputValue },
-      ],
+      fields: [{ kind: "simple", key: "variable", placeholder: "Variable name", value: inputValue, setValue: setInputValue }],
       onSubmit: (e) => {
         e.preventDefault();
-        if (inputValue.trim() === "") {
-          setError("กรุณาใส่ชื่อ Variable");
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "input", `Input ${inputValue}`);
-        closeAll();
+        if (!inputValue.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "input", `Input ${inputValue}`, {
+          variable: inputValue,
+          prompt: `Enter your ${inputValue}:`,
+          varType: "string"
+        });
       },
-      onClose: () => {
-        setInputValue("");
-        closeAll();
-      },
+      onClose: () => { setInputValue(""); closeAll(); },
     },
     {
       key: "output",
       title: "Output Properties",
       description: "An Output Statement displays the result of an expression to the screen.",
       icon: "/images/Rectangle.png",
-      fields: [
-        { kind: "simple", key: "value", placeholder: 'Variable or "string"', value: outputValue, setValue: setOutputValue },
-      ],
+      fields: [{ kind: "simple", key: "value", placeholder: 'Variable or "string"', value: outputValue, setValue: setOutputValue }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateOutput(outputValue);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "output", `Output ${outputValue}`);
-        closeAll();
+        if (validationError) { setError(validationError); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "output", `Output ${outputValue}`, { message: outputValue });
       },
-      onClose: () => {
-        setOutputValue("");
-        closeAll();
-      },
+      onClose: () => { setOutputValue(""); closeAll(); },
     },
     {
       key: "declare",
       title: "Declare Properties",
       description: "A Declare Statement is used to create variables and arrays.",
       icon: "/images/shape_Declare.png",
-      fields: [{ kind: "simple", key: "variable", placeholder: "e.g., a", value: declareVariable, setValue: setDeclareVariable }],
+      // NOTE: we include a dummy dataType field so UI renderer recognizes it and uses the special checkbox block
+      fields: [
+        { kind: "simple", key: "variable", placeholder: "e.g., a", value: declareVariable, setValue: setDeclareVariable },
+        { kind: "simple", key: "dataType", placeholder: "", value: declareDataType, setValue: setDeclareDataType },
+      ],
       onSubmit: (e) => {
         e.preventDefault();
-        if (declareVariable.trim() === "") {
-          setError("กรุณาใส่ชื่อ Variable");
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "declare", `${declareDataType} ${declareVariable}`);
-        closeAll();
+        if (!declareVariable.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
+        const varTypePayload = declareDataType.toLowerCase(); // e.g., "integer"
+        const labelPrefix = declareDataType; // e.g., "Integer"
+        callUpdateOrAdd(nodeToEdit?.id, "declare", `${labelPrefix} ${declareVariable}`, {
+          name: declareVariable,
+          value: 0,
+          varType: varTypePayload
+        });
       },
-      onClose: () => {
-        setDeclareVariable("");
-        setDeclareDataType("Integer");
-        closeAll();
-      },
+      onClose: () => { setDeclareVariable(""); setDeclareDataType("Integer"); setDeclareDataTypes({ Integer: true, Real: false, String: false, Boolean: false }); closeAll(); },
     },
     {
       key: "assign",
@@ -287,18 +506,13 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       ],
       onSubmit: (e) => {
         e.preventDefault();
-        if (assignVariable.trim() === "" || assignExpression.trim() === "") {
-          setError("กรุณากรอกข้อมูลทั้ง Variable และ Expression");
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "assign", `${assignVariable} = ${assignExpression}`);
-        closeAll();
+        if (!assignVariable.trim() || !assignExpression.trim()) { setError("กรุณากรอกข้อมูล Variable และ Expression"); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "assign", `${assignVariable} = ${assignExpression}`, {
+          variable: assignVariable,
+          value: assignExpression
+        });
       },
-      onClose: () => {
-        setAssignVariable("");
-        setAssignExpression("");
-        closeAll();
-      },
+      onClose: () => { setAssignVariable(""); setAssignExpression(""); closeAll(); },
     },
     {
       key: "if",
@@ -309,17 +523,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(ifExpression);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "if", ifExpression);
-        closeAll();
+        if (validationError) { setError(validationError); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "if", ifExpression, { condition: ifExpression });
       },
-      onClose: () => {
-        setIfExpression("");
-        closeAll();
-      },
+      onClose: () => { setIfExpression(""); closeAll(); },
     },
     {
       key: "while",
@@ -330,17 +537,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(whileExpression);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression);
-        closeAll();
+        if (validationError) { setError(validationError); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression, {
+          condition: whileExpression,
+          varName: "x",
+          increment: "x = x + 1"
+        });
       },
-      onClose: () => {
-        setWhileExpression("");
-        closeAll();
-      },
+      onClose: () => { setWhileExpression(""); closeAll(); },
     },
     {
       key: "for",
@@ -348,58 +552,43 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       description: "A For Loop increments or decrements a variable through a range of values.",
       icon: "/images/shape_while.png",
       fields: [
-        {
-          kind: "group",
-          key: "group",
-          fields: [
-            { kind: "simple", key: "variable", placeholder: "e.g., a", value: forVariable, setValue: setForVariable },
-            { kind: "simple", key: "step", placeholder: "e.g., 1", value: forStep, setValue: setForStep },
-            { kind: "simple", key: "start", placeholder: "e.g., 0", value: forStart, setValue: setForStart },
-            { kind: "simple", key: "end", placeholder: "e.g., 10", value: forEnd, setValue: setForEnd },
-          ],
-        },
+        { kind: "group", key: "group", fields: [
+          { kind: "simple", key: "variable", placeholder: "e.g., i", value: forVariable, setValue: setForVariable },
+          { kind: "simple", key: "step", placeholder: "e.g., 1", value: forStep, setValue: setForStep },
+          { kind: "simple", key: "start", placeholder: "e.g., 0", value: forStart, setValue: setForStart },
+          { kind: "simple", key: "end", placeholder: "e.g., 10", value: forEnd, setValue: setForEnd },
+        ]},
       ],
       onSubmit: (e) => {
         e.preventDefault();
         if (!forVariable.trim() || !forStart.trim() || !forEnd.trim() || !forStep.trim()) {
-          setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
-          return;
+          setError("กรุณากรอกข้อมูลให้ครบทุกช่อง"); return;
         }
         if (isNaN(Number(forStart)) || isNaN(Number(forEnd)) || isNaN(Number(forStep))) {
-          setError("ค่า Start, End, และ Step By ต้องเป็นตัวเลขเท่านั้น");
-          return;
+          setError("ค่า Start, End, Step ต้องเป็นตัวเลข"); return;
         }
-        callUpdateOrAdd(nodeToEdit?.id, "for", `${forVariable} = ${forStart} to ${forEnd}`);
-        closeAll();
+        callUpdateOrAdd(nodeToEdit?.id, "for", `${forVariable} = ${forStart} to ${forEnd}`, {
+          init: `int ${forVariable} = ${forStart}`,
+          condition: `${forVariable} < ${forEnd}`,
+          increment: `${forVariable} += ${forStep}`,
+          varName: forVariable
+        });
       },
-      onClose: () => {
-        setForVariable("");
-        setForStart("");
-        setForEnd("");
-        setForStep("");
-        closeAll();
-      },
+      onClose: () => { setForVariable(""); setForStart(""); setForEnd(""); setForStep(""); closeAll(); },
     },
     {
       key: "do",
       title: "Do-While Properties",
-      description: "A Do-While loop executes body then checks condition.",
+      description: "Do-While Statement",
       icon: "/images/shape_while.png",
       fields: [{ kind: "simple", key: "condition", placeholder: "e.g., i < 10", value: doExpression, setValue: setDoExpression }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(doExpression);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        callUpdateOrAdd(nodeToEdit?.id, "do", doExpression);
-        closeAll();
+        if (validationError) { setError(validationError); return; }
+        callUpdateOrAdd(nodeToEdit?.id, "do", doExpression, { condition: doExpression });
       },
-      onClose: () => {
-        setDoExpression("");
-        closeAll();
-      },
+      onClose: () => { setDoExpression(""); closeAll(); },
     },
   ];
 
@@ -416,13 +605,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   ];
 
   const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
-    <div
-      className="flex flex-col items-center gap-1 cursor-pointer"
-      onClick={() => {
-        setError("");
-        setActiveModal(item.key);
-      }}
-    >
+    <div className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => { setError(""); resetFields(); setActiveModal(item.key); }}>
       <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
       <span className="text-sm text-gray-700">{item.label}</span>
     </div>
@@ -431,8 +614,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   /* --- Render active modal if any --- */
   if (activeModal) {
     const cfg = modalConfigs.find((m) => m.key === activeModal);
-    console.log(cfg);
-    
     if (!cfg) return null;
 
     return (
@@ -447,7 +628,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             )}
           </div>
 
-          {/* render fields */}
+          {/* Render fields dynamically */}
           {cfg.fields.map((f) => {
             if (f.kind === "group") {
               return (
@@ -464,9 +645,30 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                   ))}
                 </div>
               );
-            }
+                } else if (f.kind === "simple" && f.key === "dataType") {
+                  return (
+                    <div key={f.key} className="ml-6 mb-4">
+                      <div className="text-gray-700 mb-2">Data Type (เลือกได้ 1 ค่า)</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Integer", "Real", "String", "Boolean"].map((dt) => (
+                          <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
+                            <input
+                              type="radio"
+                              name="dataType"
+                              value={dt}
+                              checked={declareDataType === dt}
+                              onChange={(e) => setDeclareDataType(e.target.value)}
+                              className="w-4 h-4"
+                            />
+                            {dt}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
 
-            // f is FieldSimple here (narrowed)
+
             return (
               <input
                 key={f.key}
@@ -479,36 +681,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             );
           })}
 
-          {/* declare modal: render data type radios */}
-          {activeModal === "declare" && (
-            <>
-              <div className="text-gray-700 mb-2 ml-4">Data Type</div>
-              <div className="grid grid-cols-2 gap-2 ml-6 mb-4">
-                {["Integer", "Real", "String", "Boolean"].map((dt) => (
-                  <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
-                    <input
-                      type="radio"
-                      name="dataType"
-                      value={dt}
-                      checked={declareDataType === dt}
-                      onChange={(e) => setDeclareDataType(e.target.value)}
-                      className="w-4 h-4"
-                    />
-                    {dt}
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
-
           {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
 
           <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button type="button" onClick={() => modalConfigs.find(m => m.key === activeModal)!.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
+            <button type="button" onClick={() => cfg.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
               Cancel
             </button>
-            <button type="submit" className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">
-              Ok
+            <button type="submit" disabled={loading} className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">
+              {loading ? "Saving..." : "Ok"}
             </button>
           </div>
         </form>

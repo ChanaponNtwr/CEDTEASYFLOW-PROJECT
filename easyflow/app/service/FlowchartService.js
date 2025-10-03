@@ -1,10 +1,11 @@
+// FlowchartService.js (แก้แล้ว)
 import axios from "axios";
 
-const BASE_URL = "http://localhost:8080/flowchart";
+const BASE_URL = "http://localhost:8080"; // <<-- เอา /flowchart ออก
 
 export const apiPostFlowchart = async (data) => {
   try {
-    const response = await axios.post(`${BASE_URL}/create`, data);
+    const response = await axios.post(`${BASE_URL}/flowchart/create`, data);
     return response.data;
   } catch (error) {
     console.error("Error posting flowchart:", error);
@@ -12,10 +13,12 @@ export const apiPostFlowchart = async (data) => {
   }
 };
 
-
 export const apiGetFlowchart = async (id) => {
+  if (!id) {
+    throw new Error("apiGetFlowchart: missing flowchart id");
+  }
   try {
-    const response = await axios.get(`${BASE_URL}/flowchart/${id}`);
+    const response = await axios.get(`${BASE_URL}/flowchart/${encodeURIComponent(id)}`);
     return response.data;
   } catch (error) {
     console.error("Error fetching flowchart:", error);
@@ -23,36 +26,14 @@ export const apiGetFlowchart = async (id) => {
   }
 };
 
-
-// export const apiDeleteFlowchart = async (id) => {
-//   try {
-//     const response = await axios.delete(`${BASE_URL}/flowchart/${id}`);
-//     return response.data;
-//   } catch (error) {
-//     console.error("Error fetching flowchart:", error);
-//     throw error;
-//   }
-// };
-
-
-// // --- ลบ Node ตาม flowchartId และ nodeId ---
-// export const apiDeleteNode = async (flowchartId, nodeId) => {
-//   try {
-//     const response = await axios.delete(
-//       `${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`
-//     );
-//     return response.data;
-//   } catch (error) {
-//     console.error("Error deleting node:", error);
-//     throw error;
-//   }
-// };
-
-
-// Insert node at edge
 export const insertNode = async (flowchartId, edgeId, node) => {
+  if (!flowchartId) {
+    throw new Error("insertNode: missing flowchartId");
+  }
   try {
-    const response = await axios.post(`${BASE_URL}/insert-node`, {
+    // ถ้า backend ของคุณรับเป็น POST /flowchart/insert-node กับ payload ที่มี flowchartId นี่ก็โอเค,
+    // แต่ผมใส่ path เป็น /flowchart/insert-node และยังส่ง payload เดิมให้เหมือนก่อนหน้า
+    const response = await axios.post(`${BASE_URL}/flowchart/insert-node`, {
       flowchartId,
       edgeId,
       node,
@@ -65,4 +46,29 @@ export const insertNode = async (flowchartId, edgeId, node) => {
 };
 
 
+export const deleteNode = async (flowchartId, nodeId) => {
+  try {
+    const resp = await axios.delete(`${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`
+    );
+    return resp.data; // { ok: true, message: "...", diffs: {...} }
+  } catch (error) {
+    console.error("Error deleting node:", error);
+    throw error;
+  }
+};
 
+
+export const editNode = async (flowchartId, nodeId, updateData) => {
+  if (!flowchartId || !nodeId) {
+    throw new Error("editNode: missing flowchartId or nodeId");
+  }
+  try {
+    const resp = await axios.put(`${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`,
+      updateData
+    );
+    return resp.data; // { ok: true, message: "...", flowchartId: "...", diffs: {...} }
+  } catch (error) {
+    console.error("Error editing node:", error);
+    throw error;
+  }
+};
