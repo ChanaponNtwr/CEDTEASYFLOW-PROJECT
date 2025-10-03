@@ -1,12 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signOut } from "next-auth/react";
 import { motion } from "framer-motion";
 
+interface User {
+  fname?: string | null;
+  image?: string | null;
+}
+
 function Navbar() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    fetch("/api/user")
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) setUser(data.user);
+      });
+  }, []);
+
+  const displayName = user?.fname || "User";
+  const displayImage = user?.image || "https://img2.pic.in.th/pic/9440461.jpg";
 
   return (
     <div className="fixed top-0 left-0 w-full bg-blue-600 text-white p-4 flex justify-between items-center z-[1100]">
@@ -16,7 +33,7 @@ function Navbar() {
             src="https://img5.pic.in.th/file/secure-sv1/Esay-Flow.png"
             alt="EasyFlow Logo"
             className="h-14 mr-6 cursor-pointer"
-            whileHover={{ scale: 1.1, rotate: 5 }} // เพิ่ม animation แค่ตรง logo
+            whileHover={{ scale: 1.1, rotate: 5 }}
             transition={{ type: "spring", stiffness: 300 }}
           />
         </Link>
@@ -37,11 +54,11 @@ function Navbar() {
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
           >
             <img
-              src="https://img2.pic.in.th/pic/9440461.jpg"
+              src={displayImage}
               alt="Profile"
               className="h-8 w-8 rounded-full mr-2"
             />
-            <span>Chanapon</span>
+            <span>{displayName}</span>
             <svg
               className={`w-4 h-4 ml-1 transition-transform duration-300 ease-in-out ${
                 isDropdownOpen ? "rotate-180" : "rotate-0"
