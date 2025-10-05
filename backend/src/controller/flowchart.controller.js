@@ -595,7 +595,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
   }
 });
 
-router.post("/execute", (req, res) => {
+router.post("/execute", async (req, res) => {
   try {
     let raw = req.body;
     if (typeof raw === "string") {
@@ -603,17 +603,28 @@ router.post("/execute", (req, res) => {
     }
     const body = raw || {};
 
-    const flowchartId = body.flowchartId;
-    if (!flowchartId) {
+    const flowchartIdRaw = body.flowchartId;
+    if (!flowchartIdRaw && flowchartIdRaw !== 0) {
       return res.status(400).json({ ok: false, error: "Missing 'flowchartId' in request. Must provide the saved flowchart id to execute." });
     }
-    const saved = savedFlowcharts.get(flowchartId);
+
+    const fid = Number(flowchartIdRaw);
+    // try to find in memory (support both number and string keys)
+    let saved = savedFlowcharts.get(fid);
+    if (!saved) saved = savedFlowcharts.get(String(flowchartIdRaw));
+
+    // fallback: load from DB
     if (!saved) {
-      return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
+      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: isNaN(fid) ? Number(flowchartIdRaw) : fid } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartIdRaw}' not found.` });
+      saved = fcFromDB.content;
+      // normalize memory key to Number if possible
+      const mapKey = Number(fcFromDB.flowchartId);
+      savedFlowcharts.set(isNaN(mapKey) ? String(fcFromDB.flowchartId) : mapKey, saved);
     }
 
     const action = body.action ?? "run";
-    const variables = Array.isArray(body.variables) ? body.variables : [];
+    const variables = body.variables;
     const options = body.options || {};
     const restoreState = body.restoreState || {};
     const forceAdvanceBP = Boolean(body.forceAdvanceBP);
@@ -621,25 +632,38 @@ router.post("/execute", (req, res) => {
     // hydrate from saved JSON
     const fc = hydrateFlowchart(saved);
 
-    console.log("HYDRATED NODES:", Object.keys(fc.nodes));
-    console.log("HYDRATED EDGES:", Object.keys(fc.edges));
-
+    // create executor
     const executor = new Executor(fc, options);
 
-    // restore state if provided
+    // restore state if provided (best-effort)
     if (restoreState && restoreState.context && Array.isArray(restoreState.context.variables)) {
-      executor.context = new Context(restoreState.context.variables);
+      // restore by setting variables into context individually
+      for (const v of restoreState.context.variables) {
+        if (v && v.name) executor.context.set(v.name, v.value, v.varType);
+      }
     }
     if (restoreState.currentNodeId) executor.currentNodeId = restoreState.currentNodeId;
     if (typeof restoreState.finished === "boolean") executor.finished = restoreState.finished;
     if (typeof restoreState.paused === "boolean") executor.paused = restoreState.paused;
     if (typeof restoreState.stepCount === "number") executor.stepCount = restoreState.stepCount;
 
-    // ensure context variables
-    if (Array.isArray(body.variables) && body.variables.length > 0) {
-      executor.context = new Context(body.variables);
+    // Apply variables argument (support both array and object)
+    if (Array.isArray(variables) && variables.length > 0) {
+      for (const v of variables) {
+        if (v && v.name) executor.context.set(v.name, v.value, v.varType);
+      }
+    } else if (variables && typeof variables === "object" && !Array.isArray(variables)) {
+      // object map: { a: 1, b: "hi" } or { a: { value:1, varType: "integer" } , ... }
+      for (const k of Object.keys(variables)) {
+        const val = variables[k];
+        if (val && typeof val === "object" && ("value" in val || "varType" in val)) {
+          executor.context.set(k, val.value, val.varType);
+        } else {
+          executor.context.set(k, val);
+        }
+      }
     } else {
-      // inputMap / defaults
+      // inputMap / inputDefaults fallback (preserve previous design)
       const inputMap = (body.inputMap && typeof body.inputMap === "object") ? body.inputMap : {};
       const inputDefaults = (body.inputDefaults && typeof body.inputDefaults === "object") ? body.inputDefaults : {};
       for (const k of Object.keys(inputMap)) executor.context.set(k, inputMap[k]);
@@ -648,24 +672,87 @@ router.post("/execute", (req, res) => {
       }
     }
 
-    // apply variables array entries individually (safe)
-    for (const v of variables) {
-      if (v && v.name) executor.context.set(v.name, v.value, v.varType);
+    // forward other variable array entries individually (safe)
+    if (Array.isArray(body.variables)) {
+      for (const v of body.variables) {
+        if (v && v.name) executor.context.set(v.name, v.value, v.varType);
+      }
     }
 
-    // actions
+    // handle actions
     if (action === "reset") {
       executor.reset();
       return res.json({ ok: true, message: "reset", context: { variables: executor.context.variables, output: executor.context.output } });
     }
+    // default: runAll
+    if (action === "runAll") {
+      const ignoreBreakpoints = Boolean(options.ignoreBreakpoints || body.ignoreBreakpoints);
+      const nodeStates = []; // เก็บ state ของแต่ละ Node
+
+      while (!executor.finished) {
+        const nodeIdBefore = executor.currentNodeId;
+        const result = executor.step({ forceAdvanceBP: false }); // หรือ ignoreBreakpoints ตาม logic
+        nodeStates.push({
+          nodeId: nodeIdBefore,
+          output: [...executor.context.output],
+          variables: [...executor.context.variables]
+        });
+      }
+
+      return res.json({
+        ok: true,
+        message: "runAll completed",
+        flowchartId: fid,
+        nodeStates, // ส่งกลับ frontend เพื่อบอกว่า Node ไหนทำอะไรบ้าง
+        finalContext: {
+          variables: executor.context.variables,
+          output: executor.context.output
+        }
+      });
+    }
 
     if (action === "step") {
+      const lastStateKey = `executorState_${fid}`;
+      let lastState = savedFlowcharts.get(lastStateKey) || {};
+
+      if (lastState.executor) {
+        // restore executor state
+        executor.currentNodeId = lastState.executor.currentNodeId;
+        executor.finished = lastState.executor.finished;
+        executor.paused = lastState.executor.paused;
+        executor.stepCount = lastState.executor.stepCount;
+        for (const v of lastState.executor.context?.variables || []) {
+          executor.context.set(v.name, v.value, v.varType);
+        }
+      }
+
+      // ถ้า finished แล้ว ให้ reset เพื่อเริ่มใหม่
+      if (executor.finished) {
+        executor.reset();
+      }
+
       const result = executor.step({ forceAdvanceBP });
-      return res.json({ ok: true, result, context: { variables: executor.context.variables, output: executor.context.output } });
+
+      // save state กลับ memory
+      savedFlowcharts.set(lastStateKey, {
+        executor: {
+          currentNodeId: executor.currentNodeId,
+          finished: executor.finished,
+          paused: executor.paused,
+          stepCount: executor.stepCount,
+          context: { variables: executor.context.variables, output: executor.context.output }
+        }
+      });
+
+      return res.json({
+        ok: true,
+        result,
+        context: { variables: executor.context.variables, output: executor.context.output }
+      });
     }
 
     if (action === "resume") {
-      const result = executor.resume();
+      const result = executor.resume({ forceAdvanceBP });
       return res.json({ ok: true, result, context: { variables: executor.context.variables, output: executor.context.output } });
     }
 
@@ -680,5 +767,6 @@ router.post("/execute", (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
 
 export default router;
