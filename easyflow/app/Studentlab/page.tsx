@@ -53,8 +53,8 @@ function Studentlab() {
     e.preventDefault();
 
     // TODO: เปลี่ยนค่า userId / labId ให้เป็นของจริง (จาก user session, props, หรือ router query)
-    const userId = "user_124";
-    const labId = "lab_456";
+    const userId = 1;
+    const labId = 1;
 
     // สร้าง payload ที่จะส่ง (ใส่ฟิลด์อื่นๆ ได้ตามต้องการ)
     const payload = {

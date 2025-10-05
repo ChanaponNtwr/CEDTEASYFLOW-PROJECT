@@ -21,7 +21,7 @@ type FlowNode = Node & {
 };
 
 interface SymbolSectionProps {
-  flowchartId: string;
+  flowchartId: number;
   selectedEdgeId?: string;
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
