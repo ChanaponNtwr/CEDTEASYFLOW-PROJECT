@@ -1,8 +1,10 @@
+// src/controller/auth.controller.ts
 import prisma from "../lib/prisma";
 import { type JWT } from "next-auth/jwt";
 import { type NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import classUser from "../service/user/classuser";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -20,90 +22,69 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+  
   callbacks: {
-    async signIn({ user }) {
-      if (!user.email) return false;
+  async signIn({ user, account, profile }) {
+    if (!user?.email && !profile?.email) return false;
 
-      let dbUser = await prisma.user.findUnique({
-        where: { email: user.email },
-      });
+    const providerAccountId =
+      (account as any)?.providerAccountId?.toString() ??
+      (profile as any)?.sub?.toString() ??
+      (user as any)?.id?.toString();
 
-      const imageUrl = (user as any).image ?? null;
+    const oauthUser = {
+      id: providerAccountId,
+      email: (user?.email ?? (profile as any)?.email) as string,
+      name: (user?.name ?? (profile as any)?.name) as string,
+      image: (profile as any)?.picture ?? (user as any)?.image ?? null,
+      accessToken: (account as any)?.access_token ?? '',
+    };
 
-      if (!dbUser) {
-        dbUser = await prisma.user.create({
-          data: {
-            email: user.email,
-            name: user.name ?? "Unknown",
-            fname: user.name?.split(" ")[0] ?? "",
-            lname: user.name?.split(" ")[1] ?? "",
-            image: imageUrl,
-          } as any,
-        });
-      } else {
-        dbUser = await prisma.user.update({
-          where: { email: user.email },
-          data: {
-            name: user.name ?? "Unknown",
-            fname: user.name?.split(" ")[0] ?? "",
-            lname: user.name?.split(" ")[1] ?? "",
-            image: imageUrl ?? dbUser.image,
-          } as any,
-        });
-      }
-
-      const existingAccount = await prisma.account.findUnique({
-        where: {
-          provider_providerAccountId: {
-            provider: "google",
-            providerAccountId: user.id.toString(),
-          },
-        },
-      });
-
-      if (!existingAccount) {
-        await prisma.account.create({
-          data: {
-            userId: dbUser.id, // Prisma จะรับ UUID หรือ Int ตาม schema
-            provider: "google",
-            providerAccountId: user.id.toString(),
-            type: "oauth",
-            access_token: (user as any).accessToken ?? "",
-          },
-        });
-      }
-
+    try {
+      await classUser.ensureUserAndAccount(oauthUser, (account as any)?.provider ?? 'google');
       return true;
-    },
+    } catch (err) {
+      console.error("signIn error:", err);
+      return false;
+    }
+  },
 
-    async jwt({ token, user }): Promise<JWT> {
-      if (user?.email) {
-        const dbUser = await prisma.user.findUnique({
-          where: { email: user.email },
-        });
+  async jwt({ token, user }): Promise<JWT> {
+    // ตอนแรกหลัง sign-in (จะมี user) -> โหลดจาก DB และเติม token
+    if (user?.email) {
+      const dbUser = await classUser.getUserByEmail(user.email);
+      if (!dbUser) return token;
+      return {
+        ...token,
+        userId: dbUser.id.toString(),
+        name: dbUser.name ?? token.name ?? "Unknown",
+        email: dbUser.email ?? token.email ?? "",
+        picture: dbUser.image ?? token.picture ?? null,
+      } as JWT;
+    }
 
-        if (!dbUser) return token;
-
-        return {
-          ...token,
-          userId: dbUser.id.toString(),
-          name: dbUser.name ?? "Unknown",
-          email: dbUser.email ?? "unknown@example.com",
-          picture: dbUser.image ?? null,
-        };
+    // ถ้าต่อมา token มี email แต่ยังไม่มี picture -> เติมจาก DB
+    if ((token as any)?.email) {
+      const dbUser = await classUser.getUserByEmail((token as any).email as string);
+      if (dbUser) {
+        (token as any).userId = dbUser.id.toString();
+        (token as any).name = (token as any).name ?? dbUser.name ?? "Unknown";
+        (token as any).picture = (token as any).picture ?? dbUser.image ?? null;
       }
-      return token;
-    },
+    }
+
+    return token;
+  },
 
     async session({ session, token }) {
-  session.user = {
-    ...(session.user as any), // cast เป็น any ชั่วคราวเพื่อ spread ค่าเดิม
-    userId: token.userId,      // ตอนนี้ TS รู้จัก userId
-    name: token.name ?? "Unknown",
-    email: token.email ?? "",
-    image: token.picture ?? null,
-  };
-  return session;
+      session.user = {
+        ...(session.user as any),
+        userId: (token as any).userId,
+        name: token.name ?? "Unknown",
+        email: token.email ?? "",
+        image: token.picture ?? null,
+      };
+      return session;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
