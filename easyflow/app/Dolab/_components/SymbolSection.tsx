@@ -265,6 +265,45 @@ const handleDeleteClick = async () => {
     const res = await deleteNode(flowchartId, nodeId);
     console.info("deleteNode response:", res);
 
+    // --- NEW: ถ้า node ที่ถูกลบคือ IF ให้ลองลบ breakpoint ที่เกี่ยวข้องด้วย ---
+    try {
+      const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase();
+      if (rawType.includes("IF")) {
+        // หา bp id จากหลายแหล่งที่เป็นไปได้ (backend อาจเก็บไว้ใน data)
+        const candidates: string[] = [];
+
+        // 1) properties ที่อาจมีชื่อ common
+        if (nodeToEdit.data?.breakpointId) candidates.push(String(nodeToEdit.data.breakpointId));
+        if (nodeToEdit.data?.bpId) candidates.push(String(nodeToEdit.data.bpId));
+        if (nodeToEdit.data?.bp_node_id) candidates.push(String(nodeToEdit.data.bp_node_id));
+
+        // 2) ถ้าไม่มี ให้ลองคาดเดาตามรูปแบบที่เห็นบ่อย: bp_<nodeId>
+        candidates.push(`bp_${nodeId}`);
+        // ถ้า nodeId แบบมี prefix เช่น n1 หรือ n_start ให้ลองลบ prefix 'n_' หรือ 'n' (ปลอดภัย)
+        candidates.push(`bp_${nodeId.replace(/^n_?/i, "")}`);
+
+        // กรองค่าซ้ำ และเอาเฉพาะ non-empty
+        const uniqCandidates = Array.from(new Set(candidates.filter(Boolean)));
+
+        for (const bpId of uniqCandidates) {
+          try {
+            // เรียกลบ breakpoint แต่ไม่โยน error ให้ขาดทั้ง flow ถ้าไม่พบ/ล้มเหลว
+            console.info("Attempting to delete associated BP node:", bpId);
+            const bpRes = await deleteNode(flowchartId, bpId);
+            console.info("Deleted BP node:", bpId, bpRes);
+            // ถ้ลบสำเร็จ ออกจาก loop (ไม่ต้องพยายามลบ id อื่นๆ ซ้ำ)
+            break;
+          } catch (bpErr: any) {
+            // บันทึกแล้วลอง id ถัดไป — ไม่ต้องแสดง error ให้ user มากนัก
+            console.warn(`Failed to delete BP candidate ${bpId}:`, bpErr?.message ?? bpErr);
+            // ถ้า response แจ้งว่าไม่มี node จริง อาจจะเป็นปกติ ดังนั้นไม่ต้อง setError
+          }
+        }
+      }
+    } catch (innerErr) {
+      console.warn("Error while attempting to delete associated breakpoint:", innerErr);
+    }
+
     // ถ้ามี onRefresh ให้ใช้เพื่อโหลดข้อมูลใหม่ทั้งหมดจาก backend (recommended)
     if (onRefresh) {
       try {
@@ -289,6 +328,7 @@ const handleDeleteClick = async () => {
     setLoading(false);
   }
 };
+
 
 
   useEffect(() => {

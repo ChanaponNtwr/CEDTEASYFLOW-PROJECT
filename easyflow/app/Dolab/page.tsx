@@ -90,7 +90,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
   // --- Refresh function: ดึงข้อมูลจริงจาก backend และอัปเดต state ---
 // page.tsx (inside FlowchartEditor)
 
-const FIXED_FLOWCHART_ID = 2;
+const FIXED_FLOWCHART_ID = 5;
 
 const refreshFlowchart = React.useCallback(async () => {
   try {
