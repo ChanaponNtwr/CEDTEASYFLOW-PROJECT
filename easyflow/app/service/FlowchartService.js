@@ -72,3 +72,25 @@ export const editNode = async (flowchartId, nodeId, updateData) => {
     throw error;
   }
 };
+
+
+export const executeStepNode = async (flowchartId, variables = [], forceAdvanceBP = false) => {
+  if (!flowchartId) {
+    throw new Error("executeStepNode: missing flowchartId");
+  }
+
+  try {
+    const payload = {
+      flowchartId,
+      action: "step", // สั่งให้ execute ทีละ step
+      variables,
+      forceAdvanceBP,
+    };
+
+    const response = await axios.post(`${BASE_URL}/flowchart/execute`, payload);
+    return response.data; // คาดว่า backend จะส่งข้อมูลสถานะ flowchart กลับมา เช่น node ปัจจุบัน
+  } catch (error) {
+    console.error("Error executing step node:", error);
+    throw error;
+  }
+};
