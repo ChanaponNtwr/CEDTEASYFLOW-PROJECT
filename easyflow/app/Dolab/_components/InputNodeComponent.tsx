@@ -2,9 +2,14 @@
 import React, { useRef, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 
-const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
-  data,
-}) => {
+type Props = {
+  data: {
+    label: string;
+    __highlight?: boolean;
+  };
+};
+
+const InputNodeComponent: React.FC<Props> = ({ data }) => {
   const baseWidth = 180;
   const baseHeight = 50;
   const padding = 30;
@@ -23,11 +28,20 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
 
   const height = baseHeight;
 
-  // พิกัดสำหรับสี่เหลี่ยมด้านขนาน (เหมือนเดิม)
+  // พิกัดสำหรับสี่เหลี่ยมด้านขนาน
   const points = `${skew},0 ${width},0 ${width - skew},${height} 0,${height}`;
-  
-  // ✅ คำนวณค่าที่ต้องเลื่อน (offset) เพื่อให้รูปทรงอยู่ตรงกลาง
-  const xOffset = skew / 2;
+
+  // highlight detection
+  const highlighted = Boolean(data?.__highlight);
+
+  // root container (no rectangular border — highlight drawn inside SVG)
+  const rootStyle: React.CSSProperties = {
+    position: "relative",
+    width,
+    height,
+    borderRadius: 6,
+    display: "inline-block",
+  };
 
   const hiddenHandleStyle = {
     width: 0,
@@ -36,31 +50,76 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
   };
 
   return (
-    // กรอบ Container หลัก ขนาดจะพอดีกับรูปทรง
-    <div style={{ position: "relative", width, height }}>
-      <svg width="100%" height="100%" style={{ overflow: "visible" }}>
-        {/* ✅ ใช้ transform="translate(x, y)" เพื่อเลื่อน group ของ element ทั้งหมด */}
-        <g transform={`translate(-${xOffset}, 0)`}>
+    <div style={rootStyle} className={highlighted ? "my-node-highlight" : undefined}>
+      <svg
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${width} ${height}`}
+        style={{ overflow: "visible", display: "block" }}
+        aria-hidden
+      >
+        {/* defs for glow filter */}
+        <defs>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* base parallelogram */}
+        <g transform={`translate(-${skew / 2}, 0)`}>
           <polygon
             points={points}
-            fill="#D0E8FF" // ใส่สีพื้นหลังกลับเข้าไป
+            fill="#D0E8FF"
             stroke="#000000"
             strokeWidth="1"
           />
+
+          {/* highlight overlay: same shape, stroke-only, glow */}
+          {highlighted && (
+            <>
+              {/* thicker stroke for solid outline */}
+              <polygon
+                points={points}
+                fill="none"
+                stroke="#ff6b00"
+                strokeWidth={2}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                style={{ filter: "url(#glow)" }}
+              />
+              {/* thin crisp outer line to make edge sharp */}
+              <polygon
+                points={points}
+                fill="none"
+                stroke="#ff6b00"
+                strokeWidth={1}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                opacity={0.95}
+              />
+            </>
+          )}
+
+          {/* label */}
           <text
             x={width / 2}
             y={height / 2}
             textAnchor="middle"
             alignmentBaseline="middle"
             fontSize="14"
-            fill="black" // ใส่สีตัวอักษร
+            fill="black"
+            style={{ pointerEvents: "none", userSelect: "none" }}
           >
             {data.label}
           </text>
         </g>
       </svg>
 
-      {/* Hidden span สำหรับวัดขนาดข้อความ (เหมือนเดิม) */}
+      {/* Hidden span สำหรับวัดขนาดข้อความ */}
       <span
         ref={textRef}
         style={{
@@ -73,7 +132,7 @@ const InputNodeComponent: React.FC<{ data: { label: string } }> = ({
         {data.label}
       </span>
 
-      {/* ✅ Handles for connections (ปรับตำแหน่ง left ให้เป็น 50% เพื่อให้อยู่กึ่งกลาง) */}
+      {/* Handles for connections */}
       <Handle
         type="target"
         position={Position.Top}
