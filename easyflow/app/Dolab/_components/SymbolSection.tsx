@@ -519,7 +519,7 @@ const handleDeleteClick = async () => {
       icon: "/images/shape_Declare.png",
       // NOTE: we include a dummy dataType field so UI renderer recognizes it and uses the special checkbox block
       fields: [
-        { kind: "simple", key: "variable", placeholder: "e.g., a", value: declareVariable, setValue: setDeclareVariable },
+        { kind: "simple", key: "variable", placeholder: "variable", value: declareVariable, setValue: setDeclareVariable },
         { kind: "simple", key: "dataType", placeholder: "", value: declareDataType, setValue: setDeclareDataType },
       ],
       onSubmit: (e) => {
@@ -541,8 +541,8 @@ const handleDeleteClick = async () => {
       description: "An Assignment Statement stores the result of an expression in a variable.",
       icon: "/images/square.png",
       fields: [
-        { kind: "simple", key: "variable", placeholder: "e.g., a", value: assignVariable, setValue: setAssignVariable },
-        { kind: "simple", key: "expression", placeholder: "e.g., 10", value: assignExpression, setValue: setAssignExpression },
+        { kind: "simple", key: "variable", placeholder: "variable", value: assignVariable, setValue: setAssignVariable },
+        { kind: "simple", key: "expression", placeholder: "expression", value: assignExpression, setValue: setAssignExpression },
       ],
       onSubmit: (e) => {
         e.preventDefault();
@@ -559,7 +559,7 @@ const handleDeleteClick = async () => {
       title: "If Properties",
       description: "An IF Statement checks a Boolean expression and executes a branch based on the result.",
       icon: "/images/shape_if.png",
-      fields: [{ kind: "simple", key: "condition", placeholder: "e.g., a > 10", value: ifExpression, setValue: setIfExpression }],
+      fields: [{ kind: "simple", key: "condition", placeholder: "condition a > 10", value: ifExpression, setValue: setIfExpression }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(ifExpression);
@@ -573,7 +573,7 @@ const handleDeleteClick = async () => {
       title: "While Properties",
       description: "A WHILE Statement repeatedly executes code as long as the condition is true.",
       icon: "/images/shape_while.png",
-      fields: [{ kind: "simple", key: "condition", placeholder: "e.g., count < 10", value: whileExpression, setValue: setWhileExpression }],
+      fields: [{ kind: "simple", key: "condition", placeholder: "condition count < 10", value: whileExpression, setValue: setWhileExpression }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(whileExpression);
@@ -593,10 +593,10 @@ const handleDeleteClick = async () => {
       icon: "/images/shape_while.png",
       fields: [
         { kind: "group", key: "group", fields: [
-          { kind: "simple", key: "variable", placeholder: "e.g., i", value: forVariable, setValue: setForVariable },
-          { kind: "simple", key: "step", placeholder: "e.g., 1", value: forStep, setValue: setForStep },
-          { kind: "simple", key: "start", placeholder: "e.g., 0", value: forStart, setValue: setForStart },
-          { kind: "simple", key: "end", placeholder: "e.g., 10", value: forEnd, setValue: setForEnd },
+          { kind: "simple", key: "variable", placeholder: "variable", value: forVariable, setValue: setForVariable },
+          { kind: "simple", key: "step", placeholder: "step", value: forStep, setValue: setForStep },
+          { kind: "simple", key: "start", placeholder: "start", value: forStart, setValue: setForStart },
+          { kind: "simple", key: "end", placeholder: "end", value: forEnd, setValue: setForEnd },
         ]},
       ],
       onSubmit: (e) => {
@@ -621,7 +621,7 @@ const handleDeleteClick = async () => {
       title: "Do-While Properties",
       description: "Do-While Statement",
       icon: "/images/shape_while.png",
-      fields: [{ kind: "simple", key: "condition", placeholder: "e.g., i < 10", value: doExpression, setValue: setDoExpression }],
+      fields: [{ kind: "simple", key: "condition", placeholder: "condition i < 10", value: doExpression, setValue: setDoExpression }],
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(doExpression);
@@ -688,7 +688,7 @@ const handleDeleteClick = async () => {
                 } else if (f.kind === "simple" && f.key === "dataType") {
                   return (
                     <div key={f.key} className="ml-6 mb-4">
-                      <div className="text-gray-700 mb-2">Data Type (เลือกได้ 1 ค่า)</div>
+                      <div className="text-gray-700 mb-2">Data Type</div>
                       <div className="grid grid-cols-2 gap-2">
                         {["Integer", "Real", "String", "Boolean"].map((dt) => (
                           <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
