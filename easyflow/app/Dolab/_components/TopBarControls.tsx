@@ -18,6 +18,7 @@ type NodeResult = {
   incomingEdgeIds?: string[];
   outgoingEdgeIds?: string[];
   loopExitEdge?: any;
+  variables?: Variable[];
 };
 
 type ExecContext = {
@@ -71,9 +72,14 @@ export default function TopBarControls({
   const [fetchedVariables, setFetchedVariables] = useState<Variable[] | null>(null);
   const [fetchingVars, setFetchingVars] = useState(false);
 
+  // Node id ที่ modal จะส่งค่าเข้า (เช่น 'n4' หรือ 'n5')
+  const [inputNodeId, setInputNodeId] = useState<string | null>(null);
+  // ชื่อตัวแปรที่ node เป้าหมายต้องการรับ (เช่น 'b')
+  const [inputVarName, setInputVarName] = useState<string | null>(null);
+
   const togglePopup = () => setShowPopup((v) => !v);
 
-  // 🧩 ดึง variables จาก node ที่ type เป็น DECLARE / VAR / DC
+  // --- Fetch variables from flowchart (fallback source) ---
   useEffect(() => {
     let mounted = true;
     const fetchVars = async () => {
@@ -92,11 +98,14 @@ export default function TopBarControls({
           (n) => n?.type === 'DC' || n?.type === 'DECLARE' || n?.type === 'VAR'
         );
 
-        const vars: Variable[] = varNodes.map((n) => {
+        const vars: Variable[] = varNodes.flatMap((n) => {
+          if (Array.isArray(n.variables) && n.variables.length > 0) {
+            return n.variables.map((v: any) => ({ name: v.name, value: v.value ?? 0 }));
+          }
           const d = n?.data ?? {};
           const name = d?.name ?? d?.variable ?? n?.label ?? `var_${n?.id ?? 'unknown'}`;
           const value = d?.value ?? 0;
-          return { name, value };
+          return [{ name, value }];
         });
 
         if (mounted) setFetchedVariables(vars);
@@ -111,12 +120,53 @@ export default function TopBarControls({
     };
 
     fetchVars();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [flowchartId, initialVariables]);
 
-  // ▶️ Step ทีละขั้น
+  // --- Helper: resolve first variable name for a given nodeId ---
+  // Try in order: lastResponse.result.node (if matches), lastResponse.result.context.variables,
+  // then fetch flowchart and find node by id.
+  const getFirstVarNameForNode = async (nodeId?: string | null): Promise<string | undefined> => {
+    if (!nodeId) return undefined;
+
+    // 1) If lastResponse included the node details and matches target id
+    const nodeFromLast = lastResponse?.result?.node;
+    if (nodeFromLast && String(nodeFromLast.id) === String(nodeId)) {
+      const v = nodeFromLast.variables?.[0]?.name;
+      if (v) return v;
+      // try data fields
+      const d = nodeFromLast.data ?? {};
+      const name = d?.name ?? d?.variable ?? nodeFromLast?.label;
+      if (name) return name;
+    }
+
+    // 2) maybe the context contains variables that correspond to upcoming node
+    const maybeVars = lastResponse?.result?.context?.variables;
+    if (Array.isArray(maybeVars) && maybeVars.length > 0) {
+      return maybeVars[0].name;
+    }
+
+    // 3) fallback: fetch flowchart and find node
+    try {
+      if (!flowchartId) return undefined;
+      const flowResp = await apiGetFlowchart(flowchartId);
+      const nodes: any[] = flowResp?.flowchart?.nodes ?? flowResp?.nodes ?? [];
+      const target = nodes.find((n) => String(n?.id) === String(nodeId));
+      if (target) {
+        if (Array.isArray(target.variables) && target.variables.length > 0) {
+          return target.variables[0].name;
+        }
+        const d = target?.data ?? {};
+        const name = d?.name ?? d?.variable ?? target?.label;
+        if (name) return name;
+      }
+    } catch (err) {
+      console.warn('getFirstVarNameForNode: failed to fetch flowchart', err);
+    }
+    return undefined;
+  };
+
+  // --- Step execution (▶️) ---
   const handleStep = async () => {
     if (isLoading || done) return;
     setIsLoading(true);
@@ -134,12 +184,27 @@ export default function TopBarControls({
       setStepCount((s) => s + 1);
       setDone(Boolean(resp?.result?.done ?? resp?.done ?? false));
 
-      const nextType = resp?.nextNodeType?.trim()?.toUpperCase();
+      // Resolve next node / input behavior
+      const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+      const nextId = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
+
       if (nextType === 'IN' || nextType === 'INPUT') {
+        // Resolve the variable name for the next node, then open modal
+        const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
+        setInputNodeId(nextId ?? null);
+        setInputVarName(resolvedVarName ?? null);
+        // open modal on next tick
         setTimeout(() => setShowInputModal(true), 0);
+      } else {
+        // not expecting input: clear modal state
+        setInputNodeId(null);
+        setInputVarName(null);
+        setShowInputModal(false);
       }
 
-      if (resp?.result?.done ?? resp?.done ?? false) resetFlowchart();
+      if (resp?.result?.done ?? resp?.done ?? false) {
+        resetFlowchart();
+      }
     } catch (err) {
       console.error('execute step error', err);
       const message = err instanceof Error ? err.message : String(err);
@@ -149,40 +214,69 @@ export default function TopBarControls({
     }
   };
 
-  // 💬 เมื่อถึง Node Input
+  // --- Submit input from modal (💬) ---
+  // UPDATED: ส่งเฉพาะตัวแปรตัวเดียวเป็น payload (เช่น [{ name: 'a', value: 1 }])
   const handleSubmitInput = async () => {
     if (!lastResponse) return;
     setIsLoading(true);
     setErrorMsg(null);
 
     try {
-      const currentVars: Variable[] =
-        lastResponse.result?.context?.variables ?? fetchedVariables ?? [];
+      // Base list of vars to read names from: prefer node variables if present, else context variables, else fetchedVariables
+      let currentVars: Variable[] =
+        lastResponse.result?.node?.variables ??
+        lastResponse.result?.context?.variables ??
+        fetchedVariables ??
+        [];
 
-      const inputVarName = lastResponse.result?.node?.data?.name ?? 'input';
+      if (currentVars.length === 0) {
+        throw new Error('No variable available to input.');
+      }
 
-      const varsWithInput = [
-        ...currentVars.map((v) => ({ name: v.name, value: v.value })),
-        { name: inputVarName, value: inputValue },
-      ];
+      // target node id (explicit state or fallback from last response)
+      const targetNodeId = inputNodeId ?? lastResponse?.nextNodeId ?? null;
 
-      console.log('📤 Sending input:', varsWithInput);
+      // Determine which variable name to update:
+      // prefer inputVarName (already resolved when modal opened), else try helper as fallback
+      const resolvedVarName =
+        inputVarName ?? (await getFirstVarNameForNode(targetNodeId)) ?? currentVars[0].name;
 
-      const resp = await executeStepNode(flowchartId, varsWithInput, forceAdvanceBP);
+      // *** Build minimal payload: only the single variable object ***
+      const singleVarPayload: Variable[] = [{ name: resolvedVarName, value: inputValue }];
+
+      console.log('📤 Sending minimal input payload for nodeId=', targetNodeId, singleVarPayload);
+
+      // Send to backend; pass action 'input' and target node id (pattern consistent with your reset call)
+      const resp = await executeStepNode(
+        flowchartId,
+        singleVarPayload,      // <-- only this single var is sent
+        forceAdvanceBP,
+        'input',
+        targetNodeId ?? undefined
+      );
+
       setLastResponse(resp);
       setStepCount((s) => s + 1);
       setVariablesSent(true);
       setDone(Boolean(resp?.result?.done ?? resp?.done ?? false));
       setShowInputModal(false);
       setInputValue('');
+      setInputNodeId(null);
+      setInputVarName(null);
 
-      const nextType = resp?.nextNodeType?.trim()?.toUpperCase();
+      // If the next node is again input, prepare next modal
+      const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+      const nextId = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       if (nextType === 'IN' || nextType === 'INPUT') {
+        const nextVarName = await getFirstVarNameForNode(nextId ?? null);
+        setInputNodeId(nextId ?? null);
+        setInputVarName(nextVarName ?? null);
         setTimeout(() => setShowInputModal(true), 0);
       }
 
       if (resp?.result?.done ?? resp?.done ?? false) resetFlowchart();
     } catch (err) {
+      console.error('submit input error', err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
     } finally {
@@ -190,7 +284,7 @@ export default function TopBarControls({
     }
   };
 
-  // 🔁 Reset เมื่อ done
+  // --- Reset flowchart ---
   const resetFlowchart = async () => {
     try {
       await executeStepNode(flowchartId, [], true, 'reset');
@@ -198,7 +292,11 @@ export default function TopBarControls({
       setStepCount(0);
       setDone(false);
       setVariablesSent(false);
+      setInputNodeId(null);
+      setInputVarName(null);
+      setShowInputModal(false);
     } catch (err) {
+      console.error('reset error', err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
     }
@@ -324,7 +422,8 @@ export default function TopBarControls({
         <div className="fixed inset-0 flex items-center justify-center bg-opacity-100 z-50">
           <div className="bg-white p-6 rounded-lg shadow-lg w-80">
             <div className="mb-4 text-gray-700">
-              กรอกค่า {lastResponse?.result?.node?.data?.name ?? 'input'}:
+              กรอกค่า {inputVarName ?? lastResponse?.result?.node?.variables?.[0]?.name ?? 'input'}:
+              <div className="text-xs text-gray-400">จะถูกเก็บที่ node: {inputNodeId ?? '—'}</div>
             </div>
             <input
               type="number"
