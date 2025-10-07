@@ -378,118 +378,135 @@ router.post("/insert-node", async (req, res) => {
 
 router.delete("/:id/node/:nodeId", async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const rawId = req.params.id;
     const nodeId = req.params.nodeId;
+    if (!rawId) return res.status(400).json({ ok: false, error: "Missing flowchart id in path." });
+    if (!nodeId) return res.status(400).json({ ok: false, error: "Missing nodeId in path." });
 
-    let saved = savedFlowcharts.get(id);
+    // normalize id: support numeric or string keys in cache/DB
+    const numId = Number(rawId);
+    const mapKey = Number.isNaN(numId) ? String(rawId) : numId;
 
+    // load saved JSON (memory cache first)
+    let saved = savedFlowcharts.get(mapKey);
     if (!saved) {
-      // โหลดจาก DB
-      const fcFromDB = await prisma.flowchart.findUnique({
-        where: { flowchartId: id },
-      });
-      if (!fcFromDB)
-        return res.status(404).json({ ok: false, error: "Flowchart not found" });
+      const whereKey = Number.isNaN(numId) ? Number(rawId) : numId;
+      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: whereKey } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: "Flowchart not found" });
       saved = fcFromDB.content;
-      savedFlowcharts.set(id, saved);
+      // normalize cache key to number when possible
+      const cacheKey = Number(fcFromDB.flowchartId);
+      savedFlowcharts.set(Number.isNaN(cacheKey) ? String(fcFromDB.flowchartId) : cacheKey, saved);
     }
 
-    // node ที่จะลบ
-    const nodeToDelete = saved.nodes.find((n) => n.id === nodeId);
-    if (!nodeToDelete) {
-      return res.status(404).json({ ok: false, error: "Node not found" });
+    // quick check node exists in raw saved JSON (fast-fail)
+    const nodeExists = (saved.nodes || []).some(n => n.id === nodeId);
+    if (!nodeExists) return res.status(404).json({ ok: false, error: "Node not found" });
+
+    // hydrate to Flowchart instance and keep before snapshot for diffs
+    const fcBefore = hydrateFlowchart(saved);
+    const beforeSerialized = serializeFlowchart(fcBefore);
+
+    // use backend logic to remove node (this mutates fcBefore)
+    try {
+      fcBefore.removeNode(nodeId);
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: `Failed to remove node: ${String(err.message ?? err)}` });
     }
 
-    // หา incoming / outgoing edges
-    const incomingEdges = saved.edges.filter((e) => e.target === nodeId);
-    const outgoingEdges = saved.edges.filter((e) => e.source === nodeId);
+    // serialize after-change
+    const afterSerialized = serializeFlowchart(fcBefore);
 
-    // เตรียม edge ใหม่สำหรับ reconnect
-    const newEdges = [];
-    for (const inEdge of incomingEdges) {
-      for (const outEdge of outgoingEdges) {
-        newEdges.push({
-          id: `${inEdge.source}-${outEdge.target}`,
-          source: inEdge.source,
-          target: outEdge.target,
-          condition: "auto",
-        });
-      }
+    // optional: verify path start->end still exists (hydrateFlowchart earlier checked on create; here we can be defensive)
+    try {
+      // hasPathStartToEnd expects a Flowchart instance; reuse helper if available or re-hydrate
+      // (we can check by hydrating from afterSerialized to be safe)
+      const fcCheck = hydrateFlowchart(afterSerialized);
+      // if hydrateFlowchart throws, it will be caught below
+    } catch (err) {
+      // If the removal broke graph (no path) — still persist? better to return error and not save.
+      return res.status(400).json({ ok: false, error: `Graph invalid after removal: ${String(err.message ?? err)}` });
     }
 
-    // ลบ node
-    saved.nodes = saved.nodes.filter((n) => n.id !== nodeId);
+    // compute diffs (same helper used by other endpoints)
+    const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
-    // ลบ edge ที่เกี่ยวข้อง
-    const removedEdgeIds = [...incomingEdges, ...outgoingEdges].map((e) => e.id);
-    saved.edges = saved.edges.filter((e) => !removedEdgeIds.includes(e.id));
-
-    // เพิ่ม edge ที่ reconnect
-    for (const edge of newEdges) {
-      saved.edges.push(edge);
-    }
-
-    // อัปเดต incoming/outgoing ของ node อื่น ๆ
-    for (const node of saved.nodes) {
-      node.incomingEdgeIds = (node.incomingEdgeIds || []).filter(
-        (eid) => !removedEdgeIds.includes(eid)
-      );
-      node.outgoingEdgeIds = (node.outgoingEdgeIds || []).filter(
-        (eid) => !removedEdgeIds.includes(eid)
-      );
-    }
-    for (const edge of newEdges) {
-      const src = saved.nodes.find((n) => n.id === edge.source);
-      const tgt = saved.nodes.find((n) => n.id === edge.target);
-      if (src) src.outgoingEdgeIds.push(edge.id);
-      if (tgt) tgt.incomingEdgeIds.push(edge.id);
-    }
-
-    // อัปเดต DB
+    // persist to DB (use number key if possible)
+    const dbKey = Number(mapKey) ? Number(mapKey) : mapKey;
     await prisma.flowchart.update({
-      where: { flowchartId: id },
-      data: { content: saved },
+      where: { flowchartId: dbKey },
+      data: { content: afterSerialized }
     });
 
-    savedFlowcharts.set(id, saved);
+    // update in-memory cache
+    savedFlowcharts.set(mapKey, afterSerialized);
+
+    // optional: remove any stored executorState for this flowchart (to avoid inconsistency)
+    const execKey = `executorState_${mapKey}`;
+    if (savedFlowcharts.has(execKey)) savedFlowcharts.delete(execKey);
 
     return res.json({
       ok: true,
-      flowchartId: id,
-      nodeDeleted: nodeId,
-      edgesRewired: newEdges.map((e) => e.id),
+      message: `Node ${nodeId} removed`,
+      flowchartId: dbKey,
+      diffs,
     });
   } catch (err) {
     console.error("delete node error:", err);
-    return res.status(500).json({ ok: false, error: String(err) });
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
+
 router.get("/:id", async (req, res) => {
   try {
-    const flowchartId = Number(req.params.id);
-    if (!flowchartId) return res.status(400).json({ ok: false, error: "Missing 'id' in path." });
+    const idParam = req.params.id;
+    if (!idParam) return res.status(400).json({ ok: false, error: "Missing 'id' in path." });
 
-    // load memory → fallback DB
-    let saved = savedFlowcharts.get(flowchartId);
-    if (!saved) {
-      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId } });
-      if (!fcFromDB) return res.status(404).json({ ok: false, error: `Flowchart '${flowchartId}' not found.` });
-      saved = fcFromDB.content;
-      savedFlowcharts.set(flowchartId, saved);
+    // try numeric lookup first, then fallback to string lookup
+    const parsed = Number(idParam);
+    let fcFromDB = null;
+
+    if (!Number.isNaN(parsed)) {
+      fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: parsed } });
+    }
+    if (!fcFromDB) {
+      // fallback: try string key (in case flowchartId is stored as string)
+      try {
+        fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: idParam } });
+      } catch (e) {
+        // some prisma schemas won't accept string for a numeric field; ignore error
+      }
     }
 
-    // hydrate + serialize
+    if (!fcFromDB) {
+      return res.status(404).json({ ok: false, error: `Flowchart '${idParam}' not found.` });
+    }
+
+    // get payload from DB
+    const saved = fcFromDB.content;
+
+    // normalize memory key: prefer Number if possible
+    const mapKey = Number(fcFromDB.flowchartId);
+    savedFlowcharts.set(Number.isNaN(mapKey) ? String(fcFromDB.flowchartId) : mapKey, saved);
+
+    // hydrate + serialize for consumer-friendly representation
     const fc = hydrateFlowchart(saved);
     const serialized = serializeFlowchart(fc);
 
-    return res.json({ ok: true, flowchartId, flowchart: serialized });
-
+    return res.json({
+      ok: true,
+      flowchartId: fcFromDB.flowchartId,
+      // include both serialized (hydrated) representation and raw content from DB
+      flowchart: serialized,
+      raw: saved
+    });
   } catch (err) {
     console.error("get flowchart error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
 
 router.get("/:id/edges", async (req, res) => {
   try {
@@ -595,7 +612,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
   }
 });
 
-router.post("/execute", (req, res) => {
+router.post("/execute", async (req, res) => {
   try {
     let raw = req.body;
     if (typeof raw === "string") {
@@ -603,76 +620,200 @@ router.post("/execute", (req, res) => {
     }
     const body = raw || {};
 
-    const flowchartId = body.flowchartId;
-    if (!flowchartId) {
+    const flowchartIdRaw = body.flowchartId;
+    if (!flowchartIdRaw && flowchartIdRaw !== 0) {
       return res.status(400).json({ ok: false, error: "Missing 'flowchartId' in request. Must provide the saved flowchart id to execute." });
     }
-    const saved = savedFlowcharts.get(flowchartId);
+
+    const fid = Number(flowchartIdRaw);
+    let saved = savedFlowcharts.get(fid);
+    if (!saved) saved = savedFlowcharts.get(String(flowchartIdRaw));
+
+    // fallback: load from DB
     if (!saved) {
-      return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
+      const fcFromDB = await prisma.flowchart.findUnique({
+        where: { flowchartId: isNaN(fid) ? Number(flowchartIdRaw) : fid }
+      });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartIdRaw}' not found.` });
+      saved = fcFromDB.content;
+      const mapKey = Number(fcFromDB.flowchartId);
+      savedFlowcharts.set(isNaN(mapKey) ? String(fcFromDB.flowchartId) : mapKey, saved);
     }
 
     const action = body.action ?? "run";
-    const variables = Array.isArray(body.variables) ? body.variables : [];
+    const variables = body.variables;
     const options = body.options || {};
     const restoreState = body.restoreState || {};
     const forceAdvanceBP = Boolean(body.forceAdvanceBP);
 
-    // hydrate from saved JSON
+    // hydrate flowchart
     const fc = hydrateFlowchart(saved);
-
-    console.log("HYDRATED NODES:", Object.keys(fc.nodes));
-    console.log("HYDRATED EDGES:", Object.keys(fc.edges));
-
     const executor = new Executor(fc, options);
 
-    // restore state if provided
+    // restore executor state if provided
     if (restoreState && restoreState.context && Array.isArray(restoreState.context.variables)) {
-      executor.context = new Context(restoreState.context.variables);
+      for (const v of restoreState.context.variables) {
+        if (v && v.name) executor.context.set(v.name, v.value, v.varType);
+      }
     }
     if (restoreState.currentNodeId) executor.currentNodeId = restoreState.currentNodeId;
     if (typeof restoreState.finished === "boolean") executor.finished = restoreState.finished;
     if (typeof restoreState.paused === "boolean") executor.paused = restoreState.paused;
     if (typeof restoreState.stepCount === "number") executor.stepCount = restoreState.stepCount;
 
-    // ensure context variables
-    if (Array.isArray(body.variables) && body.variables.length > 0) {
-      executor.context = new Context(body.variables);
-    } else {
-      // inputMap / defaults
-      const inputMap = (body.inputMap && typeof body.inputMap === "object") ? body.inputMap : {};
-      const inputDefaults = (body.inputDefaults && typeof body.inputDefaults === "object") ? body.inputDefaults : {};
-      for (const k of Object.keys(inputMap)) executor.context.set(k, inputMap[k]);
-      for (const k of Object.keys(inputDefaults)) {
-        if (executor.context.get(k) === undefined) executor.context.set(k, inputDefaults[k]);
+    // apply variables from request BEFORE action handling
+    if (Array.isArray(variables)) {
+      for (const v of variables) {
+        if (v && v.name) executor.context.set(v.name, v.value, v.varType);
+      }
+    } else if (variables && typeof variables === "object") {
+      for (const k of Object.keys(variables)) {
+        const val = variables[k];
+        if (val && typeof val === "object" && ("value" in val || "varType" in val)) {
+          executor.context.set(k, val.value, val.varType);
+        } else {
+          executor.context.set(k, val);
+        }
       }
     }
 
-    // apply variables array entries individually (safe)
-    for (const v of variables) {
-      if (v && v.name) executor.context.set(v.name, v.value, v.varType);
-    }
-
-    // actions
+    // --- handle actions ---
     if (action === "reset") {
       executor.reset();
-      return res.json({ ok: true, message: "reset", context: { variables: executor.context.variables, output: executor.context.output } });
+      const lastStateKey = `executorState_${fid}`;
+      savedFlowcharts.delete(lastStateKey);
+
+      return res.json({
+        ok: true,
+        message: "reset",
+        context: { variables: executor.context.variables, output: executor.context.output }
+      });
+    }
+
+    if (action === "runAll") {
+      const ignoreBreakpoints = Boolean(options.ignoreBreakpoints || body.ignoreBreakpoints);
+      const nodeStates = [];
+
+      while (!executor.finished) {
+        const nodeIdBefore = executor.currentNodeId;
+        const result = executor.step({ forceAdvanceBP: ignoreBreakpoints });
+        nodeStates.push({
+          nodeId: nodeIdBefore,
+          output: [...executor.context.output],
+          variables: [...executor.context.variables]
+        });
+      }
+
+      return res.json({
+        ok: true,
+        message: "runAll completed",
+        flowchartId: fid,
+        nodeStates,
+        finalContext: {
+          variables: executor.context.variables,
+          output: executor.context.output
+        }
+      });
     }
 
     if (action === "step") {
+      const lastStateKey = `executorState_${fid}`;
+      const lastState = savedFlowcharts.get(lastStateKey);
+
+      // restore previous executor state ถ้า state เดิมมีอยู่
+      if (lastState?.executor) {
+        executor.currentNodeId = lastState.executor.currentNodeId;
+        executor.finished = lastState.executor.finished;
+        executor.paused = lastState.executor.paused;
+        executor.stepCount = lastState.executor.stepCount;
+        for (const v of lastState.executor.context?.variables || []) {
+          executor.context.set(v.name, v.value, v.varType);
+        }
+      }
+
+      // ถ้า finished หรือเพิ่ง reset ให้เริ่มจาก start node
+      if (executor.finished || !lastState) {
+        executor.reset();
+      }
+
+      // apply variables ใหม่ถ้ามีส่งมาพร้อม step
+      if (Array.isArray(variables)) {
+        for (const v of variables) {
+          if (v && v.name) executor.context.set(v.name, v.value, v.varType);
+        }
+      } else if (variables && typeof variables === "object") {
+        for (const k of Object.keys(variables)) {
+          const val = variables[k];
+          if (val && typeof val === "object" && ("value" in val || "varType" in val)) {
+            executor.context.set(k, val.value, val.varType);
+          } else {
+            executor.context.set(k, val);
+          }
+        }
+      }
+
+      // execute single step
       const result = executor.step({ forceAdvanceBP });
-      return res.json({ ok: true, result, context: { variables: executor.context.variables, output: executor.context.output } });
+
+      // next node info
+      let nextNodeId = executor.finished ? null : executor.currentNodeId;
+      let nextNodeType = null;
+      if (nextNodeId && executor.flowchart && typeof executor.flowchart.getNode === "function") {
+        const nextNode = executor.flowchart.getNode(nextNodeId);
+        if (nextNode) nextNodeType = nextNode.type;
+      }
+
+      // save executor state per node
+      savedFlowcharts.set(lastStateKey, {
+        executor: {
+          currentNodeId: executor.currentNodeId,
+          finished: executor.finished,
+          paused: executor.paused,
+          stepCount: executor.stepCount,
+          context: {
+            variables: executor.context.variables,
+            output: executor.context.output
+          },
+          lastNode: {
+            nodeId: result.node?.id,
+            type: result.node?.type,
+            output: result.node ? [...executor.context.output] : [],
+            variables: result.node ? [...executor.context.variables] : []
+          }
+        }
+      });
+
+      return res.json({
+        ok: true,
+        node: result.node
+          ? {
+              id: result.node.id,
+              type: result.node.type,
+              output: [...executor.context.output],
+              variables: [...executor.context.variables]
+            }
+          : null,
+        nextNodeId,
+        nextNodeType,
+        context: { variables: executor.context.variables, output: executor.context.output },
+        paused: result.paused ?? false,
+        done: result.done ?? false,
+        reenter: result.reenter ?? false
+      });
     }
 
     if (action === "resume") {
-      const result = executor.resume();
-      return res.json({ ok: true, result, context: { variables: executor.context.variables, output: executor.context.output } });
+      const result = executor.resume({ forceAdvanceBP });
+      return res.json({
+        ok: true,
+        result,
+        context: { variables: executor.context.variables, output: executor.context.output }
+      });
     }
 
     // default: runAll
     const ignoreBreakpoints = Boolean(options.ignoreBreakpoints || body.ignoreBreakpoints);
     const finalContext = executor.runAll({ ignoreBreakpoints });
-
     return res.json({ ok: true, context: { variables: finalContext.variables, output: finalContext.output } });
 
   } catch (err) {
@@ -680,5 +821,8 @@ router.post("/execute", (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
+
+
 
 export default router;

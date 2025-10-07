@@ -2,7 +2,14 @@
 import React, { useRef, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 
-const DeclareComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
+type Props = {
+  data: {
+    label: string;
+    __highlight?: boolean;
+  };
+};
+
+const DeclareComponent: React.FC<Props> = ({ data }) => {
   const baseWidth = 170;
   const baseHeight = 60;
   const padding = 40;
@@ -13,14 +20,24 @@ const DeclareComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
   useEffect(() => {
     if (textRef.current) {
       const textWidth = textRef.current.offsetWidth;
-      // ✅ ปรับการคำนวณความกว้างให้เผื่อเส้นทั้ง 2 ข้าง
       const newWidth = Math.max(baseWidth, textWidth + padding * 1.5);
       setWidth(newWidth);
     }
   }, [data.label]);
 
   const height = baseHeight;
-  const verticalLineWidth = 15; // กำหนดความกว้างของเส้นข้างให้เป็นตัวแปรเดียว
+  const verticalLineWidth = 15; // distance for left divider
+
+  const highlighted = Boolean(data?.__highlight);
+
+  // SVG overlay will draw highlight to match node shape exactly.
+  const rootStyle: React.CSSProperties = {
+    position: "relative",
+    width,
+    height,
+    borderRadius: 6,
+    display: "inline-block",
+  };
 
   const hiddenHandleStyle = {
     width: 0,
@@ -29,41 +46,59 @@ const DeclareComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
   };
 
   return (
-    <div style={{ position: "relative", width, height }}>
-      <svg width="100%" height="100%" style={{ overflow: "visible" }}>
-        {/* Main rectangle body */}
+    <div style={rootStyle} className={highlighted ? "my-node-highlight" : undefined}>
+      <svg
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${width} ${height}`}
+        style={{ display: "block", overflow: "visible" }}
+        aria-hidden
+      >
+        <defs>
+          {/* glow filter for highlight */}
+          <filter id="declare-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* base rectangle */}
         <rect
-          x="0"
-          y="0"
+          x={0}
+          y={0}
           width={width}
           height={height}
-          fill="#FFFFD8" // เปลี่ยนสีสำหรับ Declare node
+          rx={6}
+          ry={6}
+          fill="#FFFFD8"
           stroke="#000000"
-          strokeWidth="1"
+          strokeWidth={1}
         />
 
-        {/* First vertical divider line (Left) */}
+        {/* left vertical divider */}
         <line
           x1={verticalLineWidth}
-          y1="0"
+          y1={0}
           x2={verticalLineWidth}
           y2={height}
           stroke="#000000"
-          strokeWidth="1"
+          strokeWidth={1}
         />
 
-        
-        {/* Horizontal divider line (ถ้าไม่ต้องการ สามารถลบบรรทัดนี้ได้) */}
+        {/* optional horizontal divider */}
         <line
-         x1="0"
-         y1={height / 2 - 20}
-         x2={width}
-         y2={height / 2 - 20}
-         stroke="#000000"
-         strokeWidth="1"
+          x1={0}
+          y1={height / 2 - 20}
+          x2={width}
+          y2={height / 2 - 20}
+          stroke="#000000"
+          strokeWidth={1}
         />
 
-        {/* ✅ Label text - แก้ไขตำแหน่ง x ให้อยู่ตรงกลางพอดี */}
+        {/* label text */}
         <text
           x={width / 2}
           y={height / 2}
@@ -71,9 +106,46 @@ const DeclareComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
           alignmentBaseline="middle"
           fontSize="14"
           fill="#000000"
+          style={{ userSelect: "none", pointerEvents: "none" }}
         >
           {data.label}
         </text>
+
+        {/* highlight overlay: same rectangle shape, stroke-only + glow */}
+        {highlighted && (
+          <>
+            {/* thick blurred stroke for glow */}
+            <rect
+              x={-2}
+              y={-2}
+              width={width + 4}
+              height={height + 4}
+              rx={8}
+              ry={8}
+              fill="none"
+              stroke="#ff6b00"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ filter: "url(#declare-glow)" }}
+            />
+            {/* solid, crisp outer stroke */}
+            <rect
+              x={-1}
+              y={-1}
+              width={width + 2}
+              height={height + 2}
+              rx={7}
+              ry={7}
+              fill="none"
+              stroke="#ff6b00"
+              strokeWidth={1}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={0.98}
+            />
+          </>
+        )}
       </svg>
 
       {/* Hidden span for measuring text */}
@@ -89,7 +161,7 @@ const DeclareComponent: React.FC<{ data: { label: string } }> = ({ data }) => {
         {data.label}
       </span>
 
-      {/* ✅ Handles - เพิ่ม style left: '50%' เพื่อความชัดเจน */}
+      {/* Handles */}
       <Handle
         type="target"
         position={Position.Top}

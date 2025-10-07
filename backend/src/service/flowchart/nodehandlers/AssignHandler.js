@@ -1,35 +1,53 @@
 export default function AssignHandler(node, context /*, flowchart optional */) {
-  const varName = node.data.variable;
-  const raw = node.data.value;
+  const varName = node?.data?.variable || node?.data?.name;
+  const raw = node?.data?.value;
 
-  // สร้าง key-value จาก context.variables
-  const keys = context.variables.map(v => v.name);
-  const values = context.variables.map(v => v.value);
+  if (!varName) return { nextCondition: "auto" };
+
+  // build env from context and cast numeric types to Number so arithmetic works
+  const env = {};
+  context.variables.forEach(v => {
+    const vt = String(v.varType || "").toLowerCase();
+    if (["int", "integer", "number", "float"].includes(vt)) env[v.name] = Number(v.value);
+    else if (["bool", "boolean"].includes(vt)) env[v.name] = Boolean(v.value);
+    else env[v.name] = v.value;
+  });
+
+  const names = Object.keys(env);
+  const vals = names.map(n => env[n]);
 
   let value;
   try {
-    // ถ้า value ที่มาจาก node ไม่ใช่ string ให้ถือว่าเป็นค่า literal แล้วเซ็ตตรง ๆ
     if (typeof raw !== "string") {
       value = raw;
     } else {
       const expr = raw.trim();
-      // ถ้าเป็นสตริงว่าง (ไม่มีนิพจน์) ให้ตีความเป็น empty string
       if (expr === "") {
         value = "";
       } else {
-        // ประเมิน expression (รองรับทั้ง "'...'" / "\"...\"" หรือ การอ้างตัวแปร/นิพจน์)
-        // ใส่วงเล็บเพื่อป้องกัน object-literal ambiguity
-        value = Function(...keys, `return (${expr});`)(...values);
+        // evaluate expression in a Function scope
+        const fn = new Function(...names, `return (${expr});`);
+        value = fn(...vals);
       }
     }
   } catch (e) {
     console.error(`❌ Error evaluating assignment '${raw}': ${e.message}`);
+    // don't throw — just skip assignment (or you could set undefined)
     return { nextCondition: "auto" };
   }
 
-  // เก็บลง context.variables (ให้ Context infer type เอง)
-  context.set(varName, value);
+  // decide varType: prefer existing, else hint from node, else infer
+  let targetVarType;
+  const idx = context.index_map[varName];
+  if (idx !== undefined && context.variables[idx]) {
+    targetVarType = context.variables[idx].varType;
+  } else {
+    targetVarType = node?.data?.varType ? String(node.data.varType).toLowerCase() : undefined;
+  }
 
-  console.log(`Assigned: ${varName} = ${value}`);
+  context.set(varName, value, targetVarType);
+  const stored = context.get(varName);
+  const storedType = context.variables[context.index_map[varName]]?.varType;
+  console.log(`Assigned: ${varName} = ${JSON.stringify(stored)} (${storedType})`);
   return { nextCondition: "auto" };
 }
