@@ -30,3 +30,8 @@ body {
   box-shadow: none !important; /* ลบเงาในสถานะปกติ */
   outline: none !important;     /* ลบเส้นประตอน focus */
 }
+
+/* สำหรับกรณีที่บาง UI ต้องการ class-based styling */
+.react-flow__node.my-node-highlight {
+  transition: box-shadow 160ms, border 160ms;
+}

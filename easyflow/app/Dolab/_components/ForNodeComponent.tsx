@@ -1,86 +1,140 @@
 "use client";
-import React from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 
-// Define the type for the data prop for better type-checking
 interface ForNodeData {
   label: string;
-  width?: number; // Make width an optional property
+  __highlight?: boolean;
+  width?: number;
 }
 
 const ForNodeComponent: React.FC<{ data: ForNodeData }> = ({ data }) => {
-  const { label, width = 176 } = data; // Set a default width
-  const borderWidth = 1;
+  const baseWidth = 176;
+  const baseHeight = 50;
+  const padding = 20;
 
-  // This style makes the handles invisible but still functional
+  const [width, setWidth] = useState(baseWidth);
+  const [height, setHeight] = useState(baseHeight);
+
+  const textRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (textRef.current) {
+      const textWidth = textRef.current.offsetWidth;
+      const newWidth = Math.max(baseWidth, textWidth + padding * 2);
+      const newHeight = baseHeight + (newWidth - baseWidth) / 2;
+      setWidth(newWidth);
+      setHeight(newHeight);
+    }
+  }, [data.label]);
+
+  const cx = width / 2;
+  const cy = height / 2;
+
+  const points = `${0} ${cy} ${width / 4} 0 ${width * 0.75} 0 ${width} ${cy} ${width * 0.75} ${height} ${width / 4} ${height}`;
+
   const hiddenHandleStyle = {
     width: 0,
     height: 0,
     background: "transparent",
-    border: "none",
   };
 
+  const highlighted = Boolean(data?.__highlight);
+
   return (
-    <div
-      style={{
-        // This outer div creates the border effect
-        backgroundColor: "#000000", // Border color
-        clipPath:
-          "polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%)",
-        padding: borderWidth,
-        width: width, // Use the dynamic width
-        height: "auto",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <div
+    <div style={{ position: "relative", width, height }}>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        <defs>
+          <filter id="for-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Node shape */}
+        <polygon points={points} fill="#B0D4FF" stroke="#000" strokeWidth={1} />
+
+        {/* Highlight overlay */}
+        {highlighted && (
+          <>
+            <polygon
+              points={points}
+              fill="none"
+              stroke="#ff6b00"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ filter: "url(#for-glow)" }}
+            />
+            <polygon
+              points={points}
+              fill="none"
+              stroke="#ff6b00"
+              strokeWidth={1}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={0.98}
+            />
+          </>
+        )}
+
+        {/* Label */}
+        <text
+          x={cx}
+          y={cy + 5}
+          textAnchor="middle"
+          // alignmentBaseline="middle"
+          fontSize={14}
+          fill="black"
+          style={{ userSelect: "none", pointerEvents: "none" }}
+        >
+          {data.label}
+        </text>
+      </svg>
+
+      {/* Hidden span for measuring */}
+      <span
+        ref={textRef}
         style={{
-          // This inner div contains the content
-          padding: "10px 20px",
-          background: "#B0D4FF", // A slightly different color for distinction
-          textAlign: "center",
-          width: width, // Use the dynamic width
-          clipPath:
-            "polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%)",
-          position: "relative", // Important for Handle positioning
+          position: "absolute",
+          visibility: "hidden",
+          whiteSpace: "nowrap",
+          fontSize: 14,
+          fontWeight: "normal",
+          padding: padding,
         }}
       >
-        {/* Input handle from the previous node */}
-        <Handle
-          type="target"
-          position={Position.Top}
-          id="top"
-          style={{ ...hiddenHandleStyle, top: -8 }}
-        />
+        {data.label}
+      </span>
 
-        <div>{label}</div>
-
-        {/* Output for the loop body (each iteration) */}
-        <Handle
-          type="source"
-          position={Position.Right}
-          id="loop_body"
-          style={{ ...hiddenHandleStyle, right: -8 }}
-        />
-
-        {/* Output for when the loop finishes */}
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          id="next"
-          style={{ ...hiddenHandleStyle, bottom: -8, left: "50%" }}
-        />
-
-        {/* Input handle for the returning loop connection */}
-        <Handle
-          type="target"
-          position={Position.Bottom}
-          id="loop_return"
-          style={{ ...hiddenHandleStyle, bottom: -8, left: "75%" }}
-        />
-      </div>
+      {/* Handles */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top"
+        style={{ ...hiddenHandleStyle, top: -8 }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="loop_body"
+        style={{ ...hiddenHandleStyle, right: -8 }}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="next"
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "50%" }}
+      />
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        id="loop_return"
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "75%" }}
+      />
     </div>
   );
 };
