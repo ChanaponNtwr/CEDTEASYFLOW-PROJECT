@@ -1,4 +1,5 @@
 // src/service/flowchart/nodeHandlers/FRHandler.js
+// For-loop handler (FR) - improved: merge increment+condition when returning from body
 export default function FRHandler(node, context, flowchart) {
     const { init, condition, increment, varName } = node.data;
 
@@ -11,25 +12,22 @@ export default function FRHandler(node, context, flowchart) {
         return Function('vars', `with (vars) { return (${expr}); }`)(vars);
     };
 
-    // helper to normalize init string like "int a = 2" -> { name: "a", value: 2 }
+    // parse init (like "int a = 2" or "a = 2")
     const parseInitValue = (initRaw) => {
         try {
             if (typeof initRaw === "string") {
                 const parts = initRaw.split("=");
                 const left = parts[0].trim();
                 const right = (parts.length > 1) ? parts.slice(1).join("=").trim() : undefined;
-                // pick last token of left (handles "int a" => "a")
                 const initName = left.split(/\s+/).pop();
                 if (right !== undefined && right !== "") {
                     const value = evalWithVars(right);
                     return { name: initName, value };
                 } else {
-                    // no right side -> treat whole init string as expression for varName
                     const value = evalWithVars(initRaw);
                     return { name: initName || varName, value };
                 }
             } else {
-                // non-string init (number, object, etc.)
                 return { name: varName, value: initRaw };
             }
         } catch (e) {
@@ -38,7 +36,7 @@ export default function FRHandler(node, context, flowchart) {
         }
     };
 
-    // init (ทำครั้งเดียวตอนเริ่ม) - store init value but DO NOT write immediately to outer context
+    // initialize node-local state (only once)
     if (!node._initialized) {
         try {
             if (typeof init !== "undefined" && init !== null) {
@@ -51,12 +49,12 @@ export default function FRHandler(node, context, flowchart) {
             node._initValue = { name: varName, value: context.get(varName) };
         }
         node._initialized = true;
-        node._phase = "condition";
+        node._phase = "condition"; // start at condition
         node._loopCount = 0;
         node._scopePushed = false;
     }
 
-    // safer evalCondition (will use current merged context.variables)
+    // evaluate condition using current context.vars
     const evalCondition = () => {
         try {
             if (!condition || String(condition).trim() === "") return false;
@@ -76,7 +74,7 @@ export default function FRHandler(node, context, flowchart) {
         }
     };
 
-    // helpers: choose body/exit edges (return edge id)
+    // choose body edge (prefer explicit 'next', non-self edges)
     const findBodyEdgeId = () => {
         const outs = (node.outgoingEdgeIds || []).map(id => flowchart.getEdge(id)).filter(Boolean);
         const nextEdge = outs.find(e => e.condition === "next");
@@ -89,6 +87,8 @@ export default function FRHandler(node, context, flowchart) {
         if (nonSelf) return nonSelf.id;
         return node.loopEdge || (outs[0] && outs[0].id);
     };
+
+    // choose exit edge
     const findExitEdgeId = () => {
         const outs = (node.outgoingEdgeIds || []).map(id => flowchart.getEdge(id)).filter(Boolean);
         const done = outs.find(e => e.condition === "done" || e.condition === "false");
@@ -102,18 +102,17 @@ export default function FRHandler(node, context, flowchart) {
 
     switch (node._phase) {
         case "condition": {
-            // IMPORTANT: ensure loop-local scope is pushed BEFORE first condition evaluation
+            // push loop-local binding BEFORE first condition evaluation
             if (!node._scopePushed) {
-                // prepare initial binding: use node._initValue.name and value
                 const initName = (node._initValue && node._initValue.name) ? node._initValue.name : varName;
                 const initVal = (node._initValue && typeof node._initValue.value !== "undefined") ? node._initValue.value : context.get(varName);
                 const existing = (context.variables || []).find(v => v.name === initName);
-                const binding = {};
-                binding[initName] = { value: initVal, varType: existing && existing.varType ? existing.varType : null };
+                // if Context supports push/pop scope prefer them
                 if (typeof context.pushScope === "function") {
+                    const binding = {};
+                    binding[initName] = { value: initVal, varType: existing && existing.varType ? existing.varType : null };
                     context.pushScope(binding);
                 } else {
-                    // fallback: set into context (if no scope support)
                     context.set(initName, initVal, existing && existing.varType ? existing.varType : null);
                 }
                 node._scopePushed = true;
@@ -123,16 +122,14 @@ export default function FRHandler(node, context, flowchart) {
 
             if (cond) {
                 node._loopCount = (node._loopCount || 0) + 1;
-                if (node._loopCount > globalMax) {
-                    throw new Error(`Loop ${node.id} exceeded max iterations (${globalMax})`);
-                }
-                // go to body (edge id)
+                if (node._loopCount > globalMax) throw new Error(`Loop ${node.id} exceeded max iterations (${globalMax})`);
+                // go to body
                 node._phase = "body";
                 const bodyEdgeId = findBodyEdgeId();
                 console.log(`FR ${node.id} -> bodyEdgeId =`, bodyEdgeId);
                 return { nextNode: bodyEdgeId ? bodyEdgeId : (node.outgoingEdgeIds && node.outgoingEdgeIds[0]) };
             } else {
-                // exit loop: pop scope if pushed
+                // exit loop + cleanup
                 if (node._scopePushed) {
                     if (typeof context.popScope === "function") context.popScope();
                     node._scopePushed = false;
@@ -147,15 +144,13 @@ export default function FRHandler(node, context, flowchart) {
         }
 
         case "body": {
-            // after body, go to increment phase — keep executor on same node (reenter)
-            node._phase = "increment";
-            return { reenter: true };
-        }
-
-        case "increment": {
+            // When FR is executed after returning from body-node we:
+            //  1) apply increment (if any),
+            //  2) evaluate condition again, and
+            //  3) route to body (loop) or exit immediately.
+            // This merges increment+condition into a single handler call (reduces extra reenter cycles).
             if (increment && varName) {
                 try {
-                    // evaluate increment using merged view (which will include loop-local binding on top)
                     const vars = {};
                     for (const v of (context.variables || [])) {
                         if (v && typeof v.name !== "undefined") vars[String(v.name)] = v.value;
@@ -166,18 +161,36 @@ export default function FRHandler(node, context, flowchart) {
                     context.set(varName, newVal, existing && existing.varType ? existing.varType : "int");
                 } catch (e) {
                     console.error("FR increment error:", e);
-                    try {
-                        console.error("FR increment debug - var names:", (context.variables || []).map(v => v && v.name));
-                        console.error("FR increment debug - increment:", increment);
-                    } catch (ee) { /* ignore */ }
                 }
             }
-            node._phase = "condition";
-            return { reenter: true };
+
+            // now re-evaluate condition and route
+            const condAfterInc = evalCondition();
+            if (condAfterInc) {
+                node._loopCount = (node._loopCount || 0) + 1;
+                if (node._loopCount > globalMax) throw new Error(`Loop ${node.id} exceeded max iterations (${globalMax})`);
+                // stay in loop: go to body again
+                node._phase = "body"; // prepare for next return-from-body
+                const bodyEdgeId = findBodyEdgeId();
+                console.log(`FR ${node.id} (after increment) -> bodyEdgeId =`, bodyEdgeId);
+                return { nextNode: bodyEdgeId ? bodyEdgeId : (node.outgoingEdgeIds && node.outgoingEdgeIds[0]) };
+            } else {
+                // exit loop and cleanup
+                if (node._scopePushed) {
+                    if (typeof context.popScope === "function") context.popScope();
+                    node._scopePushed = false;
+                }
+                node._initialized = false;
+                node._loopCount = 0;
+                node._phase = "done";
+                const exitEdgeId = findExitEdgeId();
+                console.log(`FR ${node.id} (after increment) -> exitEdgeId =`, exitEdgeId);
+                return { nextNode: exitEdgeId ? exitEdgeId : node.loopExitEdge };
+            }
         }
 
         default: {
-            // cleanup
+            // graceful fallback: cleanup if needed and exit
             if (node._scopePushed && typeof context.popScope === "function") {
                 context.popScope();
                 node._scopePushed = false;
