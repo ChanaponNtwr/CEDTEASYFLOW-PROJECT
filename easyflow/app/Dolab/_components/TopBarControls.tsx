@@ -77,6 +77,10 @@ export default function TopBarControls({
   // ชื่อตัวแปรที่ node เป้าหมายต้องการรับ (เช่น 'b')
   const [inputVarName, setInputVarName] = useState<string | null>(null);
 
+  // NEW: Output modal state + data
+  const [showOutputModal, setShowOutputModal] = useState(false);
+  const [outputData, setOutputData] = useState<any[]>([]);
+
   const togglePopup = () => setShowPopup((v) => !v);
 
   // --- Fetch variables from flowchart (fallback source) ---
@@ -160,6 +164,16 @@ export default function TopBarControls({
     return undefined;
   };
 
+  // helper to extract outputs from response and show modal if present
+  const handleResponseOutputs = (resp: ExecuteResponse | undefined | null) => {
+    const respOutputs =
+      resp?.result?.context?.output ?? resp?.context?.output ?? [];
+    if (Array.isArray(respOutputs) && respOutputs.length > 0) {
+      setOutputData(respOutputs);
+      setShowOutputModal(true);
+    }
+  };
+
   // --- Step execution (▶️) ---
   const handleStep = async () => {
     if (isLoading || done) return;
@@ -178,6 +192,9 @@ export default function TopBarControls({
       setVariablesSent(true);
       setStepCount((s) => s + 1);
       setDone(Boolean(resp?.result?.done ?? resp?.done ?? false));
+
+      // show outputs modal if backend returned outputs
+      handleResponseOutputs(resp);
 
       // Resolve next node / input behavior
       const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
@@ -255,6 +272,9 @@ export default function TopBarControls({
       setInputNodeId(null);
       setInputVarName(null);
 
+      // show outputs modal if backend returned outputs
+      handleResponseOutputs(resp);
+
       // prepare next input if backend asks again
       const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
       const nextId = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
@@ -292,6 +312,8 @@ export default function TopBarControls({
       setInputNodeId(null);
       setInputVarName(null);
       setShowInputModal(false);
+      setShowOutputModal(false);
+      setOutputData([]);
     } catch (err) {
       console.error('reset error', err);
       const message = err instanceof Error ? err.message : String(err);
@@ -314,6 +336,20 @@ export default function TopBarControls({
       return initialVariables;
     return [];
   })();
+
+  // helper to render any value as readable string
+  const renderValue = (v: any) => {
+    if (v === null) return 'null';
+    if (typeof v === 'undefined') return 'undefined';
+    if (typeof v === 'object') {
+      try {
+        return JSON.stringify(v);
+      } catch {
+        return String(v);
+      }
+    }
+    return String(v);
+  };
 
   return (
     <div className="absolute z-1 pt-4">
@@ -386,7 +422,7 @@ export default function TopBarControls({
           {outputs.length > 0 ? (
             <ul className="list-disc list-inside">
               {outputs.map((o, i) => (
-                <li key={i}>{String(o)}</li>
+                <li key={i}>{renderValue(o)}</li>
               ))}
             </ul>
           ) : (
@@ -428,12 +464,45 @@ export default function TopBarControls({
               onChange={(e) => setInputValue(Number(e.target.value))}
               className="w-full border border-gray-300 rounded px-2 py-1 mb-4"
             />
-            <button
-              onClick={handleSubmitInput}
-              className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-            >
-              OK
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSubmitInput}
+                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+              >
+                OK
+              </button>
+              <button
+                onClick={() => { setShowInputModal(false); setInputNodeId(null); setInputVarName(null); }}
+                className="flex-1 bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Output Modal (NEW) */}
+      {showOutputModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30 z-60">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+            <div className="mb-3 text-lg font-semibold">Output</div>
+            <div className="max-h-56 overflow-auto text-sm mb-4">
+              {outputData.map((o, i) => (
+                <div key={i} className="mb-2 p-2 bg-gray-50 rounded">
+                  <div className="text-xs text-gray-500">#{i + 1}</div>
+                  <pre className="whitespace-pre-wrap break-words text-sm">{renderValue(o)}</pre>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setShowOutputModal(false); setOutputData([]); }}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
