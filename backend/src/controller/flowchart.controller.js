@@ -612,6 +612,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
   }
 });
 
+// (วางทับฟังก์ชัน router.post("/execute", ...) ใน controller ของคุณ)
 router.post("/execute", async (req, res) => {
   try {
     let raw = req.body;
@@ -650,7 +651,7 @@ router.post("/execute", async (req, res) => {
     const fc = hydrateFlowchart(saved);
     const executor = new Executor(fc, options);
 
-    // restore executor state if provided
+    // restore executor state if provided in request.restoreState
     if (restoreState && restoreState.context && Array.isArray(restoreState.context.variables)) {
       for (const v of restoreState.context.variables) {
         if (v && v.name) executor.context.set(v.name, v.value, v.varType);
@@ -660,6 +661,25 @@ router.post("/execute", async (req, res) => {
     if (typeof restoreState.finished === "boolean") executor.finished = restoreState.finished;
     if (typeof restoreState.paused === "boolean") executor.paused = restoreState.paused;
     if (typeof restoreState.stepCount === "number") executor.stepCount = restoreState.stepCount;
+
+    // If restoreState includes node internals, apply them onto hydrated flowchart nodes
+    if (restoreState.flowchartNodeInternal && typeof restoreState.flowchartNodeInternal === "object") {
+      try {
+        for (const nid of Object.keys(restoreState.flowchartNodeInternal)) {
+          const nodeState = restoreState.flowchartNodeInternal[nid];
+          const node = executor.flowchart.getNode(nid);
+          if (!node) continue;
+          // copy only safe properties
+          if ('_initialized' in nodeState) node._initialized = !!nodeState._initialized;
+          if ('_phase' in nodeState) node._phase = nodeState._phase;
+          if ('_loopCount' in nodeState) node._loopCount = Number(nodeState._loopCount) || 0;
+          if ('_scopePushed' in nodeState) node._scopePushed = !!nodeState._scopePushed;
+          if ('_initValue' in nodeState) node._initValue = nodeState._initValue;
+        }
+      } catch (e) {
+        console.warn("Failed to apply restoreState.flowchartNodeInternal:", e);
+      }
+    }
 
     // apply variables from request BEFORE action handling
     if (Array.isArray(variables)) {
@@ -702,6 +722,8 @@ router.post("/execute", async (req, res) => {
           output: [...executor.context.output],
           variables: [...executor.context.variables]
         });
+        if (result && result.error) break;
+        if (executor.paused && !ignoreBreakpoints) break;
       }
 
       return res.json({
@@ -721,13 +743,29 @@ router.post("/execute", async (req, res) => {
       const lastState = savedFlowcharts.get(lastStateKey);
 
       // restore previous executor state ถ้า state เดิมมีอยู่
-      if (lastState?.executor) {
-        executor.currentNodeId = lastState.executor.currentNodeId;
-        executor.finished = lastState.executor.finished;
-        executor.paused = lastState.executor.paused;
-        executor.stepCount = lastState.executor.stepCount;
-        for (const v of lastState.executor.context?.variables || []) {
-          executor.context.set(v.name, v.value, v.varType);
+      if (lastState && lastState.executor) {
+        const es = lastState.executor;
+        if (es.currentNodeId) executor.currentNodeId = es.currentNodeId;
+        if (typeof es.finished === "boolean") executor.finished = es.finished;
+        if (typeof es.paused === "boolean") executor.paused = es.paused;
+        if (typeof es.stepCount === "number") executor.stepCount = es.stepCount;
+        if (es.context && Array.isArray(es.context.variables)) {
+          for (const v of es.context.variables) {
+            if (v && v.name) executor.context.set(v.name, v.value, v.varType);
+          }
+        }
+        // restore flowchart node internals if present
+        if (es.flowchartNodeInternal && typeof es.flowchartNodeInternal === "object") {
+          for (const nid of Object.keys(es.flowchartNodeInternal)) {
+            const nodeState = es.flowchartNodeInternal[nid];
+            const node = executor.flowchart.getNode(nid);
+            if (!node) continue;
+            if ('_initialized' in nodeState) node._initialized = !!nodeState._initialized;
+            if ('_phase' in nodeState) node._phase = nodeState._phase;
+            if ('_loopCount' in nodeState) node._loopCount = Number(nodeState._loopCount) || 0;
+            if ('_scopePushed' in nodeState) node._scopePushed = !!nodeState._scopePushed;
+            if ('_initValue' in nodeState) node._initValue = nodeState._initValue;
+          }
         }
       }
 
@@ -755,6 +793,22 @@ router.post("/execute", async (req, res) => {
       // execute single step
       const result = executor.step({ forceAdvanceBP });
 
+      // build flowchartNodeInternal snapshot to save node-local flags
+      const flowchartNodeInternal = {};
+      try {
+        for (const [nid, nobj] of Object.entries(executor.flowchart.nodes || {})) {
+          flowchartNodeInternal[nid] = {
+            _initialized: !!nobj._initialized,
+            _phase: nobj._phase || null,
+            _loopCount: nobj._loopCount || 0,
+            _scopePushed: !!nobj._scopePushed,
+            _initValue: typeof nobj._initValue !== 'undefined' ? nobj._initValue : null
+          };
+        }
+      } catch (e) {
+        console.warn("Failed to snapshot flowchart node internals:", e);
+      }
+
       // next node info
       let nextNodeId = executor.finished ? null : executor.currentNodeId;
       let nextNodeType = null;
@@ -763,7 +817,7 @@ router.post("/execute", async (req, res) => {
         if (nextNode) nextNodeType = nextNode.type;
       }
 
-      // save executor state per node
+      // save executor state per flowchart (including node internals)
       savedFlowcharts.set(lastStateKey, {
         executor: {
           currentNodeId: executor.currentNodeId,
@@ -779,7 +833,8 @@ router.post("/execute", async (req, res) => {
             type: result.node?.type,
             output: result.node ? [...executor.context.output] : [],
             variables: result.node ? [...executor.context.variables] : []
-          }
+          },
+          flowchartNodeInternal
         }
       });
 
@@ -821,6 +876,7 @@ router.post("/execute", async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
 
 
 
