@@ -62,6 +62,127 @@ class Executor {
     }
   }
 
+  /**
+   * === State serialization helpers ===
+   * These let you save/restore execution state between separate Executor instances,
+   * which is required to make step/resume across HTTP calls work correctly.
+   *
+   * serializeState() -> returns plain object
+   * restoreState(state) -> restores executor/context/flowchart node internals
+   */
+
+  // Create a compact state snapshot safe for JSON serialization
+  serializeState() {
+    try {
+      const nodesState = {};
+      if (this.flowchart && this.flowchart.nodes) {
+        for (const [nid, nodeObj] of Object.entries(this.flowchart.nodes)) {
+          nodesState[nid] = {
+            // persist only the internal props that handlers rely on
+            _initialized: Boolean(nodeObj._initialized),
+            _phase: nodeObj._phase || null,
+            _loopCount: Number(nodeObj._loopCount || 0),
+            _scopePushed: Boolean(nodeObj._scopePushed)
+          };
+        }
+      }
+
+      const ctx = {
+        variables: Array.isArray(this.context.variables) ? this.context.variables : [],
+        output: Array.isArray(this.context.output) ? this.context.output : []
+      };
+
+      // Attempt to persist internal scope stack if present (Context implementation dependent)
+      if (Array.isArray(this.context._scopeStack)) {
+        try {
+          // deep copy to avoid sharing refs
+          ctx._scopeStack = JSON.parse(JSON.stringify(this.context._scopeStack));
+        } catch (e) {
+          // fallback: skip scopeStack if not serializable
+          ctx._scopeStack = undefined;
+        }
+      }
+
+      const state = {
+        currentNodeId: this.currentNodeId,
+        finished: this.finished,
+        paused: this.paused,
+        stepCount: this.stepCount,
+        context: ctx,
+        nodesState
+      };
+
+      return state;
+    } catch (e) {
+      console.warn("Executor.serializeState failed:", e);
+      return null;
+    }
+  }
+
+  // Restore previously serialized state into this Executor instance
+  restoreState(state) {
+    if (!state || typeof state !== "object") return;
+
+    try {
+      if ('currentNodeId' in state) this.currentNodeId = state.currentNodeId;
+      if ('finished' in state) this.finished = Boolean(state.finished);
+      if ('paused' in state) this.paused = Boolean(state.paused);
+      if ('stepCount' in state) this.stepCount = Number(state.stepCount || 0);
+
+      // Restore context
+      if (state.context && typeof state.context === 'object') {
+        try {
+          // If Context supports internal _scopeStack, restore that first
+          if (Array.isArray(state.context._scopeStack) && Array.isArray(this.context._scopeStack)) {
+            // deep copy to avoid sharing references
+            this.context._scopeStack = JSON.parse(JSON.stringify(state.context._scopeStack));
+            // re-sync public variables view if method exists
+            if (typeof this.context._syncVariables === "function") this.context._syncVariables();
+          } else if (Array.isArray(state.context.variables)) {
+            // fallback: restore variables into top scope via context.set
+            for (const v of state.context.variables) {
+              if (v && v.name) {
+                try {
+                  this.context.set(v.name, v.value, v.varType);
+                } catch (e) {
+                  // as a last resort, attempt to directly manipulate variables (best-effort)
+                  try {
+                    this.context.variables = this.context.variables || [];
+                    const existingIndex = this.context.variables.findIndex(x => x.name === v.name);
+                    if (existingIndex !== -1) this.context.variables[existingIndex] = { name: v.name, value: v.value, varType: v.varType };
+                    else this.context.variables.push({ name: v.name, value: v.value, varType: v.varType });
+                    if (typeof this.context._rebuildIndexMap === "function") this.context._rebuildIndexMap();
+                  } catch (ee) { /* ignore */ }
+                }
+              }
+            }
+            // if Context has _syncVariables, call it to ensure consistency
+            if (typeof this.context._syncVariables === "function") this.context._syncVariables();
+          }
+
+          // restore output
+          if (Array.isArray(state.context.output)) this.context.output = Array.from(state.context.output);
+        } catch (e) {
+          console.warn("Executor.restoreState: context restore partial failure:", e);
+        }
+      }
+
+      // restore nodes internal state (only known small set)
+      if (state.nodesState && this.flowchart && this.flowchart.nodes) {
+        for (const [nid, snapshot] of Object.entries(state.nodesState)) {
+          const node = this.flowchart.getNode(nid);
+          if (!node || !snapshot) continue;
+          if ('_initialized' in snapshot) node._initialized = Boolean(snapshot._initialized);
+          if ('_phase' in snapshot) node._phase = snapshot._phase;
+          if ('_loopCount' in snapshot) node._loopCount = Number(snapshot._loopCount || 0);
+          if ('_scopePushed' in snapshot) node._scopePushed = Boolean(snapshot._scopePushed);
+        }
+      }
+    } catch (e) {
+      console.warn("Executor.restoreState failed:", e);
+    }
+  }
+
   // stepOptions may include: { forceAdvanceBP, inputProvider, ... }
   step(stepOptions = {}) {
     const { forceAdvanceBP = false, ...handlerOptions } = stepOptions;
