@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FaPlay, FaStepForward, FaUndo, FaRedo } from "react-icons/fa";
-import { executeStepNode, apiGetFlowchart } from "@/app/service/FlowchartService";
+import { FaPlay, FaStepForward, FaStop, FaRedo } from "react-icons/fa";
+import { executeStepNode, apiGetFlowchart, apiResetFlowchart } from "@/app/service/FlowchartService"; // <-- added apiResetFlowchart
 
 type Variable = {
   name: string;
@@ -74,7 +74,6 @@ export default function TopBarControls({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [fetchedVariables, setFetchedVariables] = useState<Variable[] | null>(null);
   const [fetchingVars, setFetchingVars] = useState(false);
-  
 
   // Node id ที่ modal จะส่งค่าเข้า (เช่น 'n4' หรือ 'n5') — เก็บเพื่อแสดง UI เท่านั้น
   const [inputNodeId, setInputNodeId] = useState<string | null>(null);
@@ -309,6 +308,124 @@ export default function TopBarControls({
     }
   };
 
+  // --- Run All (ยิง API รัวๆจนถึง Input) ---
+  const handleRunAll = async () => {
+    if (isLoading || done) return;
+    setIsLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const resolvedInitialVars = initialVariables ?? fetchedVariables ?? [];
+      // if we haven't sent initial vars this session, send them once
+      let firstCallVars = variablesSent ? [] : resolvedInitialVars;
+
+      // first call
+      let resp = (await executeStepNode(flowchartId, firstCallVars, forceAdvanceBP)) as ExecuteResponse;
+      console.log("runAll first response:", resp);
+      setLastResponse(resp);
+      setVariablesSent(true);
+      setStepCount((s) => s + 1);
+      setDone(Boolean(resp?.result?.done ?? resp?.done ?? false));
+      handleResponseOutputs(resp);
+
+      const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+      safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
+
+      // if backend asks for input or finished, stop and let UI handle
+      let nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+      let nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
+      let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
+
+      if (nextType === "IN" || nextType === "INPUT") {
+        const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
+        setInputNodeId(nextId ?? null);
+        setInputVarName(resolvedVarName ?? null);
+        setTimeout(() => setShowInputModal(true), 0);
+        return;
+      }
+
+      if (resp?.result?.done ?? resp?.done ?? false) {
+        // handle done same as in handleStep
+        try {
+          await executeStepNode(flowchartId, [], false);
+        } catch (err) {
+          console.warn("reset without advance failed (runAll)", err);
+          try {
+            await executeStepNode(flowchartId, [], true);
+          } catch (e) {
+            console.warn("fallback reset also failed (runAll)", e);
+          }
+        }
+
+        setLastResponse(null);
+        setStepCount(0);
+        setDone(false);
+        setVariablesSent(false);
+        setInputNodeId(null);
+        setInputVarName(null);
+        const restartId = await pickRestartNodeId();
+        safeHighlight(restartId);
+        return;
+      }
+
+      // loop until either input is required or flow is done
+      // include a very small throttle to avoid hammering the backend
+      while (true) {
+        // small throttle
+        await new Promise((r) => setTimeout(r, 80));
+
+        resp = (await executeStepNode(flowchartId, [], forceAdvanceBP)) as ExecuteResponse;
+        console.log("runAll loop response:", resp);
+        setLastResponse(resp);
+        setStepCount((s) => s + 1);
+        setVariablesSent(true);
+        setDone(Boolean(resp?.result?.done ?? resp?.done ?? false));
+        handleResponseOutputs(resp);
+
+        const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+        const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
+        safeHighlight(loopNodeId);
+
+        nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+        nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
+        nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
+
+        if (nextType === "IN" || nextType === "INPUT") {
+          const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
+          setInputNodeId(nextId ?? null);
+          setInputVarName(resolvedVarName ?? null);
+          setTimeout(() => setShowInputModal(true), 0);
+          break;
+        }
+
+        if (resp?.result?.done ?? resp?.done ?? false) {
+          try {
+            await executeStepNode(flowchartId, [], false);
+          } catch (err) {
+            console.warn("reset without advance failed (runAll loop)", err);
+          }
+          setLastResponse(null);
+          setStepCount(0);
+          setDone(false);
+          setVariablesSent(false);
+          setInputNodeId(null);
+          setInputVarName(null);
+          const restartId = await pickRestartNodeId();
+          safeHighlight(restartId);
+          break;
+        }
+
+        // otherwise continue looping
+      }
+    } catch (err) {
+      console.error("runAll error", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // --- Submit input from modal (💬) ---
   const handleSubmitInput = async () => {
     if (!lastResponse) return;
@@ -395,8 +512,15 @@ export default function TopBarControls({
 
   // --- Reset flowchart (uses only allowed args) ---
   const resetFlowchart = async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
     try {
-      await executeStepNode(flowchartId, [], true);
+      if (!flowchartId) throw new Error("missing flowchartId");
+
+      // 1) call apiResetFlowchart to reset backend session
+      await apiResetFlowchart(flowchartId);
+
+      // 2) Clear all client state so next Step/Run starts fresh
       setLastResponse(null);
       setStepCount(0);
       setDone(false);
@@ -406,12 +530,21 @@ export default function TopBarControls({
       setShowInputModal(false);
       setShowOutputModal(false);
       setOutputData([]);
-      // NEW: บอกพาเรนต์ให้ล้าง highlight เมื่อ reset
-      safeHighlight(null);
+      setErrorMsg(null);
+
+      // 3) highlight the restart node (prefer DC/DECLARE/VAR). If not found, clear highlight.
+      const restartId = await pickRestartNodeId();
+      if (restartId) {
+        safeHighlight(restartId);
+      } else {
+        safeHighlight(null);
+      }
     } catch (err) {
       console.error("reset error", err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -446,6 +579,7 @@ export default function TopBarControls({
       {/* Control bar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg shadow-md border border-gray-200 w-fit hover:shadow-lg transition-shadow duration-200">
         <button
+          onClick={handleRunAll}
           title="Run"
           className="text-green-600 hover:text-green-700 text-lg p-2 rounded-full hover:bg-green-100 transition-colors"
         >
@@ -467,7 +601,7 @@ export default function TopBarControls({
           onClick={resetFlowchart}
           className="text-gray-600 hover:text-gray-700 text-lg p-2 rounded-full hover:bg-gray-100 transition-colors"
         >
-          <FaUndo />
+          <FaStop />
         </button>
         <button className="text-gray-600 hover:text-gray-700 text-lg p-2 rounded-full hover:bg-gray-100 transition-colors">
           <FaRedo />
