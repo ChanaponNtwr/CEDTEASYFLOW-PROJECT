@@ -1,7 +1,3 @@
-// File: app/flowchart/utils/backendConverter.tsx
-// ไฟล์นี้รับผิดชอบการแปลงข้อมูลที่ได้จาก API ให้อยู่ในรูปแบบที่ React Flow ใช้งานได้
-// (เวอร์ชันปรับปรุง Logic การจัดเรียงตำแหน่ง Node ใหม่ทั้งหมด)
-
 import { Node, Edge, MarkerType } from "@xyflow/react";
 import { createArrowEdge, stepY } from "./flowchartUtils";
 
@@ -31,6 +27,8 @@ const mapBackendTypeToNodeType = (backendType?: string, label?: string) => {
   }
 };
 
+// Replace the existing convertBackendFlowchart with this updated version
+
 export const convertBackendFlowchart = (payload: any) => {
   const backendFlowchart = payload.flowchart;
   if (!backendFlowchart || !backendFlowchart.nodes || !backendFlowchart.edges) {
@@ -40,7 +38,7 @@ export const convertBackendFlowchart = (payload: any) => {
 
   const backendNodes = backendFlowchart.nodes;
   const backendEdges = backendFlowchart.edges;
-  
+
   // --- Section 1: สร้าง Node Map และจัดการ ID ---
   const nodesMap = new Map<string, Node>();
   const idMap = new Map<string, string>();
@@ -55,7 +53,7 @@ export const convertBackendFlowchart = (payload: any) => {
       id: newId,
       type: nodeType,
       data: { label: n.label, ...n.data },
-      position: n.position || { x: 0, y: 0 }, // ใช้ position จาก backend ถ้ามี, ถ้าไม่มีให้เป็น (0,0)
+      position: n.position || { x: 0, y: 0 },
       draggable: false,
       sourcePosition: "bottom",
       targetPosition: "top",
@@ -63,7 +61,16 @@ export const convertBackendFlowchart = (payload: any) => {
     nodesMap.set(newId, frontEndNode);
   });
 
-  // --- Section 2: สร้าง Adjacency List สำหรับ Graph Traversal ---
+  // --- Build outgoing map that keeps condition info (important for if-branches) ---
+  const outgoingBySource = new Map<string, Array<{ targetId: string; condition?: string; edgeId?: string }>>();
+  backendEdges.forEach((be: any) => {
+    const src = idMap.get(be.source) ?? be.source;
+    const tgt = idMap.get(be.target) ?? be.target;
+    if (!outgoingBySource.has(src)) outgoingBySource.set(src, []);
+    outgoingBySource.get(src)!.push({ targetId: tgt, condition: be.condition, edgeId: be.id });
+  });
+
+  // --- Section 2: สร้าง Adjacency List (สำหรับ traversal แบบทั่วไป) ---
   const adj = new Map<string, string[]>();
   nodesMap.forEach((_, id) => adj.set(id, []));
 
@@ -75,74 +82,140 @@ export const convertBackendFlowchart = (payload: any) => {
     }
   });
 
-  // --- Section 3: NEW LAYOUT LOGIC - จัดเรียงตำแหน่ง Node ด้วย BFS Traversal ---
+  // --- Section 3: NEW LAYOUT LOGIC - BFS แต่ใช้ condition สำหรับ if ---
   const positionedNodes = new Map<string, Node>();
   const queue: { nodeId: string; y: number; x: number }[] = [{ nodeId: "start", y: 50, x: 300 }];
   const visited = new Set<string>(["start"]);
   let maxY = 50;
 
+  // คุณสามารถปรับค่านี้ได้ถ้าต้องการให้ shift มาก/น้อยขึ้น
+  const BREAKPOINT_CHILD_SHIFT = 73; // shift left for nodes after a breakpoint
+
   while (queue.length > 0) {
     const { nodeId, y, x } = queue.shift()!;
     const node = nodesMap.get(nodeId);
     if (!node) continue;
-    
-    // กำหนดตำแหน่งและเพิ่ม vào positionedNodes
+
     node.position = { x, y };
     positionedNodes.set(nodeId, node);
     maxY = Math.max(maxY, y);
 
-    const children = adj.get(nodeId) || [];
-    
-    // จัดการการแตกแขนงของ If-node
-    if (node.type === 'if' && children.length > 1) {
-        // สมมติว่าลูกคนแรกคือ True branch (ไปทางขวา) และคนที่สองคือ False (ไปทางซ้าย)
-        const trueChildId = children[0];
-        const falseChildId = children[1];
-        if (trueChildId && !visited.has(trueChildId)) {
-            visited.add(trueChildId);
-            queue.push({ nodeId: trueChildId, y: y + stepY, x: x + 250 });
+    // For if-nodes: try to place True -> right, False -> left based on conditions
+    if (node.type === "if") {
+      const outs = outgoingBySource.get(nodeId) || [];
+      // find by condition (case-insensitive)
+      const trueChild = outs.find(o => String(o.condition ?? "").toLowerCase() === "true")?.targetId;
+      const falseChild = outs.find(o => String(o.condition ?? "").toLowerCase() === "false")?.targetId;
+      const others = outs.filter(o => {
+        const c = String(o.condition ?? "").toLowerCase();
+        return c !== "true" && c !== "false";
+      }).map(o => o.targetId);
+
+      // helper to compute x for a child; always push breakpoint slightly to the right
+      const computeChildX = (childId: string, baseX: number, direction: 'right' | 'left' | 'center') => {
+        const childNode = nodesMap.get(childId);
+        // if child itself is a breakpoint, nudge it to the right of the if (mimic earlier UI behaviour)
+        if (childNode && childNode.type === 'breakpoint') {
+          return baseX + 70; // breakpoint sits to the right
         }
-        if (falseChildId && !visited.has(falseChildId)) {
-            visited.add(falseChildId);
-            queue.push({ nodeId: falseChildId, y: y + stepY, x: x - 250 });
+        if (direction === 'right') return baseX + 250;
+        if (direction === 'left') return baseX - 250;
+        return baseX;
+      };
+
+      if (trueChild && !visited.has(trueChild)) {
+        visited.add(trueChild);
+        queue.push({ nodeId: trueChild, y: y + stepY, x: computeChildX(trueChild, x, 'right') });
+      }
+      if (falseChild && !visited.has(falseChild)) {
+        visited.add(falseChild);
+        queue.push({ nodeId: falseChild, y: y + stepY, x: computeChildX(falseChild, x, 'left') });
+      }
+      // any other children (fallback) placed vertically below
+      let currentY = y + stepY;
+      others.forEach((childId) => {
+        if (!visited.has(childId)) {
+          visited.add(childId);
+          queue.push({ nodeId: childId, y: currentY, x: computeChildX(childId, x, 'center') });
+          currentY += stepY;
         }
-    } else { // สำหรับ Node ประเภทอื่นๆ
-        let currentY = y + stepY;
-        children.forEach((childId) => {
-            if (!visited.has(childId)) {
-                visited.add(childId);
-                // ในกรณีเส้นตรง จะใช้ x เดียวกัน แต่เพิ่ม y
-                queue.push({ nodeId: childId, y: currentY, x });
-                currentY += stepY;
-            }
-        });
+      });
+    } else {
+      // normal linear placement
+      let currentY = y + stepY;
+      const children = adj.get(nodeId) || [];
+
+      // ถ้า parent เป็น breakpoint ให้เลื่อนลูกลงมาทางซ้ายเล็กน้อย
+      const childBaseX = node.type === 'breakpoint' ? x - BREAKPOINT_CHILD_SHIFT : x;
+
+      children.forEach((childId) => {
+        if (!visited.has(childId)) {
+          visited.add(childId);
+          queue.push({ nodeId: childId, y: currentY, x: childBaseX });
+          currentY += stepY;
+        }
+      });
     }
   }
 
-  // จัดการ End Node ให้อยู่ล่างสุดเสมอ
+  // Ensure end node at bottom
   const endNode = nodesMap.get("end");
   if (endNode) {
-    endNode.position = { x: 300, y: maxY };
+    endNode.position = { x: 300, y: maxY};
     positionedNodes.set("end", endNode);
   }
 
-  // --- Section 4: แปลง Edges และสร้างผลลัพธ์สุดท้าย ---
+  // --- Section 4: แปลง Edges — เพิ่ม sourceHandle/targetHandle และ offset เล็กน้อยสำหรับแยกเส้น ---
   const finalNodesArray = Array.from(positionedNodes.values());
   const convertedEdges: Edge[] = backendEdges.map((be: any) => {
     const source = idMap.get(be.source) ?? be.source;
     const target = idMap.get(be.target) ?? be.target;
-    return {
+    const condition = be.condition ?? "";
+
+    // default props
+    const edge: Edge = {
       id: be.id ?? `e-${source}-${target}`,
       source,
       target,
       animated: true,
       markerEnd: { type: MarkerType.ArrowClosed },
       type: "smoothstep",
-      data: { condition: be.condition },
-      label: be.condition === "auto" ? "" : be.condition,
-    };
+      data: { condition },
+      label: (condition === "auto" ? "" : condition),
+    } as Edge;
+
+    // if this edge comes out of an 'if' node, set sourceHandle to right/left
+    const srcNode = nodesMap.get(source);
+    const tgtNode = nodesMap.get(target);
+    const condLower = String(condition).toLowerCase();
+
+    if (srcNode && srcNode.type === "if") {
+      if (condLower === "true") {
+        (edge as any).sourceHandle = "right";
+        // small offset to separate curves visually
+        edge.pathOptions = { offset: 0 };
+      } else if (condLower === "false") {
+        (edge as any).sourceHandle = "left";
+        edge.pathOptions = { offset: 0 };
+      } else {
+        // unknown condition: push slightly to right by default
+        (edge as any).sourceHandle = "right";
+        edge.pathOptions = { offset: 0 };
+      }
+    }
+
+    // if target is a breakpoint, map condition to its handle (true/false)
+    if (tgtNode && tgtNode.type === "breakpoint") {
+      if (condLower === "true") {
+        (edge as any).targetHandle = "true";
+      } else if (condLower === "false") {
+        (edge as any).targetHandle = "false";
+      }
+    }
+
+    return edge;
   });
 
-  console.log("Flowchart hydrated with new layout logic.");
+  console.log("Flowchart hydrated with new layout + branch-handles (breakpoints nudged right; descendants shifted left).");
   return { nodes: finalNodesArray, edges: convertedEdges };
 };
