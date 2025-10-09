@@ -464,7 +464,7 @@ export default function TopBarControls({
       // include a very small throttle to avoid hammering the backend
       while (true) {
         // small throttle
-        await new Promise((r) => setTimeout(r, 80));
+        await new Promise((r) => setTimeout(r, 180));
 
         resp = (await executeStepNode(flowchartId, [], forceAdvanceBP)) as ExecuteResponse;
         console.log("runAll loop response:", resp);

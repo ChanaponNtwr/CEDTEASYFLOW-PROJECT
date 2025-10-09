@@ -193,10 +193,10 @@ export const convertBackendFlowchart = (payload: any) => {
       if (condLower === "true") {
         (edge as any).sourceHandle = "right";
         // small offset to separate curves visually
-        edge.pathOptions = { offset: 0 };
+        edge.pathOptions = { offset: 30 };
       } else if (condLower === "false") {
         (edge as any).sourceHandle = "left";
-        edge.pathOptions = { offset: 0 };
+        edge.pathOptions = { offset: 30 };
       } else {
         // unknown condition: push slightly to right by default
         (edge as any).sourceHandle = "right";
