@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import Navbar from '@/components/Navbar';
+import Navbar from "@/components/Navbar";
 import { useState } from "react";
 
 export default function Profile() {
@@ -11,7 +11,6 @@ export default function Profile() {
     { id: 1, title: "Lab 3 in Project Flowchart 2", image: "https://img2.pic.in.th/pic/image-113.png" },
     { id: 2, title: "Lab 4 in Project Flowchart 2", image: "https://img2.pic.in.th/pic/image-113.png" },
     { id: 3, title: "Lab 5 in Project Flowchart 2", image: "https://img2.pic.in.th/pic/image-113.png" },
-    { id: 4, title: "Lab 5 in Project Flowchart 2", image: "https://img2.pic.in.th/pic/image-113.png" }
   ]);
 
   if (status === "loading") {
@@ -30,58 +29,63 @@ export default function Profile() {
     );
   }
 
-  // ดึงข้อมูล user จาก session และปรับขนาดรูปให้ชัด
-  console.log("Session:", session, "Status:", status);
   const user = session.user;
   const defaultImage = "https://img5.pic.in.th/file/secure-sv1/Ellipse-270.png";
   const userImage = user?.image
-  ? user.image.includes("googleusercontent.com") && user.image.includes("=s")
-    ? user.image.replace(/=s\d+-c/, "=s400-c")
-    : user.image
-  : defaultImage;
+    ? user.image.includes("googleusercontent.com") && user.image.includes("=s")
+      ? user.image.replace(/=s\d+-c/, "=s400-c")
+      : user.image
+    : defaultImage;
 
   return (
-    <div className="pt-20 min-h-screen bg-gray-100">
+    <div style={{ backgroundColor: "#F5F2F0" }} className="min-h-screen w-full">
       <Navbar />
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 pt-10">
-          <div className="flex flex-col lg:flex-row gap-8 min-h-screen w-full">
-            {/* Profile Section */}
-            <div className="w-full lg:w-1/3 bg-white p-6 rounded-xl shadow-lg min-h-screen">
-              <div className="flex flex-col items-center h-full">
-                <img
-                  src={userImage}
-                 alt={user ? `${user.name}` : "Profile"}
-                  className="w-52 h-52 rounded-full border-4 border-orange-500 object-cover shadow-md"
-                />
-                <h2 className="mt-4 text-3xl font-semibold text-gray-900">
-                  {user.name}
-                </h2>
-                <div className="mt-2 w-64 h-px bg-gray-300" />
-                <p className="text-gray-600 text-lg">Email: {user.email}</p>
-                <p className="mt-4 text-2xl text-gray-800">รายละเอียด แพ็คเก็ต</p>
-              </div>
-            </div>
 
-            {/* Flowchart Section */}
-            <div className="w-full lg:w-2/3 bg-white p-6 rounded-xl shadow-lg min-h-screen">
-              <h1 className="text-4xl font-medium text-gray-900 mb-6">My Flowchart</h1>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {flowcharts.map((flowchart) => (
-                  <div
-                    key={flowchart.id}
-                    className="bg-gray-50 p-4 rounded-lg shadow-md hover:scale-105 transition-all cursor-pointer"
-                  >
-                    <img
-                      src={flowchart.image || `https://placehold.co/238x268`}
-                      alt={flowchart.title}
-                      className="w-full h-96 object-cover rounded-lg border border-gray-300"
-                    />
-                    <p className="mt-2 text-lg text-gray-700 text-center">{flowchart.title}</p>
-                  </div>
-                ))}
+      {/* Container โปรไฟล์ */}
+      <div className="relative w-[1920px] mx-auto bg-[#F5F2F0] overflow-hidden">
+        <div className="absolute top-[118px] left-[15px] w-[1880px] h-[274px] bg-[rgba(13,58,206,0.45)] rounded-t-[40px]" />
+        <div className="absolute top-[392px] left-[15px] w-[1880px] h-[388px] bg-[#FBFBFB] rounded-b-[40px]" />
+
+        <img
+          src={userImage}
+          alt="user"
+          className="absolute top-[269px] left-[84px] w-[246px] h-[246px] rounded-full border-[9px] border-white bg-[#E3B8FF] object-cover"
+        />
+        <div className="absolute top-[550px] left-[84px] text-[42px] font-bold text-black">
+          {user.name}
+        </div>
+        <div className="absolute top-[610px] left-[84px] text-[30px] font-normal text-black">
+          Email: {user.email}
+        </div>
+
+        <div className="absolute top-[682px] left-[84px] flex items-center gap-4">
+          <button className="bg-[#EE7A2E] text-white text-[25px] font-medium rounded-full px-10 py-3 shadow-md hover:brightness-110 transition">
+            Upgrade
+          </button>
+          <p className="w-[260px] text-black text-[20px] font-semibold leading-6">
+            Upgrade your package to add more students
+          </p>
+        </div>
+
+        {/* 🧾 Flowchart Section */}
+        <div className="relative w-[1880px] bg-[#FBFBFB] rounded-[40px] p-10 mt-[800px] mx-auto min-h-[400px]">
+          <h2 className="text-[40px] font-semibold text-black mb-6">My Flowchart</h2>
+
+          <div className="flex flex-wrap gap-10">
+            {flowcharts.map((flowchart) => (
+              <div key={flowchart.id} className="flex flex-col items-center w-[238px]">
+                <img
+                  src={flowchart.image}
+                  alt={flowchart.title}
+                  className="w-full h-[268px] rounded-lg border border-[#989898] object-cover"
+                />
+                <p className="mt-3 text-[20px] text-black text-center">{flowchart.title}</p>
               </div>
-            </div>
+            ))}
+          </div>
+
+          <div className="absolute top-10 right-10 w-[150px] h-[65px] bg-[#B92627] rounded-full flex items-center justify-center text-white text-[25px] font-medium shadow-md">
+            All
           </div>
         </div>
       </div>
