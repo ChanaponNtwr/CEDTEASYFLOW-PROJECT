@@ -12,18 +12,19 @@ interface TestCase {
   output: string;
   hiddenInput: string;
   hiddenOutput: string;
+  score: string;
 }
 
 function Editlab() {
   const [testCases, setTestCases] = useState<TestCase[]>([
-    { input: "", output: "", hiddenInput: "", hiddenOutput: "" },
+    { input: "", output: "", hiddenInput: "", hiddenOutput: "" , score: ""},
   ]);
 
   // เพิ่ม Testcase
   const addTestCase = () => {
     setTestCases([
       ...testCases,
-      { input: "", output: "", hiddenInput: "", hiddenOutput: "" },
+      { input: "", output: "", hiddenInput: "", hiddenOutput: "" , score: "" },
     ]);
   };
 
@@ -141,12 +142,9 @@ function Editlab() {
                     />
                   </div>
                   <div className="w-full md:w-1/4">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Score
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700">Dateline</label>
                     <input
-                      type="text"
-                      placeholder="Score..."
+                      type="date"
                       className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -268,6 +266,28 @@ function Editlab() {
                           />
                         </div>
                       </div>
+
+                      <div className="grid grid-cols-12 gap-4 mb-3 ml-5">
+                        <div className="col-span-6">
+                          <label className="block text-sm text-gray-700 mb-1">
+                            Score
+                          </label>
+                          <input
+                            type="text"
+                            value={testCase.input}
+                            onChange={(e) =>
+                              handleTestCaseChange(
+                                index,
+                                "score",
+                                e.target.value
+                              )
+                            }
+                            placeholder="Score"
+                            className="w-full bg-white p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+
                     </div>
                   ))}
 
