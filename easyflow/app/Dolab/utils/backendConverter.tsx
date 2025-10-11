@@ -27,8 +27,6 @@ const mapBackendTypeToNodeType = (backendType?: string, label?: string) => {
   }
 };
 
-// Replace the existing convertBackendFlowchart with this updated version
-
 export const convertBackendFlowchart = (payload: any) => {
   const backendFlowchart = payload.flowchart;
   if (!backendFlowchart || !backendFlowchart.nodes || !backendFlowchart.edges) {
@@ -158,53 +156,139 @@ export const convertBackendFlowchart = (payload: any) => {
     }
   }
 
-  // Ensure end node at bottom
-  const endNode = nodesMap.get("end");
-  if (endNode) {
-    endNode.position = { x: 300, y: maxY};
-    positionedNodes.set("end", endNode);
-  }
-
-  // --- Section 4: แปลง Edges — เพิ่ม sourceHandle/targetHandle และ offset เล็กน้อยสำหรับแยกเส้น ---
+  // --- Section 4: แปลง Edges — ให้ true-loop กลับเข้า loop_in/loop_return; false -> next (arrow visible) ---
   const finalNodesArray = Array.from(positionedNodes.values());
   const convertedEdges: Edge[] = backendEdges.map((be: any) => {
     const source = idMap.get(be.source) ?? be.source;
     const target = idMap.get(be.target) ?? be.target;
     const condition = be.condition ?? "";
 
-    // default props
     const edge: Edge = {
       id: be.id ?? `e-${source}-${target}`,
       source,
       target,
       animated: true,
-      markerEnd: { type: MarkerType.ArrowClosed },
+      markerEnd: { type: MarkerType.ArrowClosed }, // ยืนยันหัวลูกศร
       type: "smoothstep",
       data: { condition },
       label: (condition === "auto" ? "" : condition),
+      style: { strokeWidth: 2 }, // ทำให้ arrowhead ชัด
     } as Edge;
 
-    // if this edge comes out of an 'if' node, set sourceHandle to right/left
     const srcNode = nodesMap.get(source);
     const tgtNode = nodesMap.get(target);
     const condLower = String(condition).toLowerCase();
 
+    // IF nodes: พฤติกรรมเดิม (right/left)
     if (srcNode && srcNode.type === "if") {
       if (condLower === "true") {
         (edge as any).sourceHandle = "right";
-        // small offset to separate curves visually
         edge.pathOptions = { offset: 30 };
       } else if (condLower === "false") {
         (edge as any).sourceHandle = "left";
         edge.pathOptions = { offset: 30 };
       } else {
-        // unknown condition: push slightly to right by default
         (edge as any).sourceHandle = "right";
         edge.pathOptions = { offset: 0 };
       }
     }
 
-    // if target is a breakpoint, map condition to its handle (true/false)
+    // WHILE - outgoing: true -> body (sourceHandle = "true"), false -> next (sourceHandle = "false")
+    if (srcNode && srcNode.type === "while") {
+      if (condLower === "true") {
+        (edge as any).sourceHandle = "true";
+        edge.pathOptions = { offset: 40 };
+      } else if (condLower === "false") {
+        (edge as any).sourceHandle = "false";
+        // เลือก offset เล็ก ๆ เพื่อไม่ให้ปลายชน node
+        edge.pathOptions = { offset: 12 };
+      } else {
+        // heuristic: ถ้า target อยู่ต่ำกว่า ให้ถือเป็น false (next) มิฉะนั้น true
+        if (tgtNode && srcNode && tgtNode.position && srcNode.position) {
+          if (tgtNode.position.y > srcNode.position.y + 5) {
+            (edge as any).sourceHandle = "false";
+            edge.pathOptions = { offset: 12 };
+          } else {
+            (edge as any).sourceHandle = "true";
+            edge.pathOptions = { offset: 20 };
+          }
+        } else {
+          (edge as any).sourceHandle = "false";
+          edge.pathOptions = { offset: 12 };
+        }
+      }
+    }
+
+    // FOR - outgoing: true -> loop_body (sourceHandle = "loop_body"), false -> next (sourceHandle = "next")
+    // NOTE: we intentionally keep "next" as a source handle but treat "next" as a looping/back-edge
+    // when it heads back into a FOR node (so it connects to loop_return).
+    if (srcNode && srcNode.type === "for") {
+      if (condLower === "true") {
+        (edge as any).sourceHandle = "loop_body";
+        edge.pathOptions = { offset: 40 };
+      } else if (condLower === "false") {
+        (edge as any).sourceHandle = "next";
+        edge.pathOptions = { offset: 12 };
+      } else {
+        // heuristic: ถ้า target อยู่ต่ำกว่า ให้ถือเป็น next มิฉะนั้น loop_body
+        if (tgtNode && srcNode && tgtNode.position && srcNode.position) {
+          if (tgtNode.position.y > srcNode.position.y + 5) {
+            (edge as any).sourceHandle = "next";
+            edge.pathOptions = { offset: 12 };
+          } else {
+            (edge as any).sourceHandle = "loop_body";
+            edge.pathOptions = { offset: 20 };
+          }
+        } else {
+          (edge as any).sourceHandle = "next";
+          edge.pathOptions = { offset: 12 };
+        }
+      }
+    }
+
+    // ถ้า edge นี้เข้าไปหา while และ condition === "true" -> ให้ targetHandle = "loop_in"
+    // (ตรงกับ <Handle id="loop_in" /> ใน WhileNodeComponent)
+    if (tgtNode && tgtNode.type === "while") {
+      if (condLower === "true") {
+        (edge as any).targetHandle = "loop_in";
+        edge.pathOptions = { ...(edge.pathOptions || {}), offset: 30 };
+      } else if (condLower === "false") {
+        (edge as any).targetHandle = "top";
+      } else {
+        // fallback: ถ้ามาจาก node ที่อยู่ด้านล่างของ while ให้ถือเป็น back-edge -> loop_in
+        const isBackEdge = srcNode && srcNode.position && tgtNode.position && (srcNode.position.y > tgtNode.position.y + 5);
+        if (isBackEdge) {
+          (edge as any).targetHandle = "loop_in";
+          edge.pathOptions = { ...(edge.pathOptions || {}), offset: 60 };
+        } else {
+          (edge as any).targetHandle = "top";
+        }
+      }
+    }
+
+    // ถ้า edge นี้เข้าไปหา for -> ให้ targetHandle = "loop_return" เมื่อ:
+    // - condition === "true" (เดิม)
+    // - หรือ sourceHandle ที่เรตั้งไว้เป็น "loop_body" หรือ "next" (ตามที่ขอ ให้ next เป็น back-edge)
+    if (tgtNode && tgtNode.type === "for") {
+      const srcHandle = (edge as any).sourceHandle;
+      if (condLower === "true" || srcHandle === "loop_body" || srcHandle === "next") {
+        (edge as any).targetHandle = "loop_return";
+        edge.pathOptions = { ...(edge.pathOptions || {}), offset: 30 };
+      } else if (condLower === "false") {
+        (edge as any).targetHandle = "top";
+      } else {
+        // fallback: ถ้ามาจาก node ที่อยู่ด้านล่างของ for ให้ถือเป็น back-edge -> loop_return
+        const isBackEdge = srcNode && srcNode.position && tgtNode.position && (srcNode.position.y > tgtNode.position.y + 5);
+        if (isBackEdge) {
+          (edge as any).targetHandle = "loop_return";
+          edge.pathOptions = { ...(edge.pathOptions || {}), offset: 60 };
+        } else {
+          (edge as any).targetHandle = "top";
+        }
+      }
+    }
+
+    // breakpoint targets: map เป็น true/false handles ตามเดิม
     if (tgtNode && tgtNode.type === "breakpoint") {
       if (condLower === "true") {
         (edge as any).targetHandle = "true";
@@ -216,6 +300,9 @@ export const convertBackendFlowchart = (payload: any) => {
     return edge;
   });
 
+
   console.log("Flowchart hydrated with new layout + branch-handles (breakpoints nudged right; descendants shifted left).");
   return { nodes: finalNodesArray, edges: convertedEdges };
 };
+
+
