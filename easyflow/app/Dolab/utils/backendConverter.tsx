@@ -1,3 +1,4 @@
+// File: convertBackendFlowchart.tsx
 import { Node, Edge, MarkerType } from "@xyflow/react";
 import { stepY } from "./flowchartUtils";
 
@@ -38,7 +39,9 @@ export const convertBackendFlowchart = (payload: any) => {
   const nodesMap = new Map<string, Node>();
   const idMap = new Map<string, string>();
 
-  const normalizeId = (origId: string, label?: string) => (label === "Start" ? "start" : label === "End" ? "end" : origId).toLowerCase();
+  // normalize IDs consistently (lowercase) but ensure Start/End special-case
+  const normalizeId = (origId: string, label?: string) =>
+    (label === "Start" ? "start" : label === "End" ? "end" : origId).toLowerCase();
 
   backendNodes.forEach((n) => {
     const originalId = n.id;
@@ -59,7 +62,7 @@ export const convertBackendFlowchart = (payload: any) => {
     nodesMap.set(newId, frontEndNode);
   });
 
-  // --- Build outgoing map that keeps condition info ---
+  // --- Build outgoing map that keeps condition info and edgeId + preserves order ---
   const outgoingBySource = new Map<string, Array<{ targetId: string; condition?: string; edgeId?: string }>>();
   const addOutgoing = (s: string, t: string, condition?: string, edgeId?: string) => {
     if (!outgoingBySource.has(s)) outgoingBySource.set(s, []);
@@ -72,7 +75,16 @@ export const convertBackendFlowchart = (payload: any) => {
     addOutgoing(src, tgt, be.condition, be.id);
   });
 
-  // --- adjacency list ---
+  // --- Build incoming map (for inferring branch condition from parent's edge) ---
+  const incomingByTarget = new Map<string, Array<{ sourceId: string; condition?: string; edgeId?: string }>>();
+  backendEdges.forEach((be) => {
+    const src = idMap.get(be.source) ?? be.source;
+    const tgt = idMap.get(be.target) ?? be.target;
+    if (!incomingByTarget.has(tgt)) incomingByTarget.set(tgt, []);
+    incomingByTarget.get(tgt)!.push({ sourceId: src, condition: be.condition, edgeId: be.id });
+  });
+
+  // --- adjacency list (preserve graph structure) ---
   const adj = new Map<string, string[]>();
   nodesMap.forEach((_, id) => adj.set(id, []));
   backendEdges.forEach((e) => {
@@ -87,11 +99,12 @@ export const convertBackendFlowchart = (payload: any) => {
   const BREAKPOINT_DESCENDANT_SHIFT = 30;
   const WHILE_TRUE_X_OFFSET = 250;
   const WHILE_FALSE_Y_SHIFT = 10; // base shift for while
-  const FOR_FALSE_Y_SHIFT = 60; // base shift for for loop (ยาวกว่า while มาก)
-  const NODE_HEIGHT_ESTIMATE = 60; // ความสูงโดยประมาณของแต่ละ node
+  const FOR_FALSE_Y_SHIFT = 60; // base shift for for loop
+  const NODE_HEIGHT_ESTIMATE = 60; // estimate per node height
 
   // --- helpers ---
   const shiftSubtreeDown = (startNodeId: string, deltaY: number) => {
+    if (!deltaY || deltaY === 0) return;
     const q = [startNodeId];
     const visitedShift = new Set<string>([startNodeId]);
     while (q.length) {
@@ -142,19 +155,15 @@ export const convertBackendFlowchart = (payload: any) => {
     }
   };
 
-  // --- Updated getBranches ---
+  // --- Updated getBranches (respect outgoing order and explicit conditions) ---
   const getBranches = (nodeId: string) => {
     const outs = outgoingBySource.get(nodeId) || [];
 
-    // สำหรับ for loop: ใช้ edge ID หรือลำดับแทน condition
     const node = nodesMap.get(nodeId);
     if (node?.type === 'for') {
-      // edge แรกน่าจะเป็น loop body (true), edge ที่สองน่าจะเป็น next (false)
       const loopBody = outs[0]?.targetId;
       const next = outs[1]?.targetId;
       const others = outs.slice(2).map(o => o.targetId);
-
-      console.log(`🔍 For loop branches: loopBody=${loopBody}, next=${next}`);
       return { trueChild: loopBody, falseChild: next, others };
     }
 
@@ -176,12 +185,11 @@ export const convertBackendFlowchart = (payload: any) => {
       return { trueChild: outs[0].targetId, falseChild: outs[1].targetId, others: [] };
     }
 
-    // generic: no explicit true/false
     const others = outs.map(o => o.targetId);
     return { trueChild: undefined, falseChild: undefined, others };
   };
 
-  // *** ฟังก์ชันคำนวณความสูงของ branch (ลึกสุด) ***
+  // *** calculate depth (max distance) of branch ***
   const calculateBranchDepth = (startId: string): number => {
     let maxDepth = 0;
     const q: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
@@ -203,14 +211,14 @@ export const convertBackendFlowchart = (payload: any) => {
     return maxDepth;
   };
 
-  // --- we'll collect breakpoints to shift during layout ---
+  // --- will collect breakpoints to shift after initial layout ---
   const breakpointsToShift = new Set<string>();
 
-  // *** เก็บข้อมูล while loops และ for loops ที่ต้องปรับ false branch ***
+  // *** collect while & for loops that need false-branch adjustments later ***
   const whileLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
   const forLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
 
-  // compute child position helpers for IF-like and WHILE-like nodes
+  // compute child positions (if / while / for)
   const computeIfChildPos = (childId: string, baseX: number, baseY: number, direction: 'right' | 'left' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
@@ -244,7 +252,7 @@ export const convertBackendFlowchart = (payload: any) => {
       return { x: baseX + bpXOffset, y: baseY + stepY + 30 };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
-    // สำหรับ false branch ให้ใช้ตำแหน่งเริ่มต้นเหมือนเดิม จะมา adjust ทีหลัง
+    // false branch initial position same as base; we adjust later
     if (dir === 'false') return { x: baseX, y: baseY + stepY };
     return { x: baseX, y: baseY + stepY };
   };
@@ -259,6 +267,7 @@ export const convertBackendFlowchart = (payload: any) => {
     const node = nodesMap.get(nodeId);
     if (!node) continue;
 
+    // set node position
     node.position = { x, y };
     positionedNodes.set(nodeId, node);
 
@@ -268,13 +277,12 @@ export const convertBackendFlowchart = (payload: any) => {
       if (trueChild) {
         const pos = computeIfChildPos(trueChild, x, y, 'right');
         enqueue(queue, visited, trueChild, pos.y, pos.x);
-        shiftAllBreakpointsInBranch(trueChild, 100);
+        // do NOT shift breakpoints here — collect and do once after layout
       }
 
       if (falseChild) {
         const pos = computeIfChildPos(falseChild, x, y, 'left');
         enqueue(queue, visited, falseChild, pos.y, pos.x);
-        shiftAllBreakpointsInBranch(falseChild, 100);
       }
 
       let curY = y + stepY;
@@ -291,7 +299,6 @@ export const convertBackendFlowchart = (payload: any) => {
         const pos = computeWhileChildPos(trueChild, x, y, 'true');
         enqueue(queue, visited, trueChild, pos.y, pos.x);
 
-        // *** เก็บข้อมูลไว้เพื่อปรับ false branch ทีหลัง ***
         if (falseChild) {
           whileLoopsToAdjust.set(nodeId, { trueChild, falseChild });
         }
@@ -310,22 +317,17 @@ export const convertBackendFlowchart = (payload: any) => {
     } else if (node.type === "for") {
       const { trueChild, falseChild, others } = getBranches(nodeId);
 
-      console.log(`🔍 For loop ${nodeId}: trueChild=${trueChild}, falseChild=${falseChild}, others=${others}`);
-
       if (trueChild) {
         const pos = computeForChildPos(trueChild, x, y, 'true');
         enqueue(queue, visited, trueChild, pos.y, pos.x);
 
-        // *** เก็บข้อมูลไว้เพื่อปรับ false branch ของ for loop ***
         if (falseChild) {
-          console.log(`✅ Adding for loop ${nodeId} to adjust list`);
           forLoopsToAdjust.set(nodeId, { trueChild, falseChild });
         }
       }
 
       if (falseChild) {
         const pos = computeForChildPos(falseChild, x, y, 'false');
-        console.log(`📍 False branch ${falseChild} initial position: y=${pos.y}`);
         enqueue(queue, visited, falseChild, pos.y, pos.x);
       }
 
@@ -351,67 +353,60 @@ export const convertBackendFlowchart = (payload: any) => {
     }
   }
 
-  // --- Post shifts ---
+  // --- Post layout shifts: handle breakpoints once ---
   breakpointsToShift.forEach((bpId) => {
     const descendants = adj.get(bpId) || [];
     descendants.forEach((d) => shiftSubtreeDown(d, BREAKPOINT_DESCENDANT_SHIFT));
   });
 
-  // *** ปรับ false branch ของ while loop ตามความลึกของ true branch ***
+  // --- Adjust while false branches based on true branch depth ---
   whileLoopsToAdjust.forEach(({ trueChild, falseChild }) => {
     const trueBranchDepth = calculateBranchDepth(trueChild);
     const dynamicShift = trueBranchDepth * NODE_HEIGHT_ESTIMATE + WHILE_FALSE_Y_SHIFT;
-
-    console.log(`🔄 While loop adjustment: true branch depth=${trueBranchDepth}, shift=${dynamicShift}px`);
-
     shiftSubtreeDown(falseChild, dynamicShift);
+    // also shift breakpoints under falseChild if any
     shiftAllBreakpointsInBranch(falseChild, 0);
   });
 
-  // *** ปรับ false branch ของ for loop ตามความลึกของ true branch ***
-  console.log(`📊 For loops to adjust: ${forLoopsToAdjust.size}`);
+  // --- Adjust for false branches for for-loops similarly ---
   forLoopsToAdjust.forEach(({ trueChild, falseChild }, forNodeId) => {
     const trueBranchDepth = calculateBranchDepth(trueChild);
-    // ใช้ FOR_FALSE_Y_SHIFT เป็น base แล้วบวกกับความลึกของ true branch
     const dynamicShift = (trueBranchDepth * NODE_HEIGHT_ESTIMATE) + FOR_FALSE_Y_SHIFT;
-
-    console.log(`🔄 For loop ${forNodeId} adjustment: true branch depth=${trueBranchDepth}, shift=${dynamicShift}px, falseChild=${falseChild}`);
-
-    const falseNode = nodesMap.get(falseChild);
-    console.log(`   Before shift: ${falseChild} position y=${falseNode?.position?.y}`);
-
     shiftSubtreeDown(falseChild, dynamicShift);
-
-    console.log(`   After shift: ${falseChild} position y=${falseNode?.position?.y}`);
     shiftAllBreakpointsInBranch(falseChild, 0);
   });
 
   const finalNodesArray = Array.from(nodesMap.values());
   finalNodesArray.forEach(n => { if (n && n.id) positionedNodes.set(n.id, n); });
 
-  // --- Section 4: Convert edges ---
-  // --- Updated applyEdgeHandles (FOR-only changes; WHILE logic left as original) ---
+  // --- Section 4: Convert edges and apply handles ---
+  // applyEdgeHandles now uses outgoingBySource + edgeId and incomingByTarget to determine correct index/handle
   const applyEdgeHandles = (edge: Edge, srcNode?: Node, tgtNode?: Node, conditionRaw?: string) => {
     const condition = String(conditionRaw ?? "").toLowerCase();
 
     const setSource = (handle: string, offset = 0) => { (edge as any).sourceHandle = handle; edge.pathOptions = { ...(edge.pathOptions || {}), offset }; };
     const setTarget = (handle: string, opt?: any) => { (edge as any).targetHandle = handle; edge.pathOptions = { ...(edge.pathOptions || {}), ...(opt || {}) }; };
 
-    // Helper: try to find the original outgoing entry for this edge (by edge.id)
+    // get outgoing list for this source (preserves order & contains edgeId)
     const srcId = edge.source;
     const outsForSrc = outgoingBySource.get(srcId) || [];
-    const outgoingEntry = outsForSrc.find(o => o.edgeId === edge.id);
+    // try to find outgoingEntry by edge.id
+    const outgoingEntryIndex = outsForSrc.findIndex(o => o.edgeId === edge.id);
+    const outgoingEntry = outgoingEntryIndex >= 0 ? outsForSrc[outgoingEntryIndex] : undefined;
 
     if (srcNode) {
       switch (srcNode.type) {
         case 'if':
+          // use explicit condition -> source handle mapping
           if (condition === 'true') setSource('right', 30);
           else if (condition === 'false') setSource('left', 30);
-          else setSource('right', 0);
+          else if (outgoingEntry) {
+            // if no explicit condition but we have index/order, treat index 0 as true, 1 as false where possible
+            setSource(outgoingEntryIndex === 0 ? 'right' : 'left', outgoingEntryIndex === 0 ? 30 : 30);
+          } else setSource('right', 0);
           break;
 
         case 'while':
-          // Restored original WHILE behavior (no reliance on outgoingEntry)
           if (condition === 'true') setSource('true', 40);
           else if (condition === 'false') setSource('false', 12);
           else {
@@ -423,13 +418,10 @@ export const convertBackendFlowchart = (payload: any) => {
           break;
 
         case 'for':
-          // FOR: prefer to use outgoing entry index / edgeId when available
           if (condition === 'true') setSource('loop_body', 40);
           else if (condition === 'false') setSource('next', 12);
-          else if (outgoingEntry && outsForSrc.length > 0) {
-            const idx = outsForSrc.indexOf(outgoingEntry);
-            // treat index 0 as loop_body, index 1 as next
-            setSource(idx === 0 ? 'loop_body' : 'next', idx === 0 ? 40 : 12);
+          else if (outgoingEntry) {
+            setSource(outgoingEntryIndex === 0 ? 'loop_body' : 'next', outgoingEntryIndex === 0 ? 40 : 12);
           } else {
             if (tgtNode && tgtNode.position && srcNode.position) {
               if (tgtNode.position.y > srcNode.position.y + 5) setSource('next', 12);
@@ -445,7 +437,6 @@ export const convertBackendFlowchart = (payload: any) => {
 
     if (tgtNode) {
       if (tgtNode.type === 'while') {
-        // Restored original WHILE target logic
         if (condition === 'true') setTarget('loop_in', { offset: 30 });
         else if (condition === 'false') setTarget('top');
         else {
@@ -459,22 +450,37 @@ export const convertBackendFlowchart = (payload: any) => {
         const isBackEdge = srcNode && srcNode.position && tgtNode.position && (srcNode.position.y > tgtNode.position.y + 5);
         const isLoopBodyOut = (edge as any).sourceHandle === 'loop_body';
 
-        // 1. ถ้าเป็นการวนซ้ำ (BackEdge) หรือมาจาก Body ของ Loop: ใช้ loop_return
         if (isBackEdge || isLoopBodyOut) {
-          setTarget('loop_return', { offset: 30 }); // ใช้ offset 60 เพื่อให้เส้นดูห่าง
-        }
-        // 2. ถ้ามาจากโหนดด้านบน (ไม่ใช่ BackEdge) หรือเป็นเส้นเข้าปกติ: ใช้ top
-        else {
+          setTarget('loop_return', { offset: 30 });
+        } else {
           setTarget('top');
         }
       }
 
       if (tgtNode.type === 'breakpoint') {
+        // 1) ถ้ามี condition explicit บน edge ให้ใช้เลย
         if (condition === 'true') (edge as any).targetHandle = 'true';
         else if (condition === 'false') (edge as any).targetHandle = 'false';
-        else if (outgoingEntry && outsForSrc.length > 0) {
-          const idx = outsForSrc.indexOf(outgoingEntry);
-          (edge as any).targetHandle = idx === 0 ? 'true' : 'false';
+        else {
+          // 2) พยายามอนุมานจาก parent ของ source:
+          //    หา incoming edges ที่ชี้มาที่ source node (เช่น n1 -> n3)
+          const incomingToSource = incomingByTarget.get(srcId) || [];
+          const parentCondEntry = incomingToSource.find(ent => {
+            const c = String(ent.condition ?? "").toLowerCase();
+            return c === "true" || c === "false";
+          });
+
+          if (parentCondEntry && parentCondEntry.condition) {
+            (edge as any).targetHandle = String(parentCondEntry.condition).toLowerCase() === 'true' ? 'true' : 'false';
+          }
+          // 3) ถ้ายังไม่เจอ ให้ fallback ใช้วิธีเดิม (index ของ outgoing ของ src ถ้ามี)
+          else if (outgoingEntry && outsForSrc.length > 0) {
+            (edge as any).targetHandle = outgoingEntryIndex === 0 ? 'true' : 'false';
+          }
+          // 4) สุดท้ายเลือกค่า default (ปลอดภัย)
+          else {
+            (edge as any).targetHandle = 'true';
+          }
         }
       }
     }
