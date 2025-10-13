@@ -174,6 +174,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     setError("");
   };
 
+// แก้ไขฟังก์ชัน callUpdateOrAdd ใน SymbolSection.tsx
+
 const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
   setError("");
   if (!flowchartId) {
@@ -193,13 +195,15 @@ const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label
       console.info("editNode result:", res);
 
       if (onRefresh) {
+        console.log("🔄 Calling onRefresh after edit...");
         try {
           await onRefresh();
+          console.log("✅ onRefresh completed successfully");
         } catch (refreshErr) {
-          console.warn("refresh failed after edit:", refreshErr);
+          console.error("❌ onRefresh failed after edit:", refreshErr);
         }
       } else {
-        // update local state via callback if provided
+        console.warn("⚠️ No onRefresh provided");
         onUpdateNode?.(nodeId, backendType, label);
       }
     } else {
@@ -213,14 +217,17 @@ const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label
       console.info("insertNode result:", res);
 
       if (onRefresh) {
+        console.log("🔄 Calling onRefresh after insert...");
         try {
           await onRefresh();
+          console.log("✅ onRefresh completed successfully");
         } catch (refreshErr) {
-          console.warn("refresh failed after insert:", refreshErr);
+          console.error("❌ onRefresh failed after insert:", refreshErr);
         }
+      } else {
+        console.warn("⚠️ No onRefresh provided");
       }
 
-      // if inserting from modal while editing, call onUpdateNode to adjust parent local state label/type if needed
       if (nodeToEdit && onUpdateNode) {
         onUpdateNode(nodeId ?? "", backendType, label);
       }
