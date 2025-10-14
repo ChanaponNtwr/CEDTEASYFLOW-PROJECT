@@ -3,12 +3,8 @@ import { Flowchart, Executor, Context, Node, Edge } from "../service/flowchart/i
 import prisma from "../lib/prisma.js";
 const router = express.Router();
 
-/* ---------------- In-memory store ----------------
-   savedFlowcharts: Map<flowchartId, { nodes:[], edges:[], limits?:{} }>
-*/
 const savedFlowcharts = new Map();
 
-/* ---------------- helpers ---------------- */
 function normalizeList(maybe) {
   if (!maybe) return [];
   if (Array.isArray(maybe)) return maybe;
@@ -59,7 +55,6 @@ function hasPathStartToEnd(fc) {
   return false;
 }
 
-/* ---------------- hydrateFlowchart ---------------- */
 export function hydrateFlowchart(payload = {}) {
   const fc = new Flowchart();
 
@@ -141,7 +136,6 @@ export function hydrateFlowchart(payload = {}) {
   return fc;
 }
 
-/* ---------------- serializeFlowchart ---------------- */
 function serializeFlowchart(fc) {
   const nodes = Object.values(fc.nodes).map(n => ({
     id: n.id,
@@ -173,7 +167,6 @@ function serializeFlowchart(fc) {
   };
 }
 
-/* ---------------- diff helper ---------------- */
 function computeDiffs(before = { nodes: [], edges: [] }, after = { nodes: [], edges: [] }) {
   const mapById = (arr) => {
     const m = new Map();
@@ -225,13 +218,6 @@ function computeDiffs(before = { nodes: [], edges: [] }, after = { nodes: [], ed
     edges: { added: addedEdges, removed: removedEdgeIds, updated: updatedEdges }
   };
 }
-
-/* ---------------- routes ---------------- */
-
-// NOTE: only insert-node and delete-node responses were modified to return *only* the diffs
-// (i.e. the nodes/edges that changed) so the frontend receives a minimal payload.
-// Response shape for these endpoints:
-// { ok: true, flowchartId, diffs: { nodes: { added:[], removed:[], updated:[] }, edges: { added:[], removed:[], updated:[] } }, message }
 
 router.post("/create", async (req, res) => {
   try {
@@ -308,7 +294,6 @@ router.post("/create", async (req, res) => {
   }
 });
 
-
 router.post("/insert-node", async (req, res) => {
   try {
     let raw = req.body;
@@ -318,6 +303,7 @@ router.post("/insert-node", async (req, res) => {
     const flowchartId = body.flowchartId;
     const edgeId = body.edgeId;
     const nodeSpec = body.node;
+    const force = Boolean(body.force);
 
     if (!flowchartId) return res.status(400).json({ ok: false, error: "Missing 'flowchartId'." });
     if (!edgeId) return res.status(400).json({ ok: false, error: "Missing 'edgeId'." });
@@ -332,6 +318,59 @@ router.post("/insert-node", async (req, res) => {
       savedFlowcharts.set(flowchartId, saved);
     }
 
+    // ถ้าเป็น Declare node -> ตรวจสอบว่าตัวแปรที่ประกาศมีการใช้แล้วหรือไม่
+    const incomingType = normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH");
+    if (incomingType === "DC" || incomingType === "declare" || incomingType === "dc") {
+      // helper: ดึงชื่อที่ประกาศออกมา (รองรับหลายรูปแบบของ data)
+      const declaredNames = [];
+      const d = nodeSpec.data || {};
+      if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
+      if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
+      if (Array.isArray(d.names)) {
+        for (const nm of d.names) if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
+      }
+      // unique
+      const uniqueNames = [...new Set(declaredNames)];
+
+      if (uniqueNames.length > 0 && !force) {
+        // function: escape regex
+        const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+        const conflicts = [];
+        const nodesArr = saved.nodes || [];
+        for (const varName of uniqueNames) {
+          const wordRe = new RegExp(`\\b${escapeRegExp(varName)}\\b`, "i");
+          for (const n of nodesArr) {
+            if (!n || !n.id) continue;
+            // skip if the node is the incoming declare itself (unlikely in insert case)
+            // check label
+            if (n.label && typeof n.label === "string" && wordRe.test(n.label)) {
+              conflicts.push({ varName, nodeId: n.id, label: n.label, foundIn: "label" });
+              continue;
+            }
+            // check data (stringify defensive)
+            try {
+              const dataStr = JSON.stringify(n.data || {});
+              if (wordRe.test(dataStr)) {
+                conflicts.push({ varName, nodeId: n.id, label: n.label ?? null, foundIn: "data" });
+              }
+            } catch (e) {
+              // ignore stringify errors
+            }
+          }
+        }
+
+        if (conflicts.length > 0) {
+          return res.status(409).json({
+            ok: false,
+            error: "Variable name(s) already in use in this flowchart.",
+            conflicts
+          });
+        }
+      }
+    }
+
+    // proceed with hydrate + insertion (เดิมของคุณ)
     const fc = hydrateFlowchart(saved);
 
     if (!fc.getEdge(edgeId)) return res.status(400).json({ ok: false, error: `Edge '${edgeId}' not found in flowchart.` });
@@ -375,6 +414,7 @@ router.post("/insert-node", async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
 
 router.delete("/:id/node/:nodeId", async (req, res) => {
   try {
@@ -507,7 +547,6 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-
 router.get("/:id/edges", async (req, res) => {
   try {
     const { id } = req.params;
@@ -524,6 +563,7 @@ router.get("/:id/edges", async (req, res) => {
 });
 
 // Update node data
+// Update node data (with variable-name conflict check for Declare nodes)
 router.put("/:flowchartId/node/:nodeId", async (req, res) => {
   try {
     let raw = req.body;
@@ -554,7 +594,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
     const node = fc.getNode(nodeId);
     if (!node) return res.status(404).json({ ok: false, error: `Node '${nodeId}' not found in flowchart.` });
 
-    // type check
+    // type check (existing behavior)
     const rawType = body.type ?? body.typeShort ?? body.typeFull;
     if (!rawType) {
       return res.status(400).json({ ok: false, error: "Missing 'type' in request body. Provide node type for validation." });
@@ -567,7 +607,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
       });
     }
 
-    // data validate
+    // data validate (existing behavior)
     const newData = body.data;
     if (!newData || typeof newData !== "object") {
       return res.status(400).json({ ok: false, error: "Missing or invalid 'data' object in request body." });
@@ -583,7 +623,62 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
       });
     }
 
-    // update
+    // -------------------------
+    // Conflict detection: ถ้าเป็น Declare node ให้ตรวจสอบชื่อที่ประกาศว่า "มีการใช้แล้ว" หรือไม่
+    // รองรับการส่งตัวเลือก force: true เพื่อบังคับข้ามการตรวจสอบ
+    // -------------------------
+    const force = Boolean(body.force);
+
+    if (node.type === "DC") {
+      // helper: ดึงชื่อที่ประกาศออกมาจาก newData (รองรับ name, varName, names[])
+      const declaredNames = [];
+      const d = newData || {};
+      if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
+      if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
+      if (Array.isArray(d.names)) {
+        for (const nm of d.names) if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
+      }
+      const uniqueNames = [...new Set(declaredNames)];
+
+      if (uniqueNames.length > 0 && !force) {
+        // escape regex special chars
+        const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const conflicts = [];
+        const nodesArr = saved.nodes || [];
+
+        for (const varName of uniqueNames) {
+          const wordRe = new RegExp(`\\b${escapeRegExp(varName)}\\b`, "i");
+          for (const n of nodesArr) {
+            if (!n || !n.id) continue;
+            if (n.id === nodeId) continue; // อย่าตรวจสอบกับ node ที่กำลังแก้เอง
+            // check label
+            if (n.label && typeof n.label === "string" && wordRe.test(n.label)) {
+              conflicts.push({ varName, nodeId: n.id, label: n.label, foundIn: "label" });
+              continue;
+            }
+            // check data (stringify defensive)
+            try {
+              const dataStr = JSON.stringify(n.data || {});
+              if (wordRe.test(dataStr)) {
+                conflicts.push({ varName, nodeId: n.id, label: n.label ?? null, foundIn: "data" });
+              }
+            } catch (e) {
+              // ignore stringify errors
+            }
+          }
+        }
+
+        if (conflicts.length > 0) {
+          return res.status(409).json({
+            ok: false,
+            error: "Variable name(s) already in use in this flowchart.",
+            conflicts
+          });
+        }
+      }
+    }
+
+    // update - ใช้ method เดิมของ Node
     try {
       node.updateData(newData);
     } catch (err) {
@@ -611,6 +706,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
 
 // (วางทับฟังก์ชัน router.post("/execute", ...) ใน controller ของคุณ)
 router.post("/execute", async (req, res) => {
@@ -876,8 +972,6 @@ router.post("/execute", async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
-
-
 
 
 
