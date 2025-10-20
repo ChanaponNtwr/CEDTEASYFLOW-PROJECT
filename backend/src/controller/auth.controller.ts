@@ -47,7 +47,7 @@ export const authOptions: NextAuthOptions = {
             name: user.name ?? "Unknown",
             fname: user.name?.split(" ")[0] ?? "",
             lname: user.name?.split(" ")[1] ?? "",
-            image: imageUrl ?? dbUser.image,
+            image: imageUrl,
           } as any,
         });
       }
