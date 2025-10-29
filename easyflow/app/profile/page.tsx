@@ -31,11 +31,7 @@ export default function Profile() {
 
   const user = session.user;
   const defaultImage = "https://img5.pic.in.th/file/secure-sv1/Ellipse-270.png";
-  const userImage = user?.image
-    ? user.image.includes("googleusercontent.com") && user.image.includes("=s")
-      ? user.image.replace(/=s\d+-c/, "=s400-c")
-      : user.image
-    : defaultImage;
+  const userImage = user?.image ?? defaultImage;
 
   return (
     <div style={{ backgroundColor: "#F5F2F0" }} className="min-h-screen w-full">
