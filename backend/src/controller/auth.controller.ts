@@ -47,7 +47,7 @@ export const authOptions: NextAuthOptions = {
             name: user.name ?? "Unknown",
             fname: user.name?.split(" ")[0] ?? "",
             lname: user.name?.split(" ")[1] ?? "",
-            image: imageUrl ?? dbUser.image,
+            image: imageUrl,
           } as any,
         });
       }
@@ -95,15 +95,16 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
 
-    async session({ session, token }) {
-  session.user = {
-    ...(session.user as any), // cast เป็น any ชั่วคราวเพื่อ spread ค่าเดิม
-    userId: token.userId,      // ตอนนี้ TS รู้จัก userId
-    name: token.name ?? "Unknown",
-    email: token.email ?? "",
-    image: token.picture ?? null,
-  };
-  return session;
+async session({ session }) {
+    if (session?.user?.email) {
+      const dbUser = await prisma.user.findUnique({
+        where: { email: session.user.email },
+      });
+      if (dbUser) {
+        session.user.image = dbUser.image; // ใช้ค่าจาก DB
+      }
+    }
+    return session;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
