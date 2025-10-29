@@ -94,3 +94,23 @@ export const executeStepNode = async (flowchartId, variables = [], forceAdvanceB
     throw error;
   }
 };
+
+
+export const apiResetFlowchart = async (flowchartId) => {
+  if (!flowchartId) {
+    throw new Error("apiResetFlowchart: missing flowchartId");
+  }
+
+  try {
+    const payload = {
+      flowchartId,
+      action: "reset",
+    };
+
+    const response = await axios.post(`${BASE_URL}/flowchart/execute`, payload);
+    return response.data;
+  } catch (error) {
+    console.error("Error resetting flowchart:", error);
+    throw error;
+  }
+};

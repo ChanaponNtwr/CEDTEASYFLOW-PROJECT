@@ -126,8 +126,8 @@ export const authOptions: NextAuthOptions = {
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
-  // session: { strategy: "jwt" },
-  session: { strategy: "database" },
+  session: { strategy: "jwt" },
+  // session: { strategy: "database" },
 };
 
 const handler = NextAuth(authOptions);
