@@ -33,6 +33,10 @@ export const authOptions: NextAuthOptions = {
 
     const imageUrl = (profile as any)?.picture ?? null;
 
+    const highResImage = imageUrl?.includes("googleusercontent.com")
+  ? imageUrl.replace(/=s\d+(-c)?/, "=s400-c") // s400 = ขนาดใหญ่
+  : imageUrl;
+
     if (!dbUser) {
       dbUser = await prisma.user.create({
         data: {
@@ -40,7 +44,7 @@ export const authOptions: NextAuthOptions = {
           name: user.name ?? "Unknown",
           fname: user.name?.split(" ")[0] ?? "",
           lname: user.name?.split(" ")[1] ?? "",
-          image: imageUrl,
+          image: highResImage,
         },
       });
     } else {
@@ -50,7 +54,7 @@ export const authOptions: NextAuthOptions = {
           name: user.name ?? "Unknown",
           fname: user.name?.split(" ")[0] ?? "",
           lname: user.name?.split(" ")[1] ?? "",
-          image: imageUrl ?? dbUser.image,
+          image: highResImage ?? dbUser.image,
         },
       });
     }

@@ -95,11 +95,7 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
 
-<<<<<<< HEAD
     async session({ session }) {
-=======
-async session({ session }) {
->>>>>>> 9ee31a5d3f74b0fd4353fe43e981f442db34fbd2
     if (session?.user?.email) {
       const dbUser = await prisma.user.findUnique({
         where: { email: session.user.email },
