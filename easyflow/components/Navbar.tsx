@@ -1,29 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
-import { signOut } from "next-auth/react";
+import { useState } from "react";
+import { signOut, useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 
-interface User {
-  fname?: string | null;
-  image?: string | null;
-}
-
 function Navbar() {
+  const { data: session, status } = useSession();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
 
-  useEffect(() => {
-    fetch("/api/user")
-      .then(res => res.json())
-      .then(data => {
-        if (data.ok) setUser(data.user);
-      });
-  }, []);
+  const isLoading = status === "loading";
+  const user = session?.user ?? null;
 
-  const displayName = user?.fname || "User";
-  const displayImage = user?.image || "https://img2.pic.in.th/pic/9440461.jpg";
+  // แสดงเฉพาะชื่อ (ไม่เอานามสกุล)
+  const firstName = user?.name?.split(" ")[0] ?? "User";
 
   return (
     <div className="fixed top-0 left-0 w-full bg-blue-600 text-white p-4 flex justify-between items-center z-[1100]">
@@ -38,49 +28,72 @@ function Navbar() {
           />
         </Link>
       </div>
-      <div className="flex items-center space-x-14">
+
+      <div className="flex items-center space-x-10">
         <Link href="/" className="hover:underline hover:scale-105 transition-all cursor-pointer">
           Home
         </Link>
-        <Link href="/mylab" className="hover:underline hover:scale-105 transition-all cursor-pointer">
-          My Labs
-        </Link>
-        <Link href="/myclass" className="hover:underline hover:scale-105 transition-all cursor-pointer">
-          Study
-        </Link>
+
+        {!isLoading && user && (
+          <>
+            <Link href="/mylab" className="hover:underline hover:scale-105 transition-all cursor-pointer">
+              My Labs
+            </Link>
+            <Link href="/myclass" className="hover:underline hover:scale-105 transition-all cursor-pointer">
+              Study
+            </Link>
+          </>
+        )}
+
         <div className="relative">
-          <div
-            className="flex items-center space-x-3 cursor-pointer"
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-          >
-            <img
-              src={displayImage}
-              alt="Profile"
-              className="h-8 w-8 rounded-full mr-2"
-            />
-            <span>{displayName}</span>
-            <svg
-              className={`w-4 h-4 ml-1 transition-transform duration-300 ease-in-out ${
-                isDropdownOpen ? "rotate-180" : "rotate-0"
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-            </svg>
-          </div>
-          {isDropdownOpen && (
-            <div className="absolute right-0 mt-2 w-48 bg-white text-black rounded-md shadow-lg">
-              <Link href="/profile" className="block px-4 py-2 hover:bg-gray-100 rounded-md">Profile</Link>
-              <button
-                onClick={() => signOut({ callbackUrl: "/login" })}
-                className="w-full text-left px-4 py-2 hover:bg-gray-100 rounded-md"
+          {!isLoading && user ? (
+            <>
+              <div
+                className="flex items-center space-x-3 cursor-pointer"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               >
-                Logout
-              </button>
-            </div>
+                <img
+                  src={String(user.image)}
+                  alt="Profile"
+                  className="h-8 w-8 rounded-full mr-2"
+                />
+                <span>{firstName}</span>
+                <svg
+                  className={`w-4 h-4 ml-1 transition-transform duration-300 ease-in-out ${
+                    isDropdownOpen ? "rotate-180" : "rotate-0"
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </div>
+
+              {isDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white text-black rounded-md shadow-lg">
+                  <Link href="/profile" className="block px-4 py-2 hover:bg-gray-100 rounded-md">
+                    Profile
+                  </Link>
+                  <button
+                    onClick={() => signOut({ callbackUrl: "/login" })}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-100 rounded-md"
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            !isLoading && (
+              <Link
+                href="/login"
+                className="px-4 py-2 bg-white text-blue-600 rounded-md font-medium hover:opacity-90"
+              >
+                Login
+              </Link>
+            )
           )}
         </div>
       </div>

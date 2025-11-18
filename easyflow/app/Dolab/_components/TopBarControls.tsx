@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FaPlay, FaStepForward, FaStop, FaRedo } from "react-icons/fa";
-import { executeStepNode, apiGetFlowchart, apiResetFlowchart } from "@/app/service/FlowchartService"; // <-- added apiResetFlowchart
+import { FaPlay, FaStepForward, FaStop } from "react-icons/fa";
+import { executeStepNode, apiGetFlowchart, apiResetFlowchart } from "@/app/service/FlowchartService";
 
-type Variable = {
-  name: string;
-  value: any;
-};
+type Variable = { name: string; value: any };
 
 type NodeResult = {
   id: string | number;
@@ -21,28 +18,16 @@ type NodeResult = {
   variables?: Variable[];
 };
 
-type ExecContext = {
-  variables?: Variable[];
-  index_map?: Record<string, number>;
-  output?: any[];
-};
+type ExecContext = { variables?: Variable[]; index_map?: Record<string, number>; output?: any[] };
 
-type ExecResult = {
-  node?: NodeResult;
-  context?: ExecContext;
-  done?: boolean;
-  paused?: boolean;
-};
+type ExecResult = { node?: NodeResult; context?: ExecContext; done?: boolean; paused?: boolean };
 
 type ExecuteResponse = {
   ok: boolean;
   result?: ExecResult;
   nextNodeId?: string | number;
   nextNodeType?: string | number;
-  context?: {
-    variables?: Variable[];
-    output?: any[];
-  };
+  context?: { variables?: Variable[]; output?: any[] };
   paused?: boolean;
   done?: boolean;
   reenter?: boolean;
@@ -53,8 +38,9 @@ interface TopBarControlsProps {
   flowchartId?: number;
   initialVariables?: Variable[] | null;
   forceAdvanceBP?: boolean;
-  // callback ให้พาเรนต์ไฮไลท์ node ที่กำลังถูก execute (หรือ null เพื่อเคลียร์)
-  onHighlightNode?: (nodeId: string | null) => void;
+  // <-- allow number as well to avoid the TS error when callers pass number ids
+  onHighlightNode?: (nodeId: string | number | null) => void;
+  autoPlayInputs?: boolean;
 }
 
 export default function TopBarControls({
@@ -62,10 +48,9 @@ export default function TopBarControls({
   initialVariables = null,
   forceAdvanceBP = true,
   onHighlightNode,
+  autoPlayInputs = false,
 }: TopBarControlsProps) {
   const [showPopup, setShowPopup] = useState(false);
-  const [showInputModal, setShowInputModal] = useState(false);
-  const [inputValue, setInputValue] = useState<any>("");
   const [isLoading, setIsLoading] = useState(false);
   const [variablesSent, setVariablesSent] = useState(false);
   const [lastResponse, setLastResponse] = useState<ExecuteResponse | null>(null);
@@ -75,29 +60,30 @@ export default function TopBarControls({
   const [fetchedVariables, setFetchedVariables] = useState<Variable[] | null>(null);
   const [fetchingVars, setFetchingVars] = useState(false);
 
-  // Node id ที่ modal จะส่งค่าเข้า (เช่น 'n4' หรือ 'n5') — เก็บเพื่อแสดง UI เท่านั้น
-  const [inputNodeId, setInputNodeId] = useState<string | null>(null);
-  // ชื่อตัวแปรที่ node เป้าหมายต้องการรับ (เช่น 'b')
+  // unified persistent chat (single modal shown permanently)
+  const [chatMessages, setChatMessages] = useState<{ sender: "system" | "user"; text: string }[]>([]);
+  const [expectingInput, setExpectingInput] = useState(false);
+  const [inputValue, setInputValue] = useState<any>("");
+
+  // <-- allow number too because backend may return numeric ids
+  const [inputNodeId, setInputNodeId] = useState<string | number | null>(null);
   const [inputVarName, setInputVarName] = useState<string | null>(null);
 
-  // NEW: Output modal state + data
-  const [showOutputModal, setShowOutputModal] = useState(false);
-  const [outputData, setOutputData] = useState<any[]>([]);
-
-  // when an output modal appears we may want to pause execution and resume when modal closed
   const outputResumeRef = useRef<(() => void) | null>(null);
-  const [pendingHighlightAfterOutput, setPendingHighlightAfterOutput] = useState<string | null>(null);
+  // <-- allow number too for pending highlight id
+  const [pendingHighlightAfterOutput, setPendingHighlightAfterOutput] = useState<string | number | null>(null);
+
+  const runAllActiveRef = useRef(false);
+  const runAllWaitingForInputRef = useRef<(() => void) | null>(null);
 
   const togglePopup = () => setShowPopup((v) => !v);
 
-  // helper: detect if a node-type represents an End/Terminate node
   const isEndType = (t?: string | number | null) => {
     if (!t) return false;
     const s = String(t).toUpperCase().trim();
     return ["EN", "END", "ED", "TERMINATE", "ENDNODE", "EXIT"].includes(s);
   };
 
-  // --- Fetch variables from flowchart (fallback source) ---
   useEffect(() => {
     let mounted = true;
     const fetchVars = async () => {
@@ -112,9 +98,7 @@ export default function TopBarControls({
         const resp = await apiGetFlowchart(flowchartId);
         const nodes: any[] = resp?.flowchart?.nodes ?? resp?.nodes ?? [];
 
-        const varNodes = nodes.filter(
-          (n) => n?.type === "DC" || n?.type === "DECLARE" || n?.type === "VAR"
-        );
+        const varNodes = nodes.filter((n) => n?.type === "DC" || n?.type === "DECLARE" || n?.type === "VAR");
 
         const vars: Variable[] = varNodes.flatMap((n) => {
           if (Array.isArray(n.variables) && n.variables.length > 0) {
@@ -143,8 +127,8 @@ export default function TopBarControls({
     };
   }, [flowchartId, initialVariables]);
 
-  // --- Helper: resolve first variable name for a given nodeId ---
-  const getFirstVarNameForNode = async (nodeId?: string | null): Promise<string | undefined> => {
+  // accept string | number | null for nodeId because callers may pass numeric ids
+  const getFirstVarNameForNode = async (nodeId?: string | number | null): Promise<string | undefined> => {
     if (!nodeId) return undefined;
 
     const nodeFromLast = lastResponse?.result?.node;
@@ -180,19 +164,35 @@ export default function TopBarControls({
     return undefined;
   };
 
-  // helper to extract outputs from response and show modal if present
-  // returns true if outputs were present and modal shown (caller may await resume)
-  const handleResponseOutputs = (resp: ExecuteResponse | undefined | null): boolean => {
+  const renderValue = (v: any) => {
+    if (v === null) return "null";
+    if (typeof v === "undefined") return "undefined";
+    if (typeof v === "object") {
+      try {
+        return JSON.stringify(v);
+      } catch {
+        return String(v);
+      }
+    }
+    return String(v);
+  };
+
+  // append outputs to chat and (for non-auto) pause until user acknowledges
+  const handleResponseOutputs = (resp: ExecuteResponse | undefined | null, autoContinue = false): boolean => {
     const respOutputs = resp?.result?.context?.output ?? resp?.context?.output ?? [];
     if (Array.isArray(respOutputs) && respOutputs.length > 0) {
-      setOutputData(respOutputs);
-      setShowOutputModal(true);
-      return true;
+      const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
+      setChatMessages((m) => [...m, ...mapped]);
+
+      if (!autoContinue) {
+        // set pending highlight and wait for user to press Acknowledge in the persistent panel
+        return true;
+      }
+      console.log("Auto-continue: output recorded", respOutputs);
     }
     return false;
   };
 
-  // ensure highlight cleared on unmount
   useEffect(() => {
     return () => {
       try {
@@ -204,35 +204,26 @@ export default function TopBarControls({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // helper to safely call onHighlightNode with small delay (avoid race)
-  const safeHighlight = (id: string | null) => {
+  // accept number as well
+  const safeHighlight = (id: string | number | null) => {
     try {
-      // small delay to ensure ReactFlow has applied nodes update before highlight
       setTimeout(() => {
         onHighlightNode?.(id);
-        console.log("[TopBarControls] called onHighlightNode ->", id);
       }, 50);
     } catch (err) {
       console.warn("safeHighlight error", err);
     }
   };
 
-  // NEW helper: pick initial restart node from flowchart
-  // prefer: Start node (ST/START), then DC/DECLARE/VAR, then first node
   const pickRestartNodeId = async (): Promise<string | null> => {
     try {
       if (!flowchartId) return null;
       const flow = await apiGetFlowchart(flowchartId);
       const nodes: any[] = flow?.flowchart?.nodes ?? flow?.nodes ?? [];
-      // 1) look for Start node types
       const startNode = nodes.find((n) => String(n?.type).toUpperCase().startsWith("ST")) ?? null;
       if (startNode) return String(startNode.id);
 
-      // 2) fallback: node types that declare variables (DC/DECLARE/VAR) — choose first
-      const candidate =
-        nodes.find((n) => ["DC", "DECLARE", "VAR"].includes(String(n?.type).toUpperCase())) ??
-        nodes[0] ??
-        null;
+      const candidate = nodes.find((n) => ["DC", "DECLARE", "VAR"].includes(String(n?.type).toUpperCase())) ?? nodes[0] ?? null;
       if (!candidate) return null;
       return String(candidate.id);
     } catch (err) {
@@ -241,16 +232,12 @@ export default function TopBarControls({
     }
   };
 
-  // NEW helper: pick an End node id (EN/END) if any
   const pickEndNodeId = async (): Promise<string | null> => {
     try {
       if (!flowchartId) return null;
       const flow = await apiGetFlowchart(flowchartId);
       const nodes: any[] = flow?.flowchart?.nodes ?? flow?.nodes ?? [];
-      const candidate =
-        nodes.find((n) => isEndType(n?.type)) ?? // type explicitly end-like
-        nodes.find((n) => String(n?.label ?? "").toLowerCase().includes("end")) ??
-        null;
+      const candidate = nodes.find((n) => isEndType(n?.type)) ?? nodes.find((n) => String(n?.label ?? "").toLowerCase().includes("end")) ?? null;
       if (!candidate) return null;
       return String(candidate.id);
     } catch (err) {
@@ -259,7 +246,6 @@ export default function TopBarControls({
     }
   };
 
-  // highlight start node on mount (so Step starts at Start)
   useEffect(() => {
     let mounted = true;
     const init = async () => {
@@ -274,12 +260,29 @@ export default function TopBarControls({
     return () => {
       mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowchartId]);
 
-  // --- Step execution (▶️) ---
+  const resolveDefaultValueForVar = (name?: string | null) => {
+    if (!name) return 0;
+    const fromResult = lastResponse?.result?.context?.variables;
+    if (Array.isArray(fromResult)) {
+      const v = fromResult.find((x) => String(x.name) === String(name));
+      if (v) return v.value;
+    }
+    if (Array.isArray(fetchedVariables)) {
+      const v = fetchedVariables.find((x) => String(x.name) === String(name));
+      if (v) return v.value;
+    }
+    if (Array.isArray(initialVariables)) {
+      const v = initialVariables.find((x) => String(x.name) === String(name));
+      if (v) return v.value;
+    }
+    return 0;
+  };
+
+  // --- Step ---
   const handleStep = async () => {
-    if (isLoading) return; // allow pressing even if previous run finished — we'll reset and continue
+    if (isLoading) return;
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -287,50 +290,41 @@ export default function TopBarControls({
       const resolvedInitialVars = initialVariables ?? fetchedVariables ?? [];
       const varsToSend = variablesSent ? [] : resolvedInitialVars;
 
-      // executeStepNode signature used here: (flowchartId, vars, forceAdvanceBP)
       const resp = (await executeStepNode(flowchartId, varsToSend, forceAdvanceBP)) as ExecuteResponse;
-
-      console.log("executeStepNode response:", resp);
       setLastResponse(resp);
       setVariablesSent(true);
       setStepCount((s) => s + 1);
 
-      // If backend explicitly marks done, respect it. Otherwise, also treat nextNodeType=end as done.
       const backendDone = Boolean(resp?.result?.done ?? resp?.done ?? false);
       const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
       const inferredDone = isEndType(nextType);
       const finalDone = backendDone || inferredDone;
 
-      // Resolve next node / input behavior
       const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      // show outputs modal if backend returned outputs — pause here and wait for user to close modal before moving highlight
+      // outputs
       const hadOutputs = handleResponseOutputs(resp);
       if (hadOutputs) {
-        // store pending next highlight so when user closes modal we move to the next node
         setPendingHighlightAfterOutput(nextId);
         return;
       }
 
-      // NEW: ให้พาเรนต์ไฮไลท์ node ปัจจุบัน (ถ้ามี)
-      // prefer resp.result.node.id (node that executed). fallback to resp.nextNodeId
       const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
       const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
       safeHighlight(currentNodeId);
 
       if (nextType === "IN" || nextType === "INPUT") {
-        // Resolve the variable name for the next node, then open modal
         const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
         setInputNodeId(nextId ?? null);
         setInputVarName(resolvedVarName ?? null);
-        setTimeout(() => setShowInputModal(true), 0);
+        setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
+        setInputValue("");
+        setExpectingInput(true);
         return;
       }
 
-      // === IMPORTANT: handle "done" (end of flow) robustly ===
       if (finalDone) {
-        // Highlight the End node if available
         try {
           const endId = await pickEndNodeId();
           if (endId) safeHighlight(endId);
@@ -338,9 +332,7 @@ export default function TopBarControls({
           console.warn("failed to pick end node", err);
         }
 
-        // AUTO-RESET: reset backend session and clear client state so Step/RunAll can start from Start immediately
         try {
-          // prefer explicit reset API if available
           await apiResetFlowchart(flowchartId);
         } catch (err) {
           console.warn("apiResetFlowchart failed during auto-reset, trying executeStepNode reset", err);
@@ -351,7 +343,6 @@ export default function TopBarControls({
           }
         }
 
-        // Clear client state
         setLastResponse(null);
         setStepCount(0);
         setVariablesSent(false);
@@ -359,7 +350,6 @@ export default function TopBarControls({
         setInputVarName(null);
         setDone(false);
 
-        // Highlight restart node (Start / DC / first)
         const restartId = await pickRestartNodeId();
         if (restartId) safeHighlight(restartId);
         else safeHighlight(null);
@@ -375,62 +365,74 @@ export default function TopBarControls({
     }
   };
 
-  // --- Run All (ยิง API รัวๆจนถึง Input) ---
+  // --- Run All ---
   const handleRunAll = async () => {
-    if (isLoading) return; // allow restart even if previously done
+    if (isLoading) return;
     setIsLoading(true);
     setErrorMsg(null);
+    runAllActiveRef.current = true;
 
     try {
       const resolvedInitialVars = initialVariables ?? fetchedVariables ?? [];
-      // if we haven't sent initial vars this session, send them once
       let firstCallVars = variablesSent ? [] : resolvedInitialVars;
 
-      // first call
       let resp = (await executeStepNode(flowchartId, firstCallVars, forceAdvanceBP)) as ExecuteResponse;
-      console.log("runAll first response:", resp);
       setLastResponse(resp);
       setVariablesSent(true);
       setStepCount((s) => s + 1);
 
-      // detect done (backend or inferred by nextType)
-      const backendDone = Boolean(resp?.result?.done ?? resp?.done ?? false);
       let nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
-      const inferredDone = isEndType(nextType);
-      let finalDone = backendDone || inferredDone;
+      let finalDone = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextType);
 
-      // Resolve next node id for potential pending highlight
       let nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      // show outputs: pause and wait for user to close modal before continuing
-      if (handleResponseOutputs(resp)) {
-        setPendingHighlightAfterOutput(nextId);
-        // await user closing the modal
-        await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
-        outputResumeRef.current = null;
-        // when resumed, immediately highlight the pending next node
-        setPendingHighlightAfterOutput(null);
-        if (nextId) safeHighlight(nextId);
+      if (handleResponseOutputs(resp, autoPlayInputs)) {
+        if (!autoPlayInputs) {
+          setPendingHighlightAfterOutput(nextId);
+          await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
+          outputResumeRef.current = null;
+          setPendingHighlightAfterOutput(null);
+          if (nextId) safeHighlight(nextId);
+        } else {
+          if (nextId) safeHighlight(nextId);
+        }
       } else {
         const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
         safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
       }
 
-      // if backend asks for input or finished, stop and let UI handle
       nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
       if (nextType === "IN" || nextType === "INPUT") {
         const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
-        setInputNodeId(nextId ?? null);
-        setInputVarName(resolvedVarName ?? null);
-        setTimeout(() => setShowInputModal(true), 0);
-        return;
+        const defaultVal = resolveDefaultValueForVar(resolvedVarName ?? null);
+        if (autoPlayInputs) {
+          const singleVarPayload: Variable[] = [{ name: resolvedVarName ?? "input", value: defaultVal }];
+          resp = (await executeStepNode(flowchartId, singleVarPayload, forceAdvanceBP)) as ExecuteResponse;
+          setLastResponse(resp);
+          setStepCount((s) => s + 1);
+          setVariablesSent(true);
+          nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+          finalDone = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextType);
+        } else {
+          setInputNodeId(nextId ?? null);
+          setInputVarName(resolvedVarName ?? null);
+          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
+          setInputValue("");
+          setExpectingInput(true);
+
+          await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+          runAllWaitingForInputRef.current = null;
+
+          resp = lastResponse ?? resp;
+          nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+          finalDone = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextType);
+        }
       }
 
       if (finalDone) {
-        // Highlight end then auto-reset so Run/Step start from Start
         try {
           const endId = await pickEndNodeId();
           if (endId) safeHighlight(endId);
@@ -457,54 +459,76 @@ export default function TopBarControls({
         setInputVarName(null);
         const restartId = await pickRestartNodeId();
         safeHighlight(restartId);
+        setIsLoading(false);
+        runAllActiveRef.current = false;
         return;
       }
 
-      // loop until either input is required or flow is done
-      // include a very small throttle to avoid hammering the backend
-      while (true) {
-        // small throttle
+      while (runAllActiveRef.current) {
         await new Promise((r) => setTimeout(r, 180));
 
         resp = (await executeStepNode(flowchartId, [], forceAdvanceBP)) as ExecuteResponse;
-        console.log("runAll loop response:", resp);
         setLastResponse(resp);
         setStepCount((s) => s + 1);
         setVariablesSent(true);
 
         const backendDoneLoop = Boolean(resp?.result?.done ?? resp?.done ?? false);
-        nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
-        const inferredDoneLoop = isEndType(nextType);
-        finalDone = backendDoneLoop || inferredDoneLoop;
+        let nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+        const inferredDoneLoop = isEndType(nextTypeLoop);
+        const finalDoneLoop = backendDoneLoop || inferredDoneLoop;
 
-        // Resolve next node id
         nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-        // handle outputs: pause loop and wait for user to close modal
-        if (handleResponseOutputs(resp)) {
+        if (handleResponseOutputs(resp, autoPlayInputs)) {
           setPendingHighlightAfterOutput(nextId);
-          await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
-          outputResumeRef.current = null;
-          setPendingHighlightAfterOutput(null);
-          if (nextId) safeHighlight(nextId);
+          if (!autoPlayInputs) {
+            await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
+            outputResumeRef.current = null;
+            setPendingHighlightAfterOutput(null);
+            if (nextId) safeHighlight(nextId);
+          } else {
+            setPendingHighlightAfterOutput(null);
+            if (nextId) safeHighlight(nextId);
+          }
         } else {
           const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
           const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
           safeHighlight(loopNodeId);
         }
 
-        // prepare for input request or done state
-        if (nextType === "IN" || nextType === "INPUT") {
+        if (nextTypeLoop === "IN" || nextTypeLoop === "INPUT") {
           const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
-          setInputNodeId(nextId ?? null);
-          setInputVarName(resolvedVarName ?? null);
-          setTimeout(() => setShowInputModal(true), 0);
-          break;
+          const defaultVal = resolveDefaultValueForVar(resolvedVarName ?? null);
+          if (autoPlayInputs) {
+            const payload: Variable[] = [{ name: resolvedVarName ?? "input", value: defaultVal }];
+            resp = (await executeStepNode(flowchartId, payload, forceAdvanceBP)) as ExecuteResponse;
+            setLastResponse(resp);
+            setStepCount((s) => s + 1);
+            setVariablesSent(true);
+            continue;
+          } else {
+            setInputNodeId(nextId ?? null);
+            setInputVarName(resolvedVarName ?? null);
+            setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
+            setInputValue("");
+            setExpectingInput(true);
+
+            await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+            runAllWaitingForInputRef.current = null;
+
+            resp = lastResponse ?? resp;
+            nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+            const finishedNow = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextTypeLoop);
+            if (finishedNow) {
+              // will be handled by loop condition
+            } else {
+              continue;
+            }
+          }
         }
 
-        if (finalDone) {
-          // Highlight end and auto-reset so UI returns to Start state
+        if (finalDoneLoop) {
           try {
             const endId = await pickEndNodeId();
             if (endId) safeHighlight(endId);
@@ -522,6 +546,7 @@ export default function TopBarControls({
               console.warn("fallback reset also failed (runAll loop)", e);
             }
           }
+
           setLastResponse(null);
           setStepCount(0);
           setDone(false);
@@ -532,8 +557,6 @@ export default function TopBarControls({
           safeHighlight(restartId);
           break;
         }
-
-        // otherwise continue looping
       }
     } catch (err) {
       console.error("runAll error", err);
@@ -541,109 +564,83 @@ export default function TopBarControls({
       setErrorMsg(message);
     } finally {
       setIsLoading(false);
+      runAllActiveRef.current = false;
+      if (runAllWaitingForInputRef.current) {
+        try {
+          runAllWaitingForInputRef.current();
+        } catch {}
+        runAllWaitingForInputRef.current = null;
+      }
+      if (outputResumeRef.current) {
+        try {
+          outputResumeRef.current();
+        } catch {}
+        outputResumeRef.current = null;
+      }
     }
   };
 
-  // --- Submit input from modal (💬) ---
   const handleSubmitInput = async () => {
-    if (!lastResponse) return;
+    if (!expectingInput) return;
     setIsLoading(true);
     setErrorMsg(null);
 
     try {
-      let currentVars: Variable[] =
-        lastResponse.result?.node?.variables ??
-        lastResponse.result?.context?.variables ??
-        fetchedVariables ??
-        [];
+      let currentVars: Variable[] = lastResponse?.result?.node?.variables ?? lastResponse?.result?.context?.variables ?? fetchedVariables ?? [];
 
-      if (currentVars.length === 0) {
+      if (currentVars.length === 0 && !inputVarName) {
         throw new Error("No variable available to input.");
       }
 
-      // target node id (UI state only; backend should know next node from session)
       const targetNodeIdRaw = inputNodeId ?? lastResponse?.nextNodeId ?? null;
       const targetNodeId = targetNodeIdRaw !== null && typeof targetNodeIdRaw !== "undefined" ? String(targetNodeIdRaw) : null;
 
-      const resolvedVarName =
-        inputVarName ?? (await getFirstVarNameForNode(targetNodeId)) ?? currentVars[0].name;
+      const resolvedVarName = inputVarName ?? (await getFirstVarNameForNode(targetNodeId)) ?? currentVars[0]?.name ?? "input";
 
-      // Minimal payload — single variable only
+      setChatMessages((m) => [...m, { sender: "user", text: String(inputValue) }]);
+
       const singleVarPayload: Variable[] = [{ name: resolvedVarName, value: inputValue }];
 
-      console.log("📤 Sending minimal input payload for nodeId=", targetNodeId, singleVarPayload);
-
-      // IMPORTANT: call with only 3 args to match signature
       const resp = (await executeStepNode(flowchartId, singleVarPayload, forceAdvanceBP)) as ExecuteResponse;
 
-      console.log("executeStepNode (after input) response:", resp);
       setLastResponse(resp);
       setStepCount((s) => s + 1);
       setVariablesSent(true);
 
-      const backendDone = Boolean(resp?.result?.done ?? resp?.done ?? false);
       const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
-      const inferredDone = isEndType(nextType);
-      const finalDone = backendDone || inferredDone;
 
-      setShowInputModal(false);
       setInputValue("");
       setInputNodeId(null);
       setInputVarName(null);
 
-      // NEW: ให้พาเรนต์ไฮไลท์ node ปัจจุบัน (ถ้ามี)
       const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
       const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
       safeHighlight(currentNodeId);
 
-      // show outputs modal if backend returned outputs
       const hadOutputs = handleResponseOutputs(resp);
       if (hadOutputs) {
-        // pause; wait for user close and then highlight next node
         const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
         setPendingHighlightAfterOutput(nextId);
-        return;
+        // leave expectingInput=false and keep persistent panel visible so user can acknowledge
+        setExpectingInput(false);
+      } else {
+        if (nextType === "IN" || nextType === "INPUT") {
+          const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
+          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
+          setExpectingInput(true);
+        } else {
+          setExpectingInput(false);
+        }
       }
 
-      // prepare next input if backend asks again
-      const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
-      const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
-      if (nextType === "IN" || nextType === "INPUT") {
-        const nextVarName = await getFirstVarNameForNode(nextId ?? null);
-        setInputNodeId(nextId ?? null);
-        setInputVarName(nextVarName ?? null);
-        setTimeout(() => setShowInputModal(true), 0);
-        return;
-      }
-
-      if (finalDone) {
-        // Highlight end then auto-reset so Step/RunAll can start from Start again
+      if (runAllWaitingForInputRef.current) {
         try {
-          const endId = await pickEndNodeId();
-          if (endId) safeHighlight(endId);
-        } catch (err) {
-          console.warn("submit input: failed to pick end node", err);
+          runAllWaitingForInputRef.current();
+        } catch {
+          /* ignore */
         }
-
-        try {
-          await apiResetFlowchart(flowchartId);
-        } catch (err) {
-          console.warn("reset without advance failed (after input)", err);
-          try {
-            await executeStepNode(flowchartId, [], false);
-          } catch (e) {
-            console.warn("fallback reset also failed (after input)", e);
-          }
-        }
-
-        setLastResponse(null);
-        setStepCount(0);
-        setDone(false);
-        setVariablesSent(false);
-        const restartId = await pickRestartNodeId();
-        safeHighlight(restartId);
-        return;
+        runAllWaitingForInputRef.current = null;
       }
     } catch (err) {
       console.error("submit input error", err);
@@ -654,29 +651,61 @@ export default function TopBarControls({
     }
   };
 
-  // --- Reset flowchart (uses only allowed args) ---
+  const acknowledgeOutputs = () => {
+    const pending = pendingHighlightAfterOutput;
+    setPendingHighlightAfterOutput(null);
+    try {
+      if (outputResumeRef.current) outputResumeRef.current();
+    } catch (e) {}
+    outputResumeRef.current = null;
+    setTimeout(() => safeHighlight(pending ?? null), 80);
+  };
+
+  const cancelInput = () => {
+    setExpectingInput(false);
+    setInputNodeId(null);
+    setInputVarName(null);
+    setInputValue("");
+    if (runAllWaitingForInputRef.current) {
+      try {
+        runAllWaitingForInputRef.current();
+      } catch {}
+      runAllWaitingForInputRef.current = null;
+    }
+  };
+
   const resetFlowchart = async () => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
       if (!flowchartId) throw new Error("missing flowchartId");
 
-      // 1) call apiResetFlowchart to reset backend session
       await apiResetFlowchart(flowchartId);
 
-      // 2) Clear all client state so next Step/Run starts fresh
       setLastResponse(null);
       setStepCount(0);
       setDone(false);
       setVariablesSent(false);
       setInputNodeId(null);
       setInputVarName(null);
-      setShowInputModal(false);
-      setShowOutputModal(false);
-      setOutputData([]);
+      setChatMessages([]);
+      setExpectingInput(false);
       setErrorMsg(null);
 
-      // 3) highlight the restart node (prefer Start then DC/DECLARE/VAR). If not found, clear highlight.
+      if (runAllWaitingForInputRef.current) {
+        try {
+          runAllWaitingForInputRef.current();
+        } catch {}
+        runAllWaitingForInputRef.current = null;
+      }
+      if (outputResumeRef.current) {
+        try {
+          outputResumeRef.current();
+        } catch {}
+        outputResumeRef.current = null;
+      }
+      runAllActiveRef.current = false;
+
       const restartId = await pickRestartNodeId();
       if (restartId) {
         safeHighlight(restartId);
@@ -692,207 +721,65 @@ export default function TopBarControls({
     }
   };
 
-  const currentNode: NodeResult | null = lastResponse?.result?.node ?? null;
-  const outputs: any[] =
-    lastResponse?.result?.context?.output ?? lastResponse?.context?.output ?? [];
-
-  const previewVariables: Variable[] = (() => {
-    const fromResult = lastResponse?.result?.context?.variables;
-    if (Array.isArray(fromResult) && fromResult.length > 0) return fromResult;
-    if (Array.isArray(fetchedVariables) && fetchedVariables.length > 0) return fetchedVariables;
-    if (Array.isArray(initialVariables) && initialVariables.length > 0) return initialVariables;
-    return [];
-  })();
-
-  // helper to render any value as readable string
-  const renderValue = (v: any) => {
-    if (v === null) return "null";
-    if (typeof v === "undefined") return "undefined";
-    if (typeof v === "object") {
-      try {
-        return JSON.stringify(v);
-      } catch {
-        return String(v);
-      }
-    }
-    return String(v);
-  };
+  const chatRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [chatMessages]);
 
   return (
     <div className="absolute z-1 pt-4">
       {/* Control bar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg shadow-md border border-gray-200 w-fit hover:shadow-lg transition-shadow duration-200">
-        <button
-          onClick={handleRunAll}
-          title="Run"
-          className="text-green-600 hover:text-green-700 text-lg p-2 rounded-full hover:bg-green-100 transition-colors"
-        >
+        <button onClick={handleRunAll} title="Run" className="text-green-600 hover:text-green-700 text-lg p-2 rounded-full hover:bg-green-100 transition-colors">
           <FaPlay />
         </button>
-        <button
-          onClick={handleStep}
-          disabled={isLoading || done}
-          title={done ? "Finished" : "Step"}
-          className={`text-yellow-600 text-lg p-2 rounded-full transition-colors ${
-            isLoading ? "opacity-50 cursor-not-allowed" : "hover:text-yellow-700 hover:bg-yellow-100"
-          } ${done ? "opacity-40 cursor-not-allowed" : ""}`}
-        >
-          <span className={`${isLoading ? "animate-pulse" : ""}`}>
-            <FaStepForward />
-          </span>
+        <button onClick={handleStep} disabled={isLoading || done} title={done ? "Finished" : "Step"} className={`text-yellow-600 text-lg p-2 rounded-full transition-colors ${isLoading ? "opacity-50 cursor-not-allowed" : "hover:text-yellow-700 hover:bg-yellow-100"} ${done ? "opacity-40 cursor-not-allowed" : ""}`}>
+          <span className={`${isLoading ? "animate-pulse" : ""}`}><FaStepForward /></span>
         </button>
-        <button
-          onClick={resetFlowchart}
-          className="text-gray-600 hover:text-gray-700 text-lg p-2 rounded-full hover:bg-gray-100 transition-colors"
-        >
+        <button onClick={resetFlowchart} className="text-gray-600 hover:text-gray-700 text-lg p-2 rounded-full hover:bg-gray-100 transition-colors">
           <FaStop />
         </button>
-        <span
-          // onClick={() => setShowPopup((v) => !v)}
-          onClick={togglePopup}
-          className="ml-2 px-3 py-1 bg-blue-200 text-blue-800 text-sm font-semibold rounded-lg cursor-pointer hover:bg-blue-300 transition-colors select-none"
-        >
-          Problem solving
-        </span>
+        <span onClick={togglePopup} className="ml-2 px-3 py-1 bg-blue-200 text-blue-800 text-sm font-semibold rounded-lg cursor-pointer hover:bg-blue-300 transition-colors select-none">Problem solving</span>
       </div>
 
-      {/* Information */}
-      {/* <div className="mt-2 ml-2 bg-white rounded-md shadow-sm border border-gray-100 p-3 w-[360px] text-sm">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-xs text-gray-600">
-            Step: <strong className="text-gray-800">{stepCount}</strong>
-          </div>
-          <div className={`text-xs font-semibold ${done ? "text-green-700" : "text-gray-600"}`}>
-            {done ? "Done" : isLoading ? "Running..." : "Paused"}
-          </div>
+      {/* Persistent single chat panel (always visible) */}
+      <div className="fixed bottom-6 right-6 z-50 w-96 max-h-[420px] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white flex items-center justify-between">
+          <div className="font-medium">Interactive Chat</div>
+          <div className="text-sm opacity-90">{expectingInput ? `Expecting: ${inputVarName ?? "input"}` : "Status"}</div>
         </div>
 
-        <div className="text-xs text-gray-600 mb-1">Current node:</div>
-        <div className="mb-2 text-sm text-gray-800">
-          {currentNode ? (
-            <>
-              <div>
-                <b>ID:</b> {String(currentNode.id)}
-              </div>
-              <div>
-                <b>Type:</b> {currentNode.type}
-              </div>
-              <div>
-                <b>Label:</b> {currentNode.label}
-              </div>
-            </>
-          ) : (
-            <div className="text-gray-500">ยังไม่มีข้อมูล (กด Step เพื่อเริ่ม)</div>
+        <div ref={chatRef} className="p-3 overflow-auto bg-gray-50" style={{ maxHeight: 260 }}>
+          {chatMessages.length === 0 && (
+            <div className="text-sm text-gray-400">ระบบพร้อม — กด Step หรือ Run เพื่อเริ่ม</div>
           )}
-        </div>
-
-        <div className="text-xs text-gray-600 mb-1">Outputs:</div>
-        <div className="mb-2 min-h-[28px] text-sm text-gray-800">
-          {outputs.length > 0 ? (
-            <ul className="list-disc list-inside">
-              {outputs.map((o, i) => (
-                <li key={i}>{renderValue(o)}</li>
-              ))}
-            </ul>
-          ) : (
-            <div className="text-gray-500">ไม่มี output</div>
-          )}
-        </div>
-
-        <div className="text-xs text-gray-600">Variables:</div>
-        <div className="text-sm text-gray-800">
-          {fetchingVars ? (
-            <div className="text-gray-500 mt-1">Loading...</div>
-          ) : previewVariables.length > 0 ? (
-            <div className="flex flex-wrap gap-2 mt-1">
-              {previewVariables.map((v, i) => (
-                <div key={i} className="text-xs px-2 py-1 bg-gray-100 rounded-full">
-                  {v.name}: {String(v.value)}
-                </div>
-              ))}
+          {chatMessages.map((m, i) => (
+            <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[78%] px-3 py-2 rounded-lg whitespace-pre-wrap ${m.sender === "user" ? "bg-blue-600 text-white rounded-br-sm" : "bg-gray-200 text-gray-800 rounded-bl-sm"}`}>
+                {m.text}
+              </div>
             </div>
-          ) : (
-            <div className="text-gray-500 mt-1">ไม่มีตัวแปร</div>
-          )}
+          ))}
         </div>
 
-        {errorMsg && <div className="mt-2 text-xs text-red-600">Error: {errorMsg}</div>}
-      </div> */}
-
-      {/* Input Modal */}
-      {showInputModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-opacity-100 z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-80">
-            <div className="mb-4 text-gray-700">
-              กรอกค่า {inputVarName ?? lastResponse?.result?.node?.variables?.[0]?.name ?? "input"}:
-            </div>
-            <input
-              type="number"
-              value={inputValue}
-              onChange={(e) => setInputValue(Number(e.target.value))}
-              className="w-full border border-gray-300 rounded px-2 py-1 mb-4"
-            />
+        <div className="p-3 bg-white border-t border-gray-100">
+          {expectingInput ? (
             <div className="flex gap-2">
-              <button
-                onClick={handleSubmitInput}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-              >
-                OK
-              </button>
-              <button
-                onClick={() => {
-                  setShowInputModal(false);
-                  setInputNodeId(null);
-                  setInputVarName(null);
-                }}
-                className="flex-1 bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300 transition-colors"
-              >
-                Cancel
-              </button>
+              <input type="number" value={inputValue} onChange={(e) => setInputValue(e.target.value === "" ? "" : Number(e.target.value))} onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitInput(); }} className="flex-1 border border-gray-300 rounded px-3 py-2" placeholder="พิมพ์ค่าที่ต้องการส่ง..." />
+              <button onClick={handleSubmitInput} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">ส่ง</button>
+              <button onClick={cancelInput} className="bg-gray-200 text-gray-800 px-3 py-2 rounded hover:bg-gray-300">ยกเลิก</button>
             </div>
-          </div>
+          ) : (
+            <div className="flex justify-between items-center gap-2">
+              <div className="text-sm text-gray-500">ไม่มีข้อความที่ต้องการการป้อนข้อมูล</div>
+              <div className="flex gap-2">
+                <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">Clear</button>
+                <button onClick={acknowledgeOutputs} className="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700">Acknowledge</button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-
-      {/* Output Modal (NEW) */}
-      {showOutputModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-opacity-100 z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-96">
-            <div className="mb-3 text-lg font-semibold">Output</div>
-            <div className="max-h-56 overflow-auto text-sm mb-4">
-              {outputData.map((o, i) => (
-                <div key={i} className="mb-2 p-2 bg-gray-50 rounded">
-                  {/* <div className="text-xs text-gray-500">#{i + 1}</div> */}
-                  <pre className="whitespace-pre-wrap break-words text-sm">{renderValue(o)}</pre>
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  // close modal, then resume any paused run and advance highlight to pending node
-                  setShowOutputModal(false);
-                  const pending = pendingHighlightAfterOutput;
-                  setPendingHighlightAfterOutput(null);
-                  try {
-                    if (outputResumeRef.current) outputResumeRef.current();
-                  } catch (e) {
-                    /* ignore */
-                  }
-                  outputResumeRef.current = null;
-                  // advance highlight after a small delay so ReactFlow can update
-                  setTimeout(() => {
-                    safeHighlight(pending ?? null);
-                  }, 80);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
 
       {showPopup && (
         <div className="absolute z-50 w-96 h-80 rounded-xl bg-white p-3 shadow-xl border border-gray-200 ml-20 mt-3 transform translate-x-[-10%] animate-fadeIn">
@@ -920,9 +807,7 @@ export default function TopBarControls({
                     <td className="p-2 border-b border-gray-200">8</td>
                     <td className="p-2 border-b border-gray-200" />
                     <td className="p-2 border-b border-gray-200">
-                      <button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">
-                        Test
-                      </button>
+                      <button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">Test</button>
                     </td>
                   </tr>
                   <tr>
@@ -931,17 +816,13 @@ export default function TopBarControls({
                     <td className="p-2 border-b border-gray-200">ลอง</td>
                     <td className="p-2 border-b border-gray-200" />
                     <td className="p-2 border-b border-gray-200">
-                      <button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">
-                        Test
-                      </button>
+                      <button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">Test</button>
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <button className="mt-6 bg-blue-900 text-white text-sm px-6 py-2 rounded-full hover:bg-blue-800 transition-colors absolute bottom-4 right-6">
-              Submit
-            </button>
+            <button className="mt-6 bg-blue-900 text-white text-sm px-6 py-2 rounded-full hover:bg-blue-800 transition-colors absolute bottom-4 right-6">Submit</button>
           </div>
         </div>
       )}
