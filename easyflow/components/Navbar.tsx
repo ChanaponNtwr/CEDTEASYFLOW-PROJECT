@@ -29,7 +29,7 @@ function Navbar() {
         </Link>
       </div>
 
-      <div className="flex items-center space-x-14">
+      <div className="flex items-center space-x-10">
         <Link href="/" className="hover:underline hover:scale-105 transition-all cursor-pointer">
           Home
         </Link>
