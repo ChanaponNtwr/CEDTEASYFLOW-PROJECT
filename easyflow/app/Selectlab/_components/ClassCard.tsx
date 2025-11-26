@@ -22,9 +22,9 @@ function ClassCard({
   onCheckboxChange,
 }: ClassCardProps) {
   return (
-    <div className="bg-white shadow-md rounded-lg overflow-hidden hover:scale-105 transition-all cursor-pointer">
+    <div className="bg-white shadow-md rounded-lg overflow-hidden hover:scale-105 transition-all cursor-pointer relative">
       {/* Header Section */}
-      <div className="bg-orange-500 text-white p-4 flex items-center relative">
+      <div className="bg-orange-500 text-white p-4 flex items-center">
         <div className="bg-white rounded-full p-2 mr-3">
           <svg
             className="w-8 h-8 text-black"
@@ -42,17 +42,30 @@ function ClassCard({
           </svg>
         </div>
         <span className="text-lg font-semibold">{title || "No Title"}</span>
-        {/* Checkbox in top-right corner */}
-        <input
-          type="checkbox"
-          checked={isChecked}
-          onChange={(e) => {
-            console.log("Checkbox changed:", e.target.checked); // Debug log
-            onCheckboxChange?.(e.target.checked);
-          }}
-          className="absolute top-4 right-4 w-5 h-5 accent-green-500 border-gray-300 rounded cursor-pointer focus:ring-2 focus:ring-green-500 z-50"
-          aria-label={`Select ${title || "class card"}`}
-        />
+
+        {/* Custom styled checkbox (using hidden input + visible box) */}
+        <label className="absolute top-4 right-4 z-50">
+          <input
+            type="checkbox"
+            checked={isChecked}
+            onChange={(e) => {
+              onCheckboxChange?.(e.target.checked);
+            }}
+            className="sr-only peer"
+            aria-label={`Select ${title || "class card"}`}
+          />
+
+          <div className="w-6 h-6 rounded-lg border border-gray-300 bg-white flex items-center justify-center shadow-sm transform transition-all duration-150 peer-checked:bg-green-500 peer-checked:border-green-500 peer-checked:scale-105 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-green-300">
+            <svg
+              className="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity duration-150"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </label>
       </div>
 
       {/* Content Section */}
@@ -69,13 +82,12 @@ function ClassCard({
 function App() {
   const classes = [
     { title: "Math Class", problem: "Algebra Homework", teacher: "Mr. Smith", score: "100", due: "2025-08-25" },
-
   ];
 
   const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
 
-  const handleCheckboxChange = (title: string) => {
-    setSelectedTitle(title); // เลือกตัวเดียว จะ override ตัวเก่า
+  const handleCheckboxChange = (title: string, checked: boolean) => {
+    setSelectedTitle(checked ? title : null);
   };
 
   return (
@@ -88,8 +100,8 @@ function App() {
           teacher={cls.teacher}
           score={cls.score}
           due={cls.due}
-          isChecked={selectedTitle === cls.title} // true ถ้าเป็นตัวที่เลือก
-          onCheckboxChange={() => handleCheckboxChange(cls.title)}
+          isChecked={selectedTitle === cls.title}
+          onCheckboxChange={(checked) => handleCheckboxChange(cls.title, checked)}
         />
       ))}
     </div>
