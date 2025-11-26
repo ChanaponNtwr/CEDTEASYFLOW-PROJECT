@@ -3,44 +3,66 @@ import Navbar from "@/components/Navbar";
 import { signIn } from "next-auth/react";
 import Image from "next/image";
 
-function Login() {
+export default function Login() {
   return (
-    <div 
-      className="min-h-screen flex flex-col"
-    >
-              <Image
-                src="/images/Login.png"
-                alt="Background"
-                fill
-                className="object-cover"
-                priority
-              />
+    <div className="min-h-screen relative flex flex-col">
+      {/* Background */}
+      <div className="absolute inset-0">
+        <Image
+          src="/images/Login.png"
+          alt="Background"
+          fill
+          className="object-cover"
+          priority
+        />
+
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-black/10 backdrop-blur-[2px]"></div>
+      </div>
+
       <Navbar />
-      <div className="flex items-center justify-center flex-1 relative">
-        
-        <div className="relative bg-white/20 backdrop-blur-md rounded-lg shadow-lg p-8 w-full max-w-md z-10">
-          <h2 className="text-3xl font-bold text-center mb-6 text-white bo">Login</h2>
+
+      {/* Content */}
+      <div className="flex justify-center items-center flex-1 relative z-10 px-4">
+        <div className="bg-white/10 backdrop-blur-lg border border-white/20 
+                        shadow-xl rounded-2xl p-10 w-full max-w-md">
           
-          <div className="space-y-4">
+          <h2 className="text-4xl font-bold text-center mb-8 text-white drop-shadow-lg">
+            Login
+          </h2>
+
+          <div className="space-y-5">
+            {/* Google Button */}
             <button
               onClick={() => signIn("google", { callbackUrl: "/profile" })}
-              className="text-xl w-full bg-white text-[#757575] py-2.5 rounded-lg flex items-center justify-start gap-5 pl-4 cursor-pointer transition duration-200 font-semibold"
+              className="w-full py-3 text-lg font-semibold bg-white text-[#5f5f5f] 
+                         rounded-xl flex items-center justify-center gap-4 shadow-md
+                         hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] 
+                         transition-all cursor-pointer"
             >
-              <img src="https://www.google.com/favicon.ico" alt="Google" className="w-10 h-10" />
+              <img
+                src="https://www.google.com/favicon.ico"
+                alt="Google"
+                className="w-7 h-7"
+              />
               Continue with Google
             </button>
 
-            <button
-              className="text-xl w-full bg-[#0866FF] text-white py-2.5 rounded-lg flex items-center justify-start gap-5 pl-4 cursor-pointer transition duration-200 font-semibold"
-            >
-              <img src="https://www.facebook.com/favicon.ico" alt="Facebook" className="w-10 h-10" />
+            {/* Facebook future button */}
+            {/* 
+            <button className="w-full py-3 text-lg font-semibold bg-[#1877F2] text-white 
+                               rounded-xl flex items-center justify-center gap-4 shadow-md
+                               hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]">
+              <img
+                src="https://www.facebook.com/favicon.ico"
+                className="w-7 h-7"
+              />
               Continue with Facebook
             </button>
+            */}
           </div>
         </div>
       </div>
     </div>
   );
 }
-
-export default Login;
