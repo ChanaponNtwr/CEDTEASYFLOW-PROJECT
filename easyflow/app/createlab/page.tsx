@@ -4,9 +4,8 @@ import React, { useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
+import { useRouter } from "next/navigation";
 
-
-// ประเภทข้อมูลสำหรับ Testcase
 interface TestCase {
   input: string;
   output: string;
@@ -16,27 +15,39 @@ interface TestCase {
 }
 
 function Createlab() {
+  const router = useRouter();
+
+  const [name, setName] = useState("");
+  const [dateline, setDateline] = useState("");
+  const [problem, setProblem] = useState("");
+
   const [testCases, setTestCases] = useState<TestCase[]>([
-    { input: "", output: "", hiddenInput: "", hiddenOutput: "" , score: ""},
+    { input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" },
   ]);
 
-  // เพิ่ม Testcase
+  const [symbols, setSymbols] = useState({
+    input: 0,
+    output: 0,
+    declare: 0,
+    assign: 0,
+    if: 0,
+    call: 0,
+  });
+
   const addTestCase = () => {
     setTestCases([
       ...testCases,
-      { input: "", output: "", hiddenInput: "", hiddenOutput: "" , score: "" },
+      { input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" },
     ]);
   };
 
-  // ลบ Testcase
   const removeTestCase = (index: number) => {
-    if (testCases.length === 1) return; // ป้องกันไม่ให้ลบจนไม่เหลือเลย
+    if (testCases.length === 1) return;
     const updated = [...testCases];
     updated.splice(index, 1);
     setTestCases(updated);
   };
 
-  // อัปเดตข้อมูลใน Testcase
   const handleTestCaseChange = (
     index: number,
     field: keyof TestCase,
@@ -47,24 +58,37 @@ function Createlab() {
     setTestCases(updated);
   };
 
-  const handleSymbolChange = (symbols: {
-    input: number;
-    output: number;
-    declare: number;
-    assign: number;
-    if: number;
-    call: number;
-  }) => {
-    console.log("Symbol counts updated:", symbols);
+  const handleSymbolChange = (symbolData: any) => {
+    setSymbols(symbolData);
   };
 
   const handleCancel = () => {
-    console.log("Cancel button clicked");
+    router.push("/mylab");
   };
 
-    const handleCreate = () => {
-    console.log("Create button clicked", { testCases });
-    // เพิ่ม logic เช่น ส่งข้อมูลไป API
+  const handleCreate = () => {
+    const newLab = {
+      id: Date.now(),
+      name,
+      dateline,
+      problem,
+      testCases,
+      symbols,
+      createdAt: new Date().toISOString(),
+    };
+
+    // อ่านข้อมูลเก่าจาก localStorage
+    const stored = localStorage.getItem("labs");
+    const labs = stored ? JSON.parse(stored) : [];
+
+    // เพิ่ม lab ใหม่เข้าไป
+    labs.push(newLab);
+
+    // เซฟกลับลง localStorage
+    localStorage.setItem("labs", JSON.stringify(labs));
+
+    // Redirect ไปหน้า MyLabs
+    router.push("/mylab");
   };
 
   return (
@@ -73,230 +97,175 @@ function Createlab() {
         <Navbar />
         <div className="flex">
           <Sidebar />
+
           <div className="flex-1 flex flex-col p-6 md:p-10">
-            {/* ปุ่ม Cancel / Save */}
+
+            {/* ปุ่ม */}
             <div className="flex justify-end space-x-4 mb-6">
               <button
-              onClick={handleCancel}
-              className="bg-red-500 text-white px-4 py-2 rounded-full flex items-center hover:bg-red-600"
-              aria-label="Cancel creating lab"
-            >
-              <svg
-                className="w-5 h-5 mr-2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
+                onClick={handleCancel}
+                className="bg-red-500 text-white px-4 py-2 rounded-full flex items-center hover:bg-red-600"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Cancel
-            </button>
-            <button
-              onClick={handleCreate}
-              className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center hover:bg-blue-700"
-              aria-label="Create lab"
-            >
-              <svg
-                className="w-5 h-5 mr-2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
+                Cancel
+              </button>
+
+              <button
+                onClick={handleCreate}
+                className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center hover:bg-blue-700"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                />
-              </svg>
-              Create
-            </button>
+                Create
+              </button>
             </div>
 
-            {/* ชื่อหัวข้อ */}
+            {/* Heading */}
             <h2 className="text-3xl md:text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-6">
               Create Lab
             </h2>
 
             <div className="flex flex-col md:flex-row gap-6">
-              {/* ส่วนซ้าย */}
+
+              {/* LEFT */}
               <div className="flex-1 space-y-6">
-                {/* Name และ Score */}
                 <div className="flex flex-col md:flex-row gap-4">
                   <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Name
-                    </label>
+                    <label className="block text-sm font-medium">Name</label>
                     <input
                       type="text"
-                      placeholder="Name..."
-                      className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md"
                     />
                   </div>
+
                   <div className="w-full md:w-1/4">
-                    <label className="block text-sm font-medium text-gray-700">Dateline</label>
+                    <label className="block text-sm font-medium">Dateline</label>
                     <input
                       type="date"
-                      className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      value={dateline}
+                      onChange={(e) => setDateline(e.target.value)}
+                      className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md"
                     />
                   </div>
                 </div>
 
-                {/* Problem Solving */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Problem solving
-                  </label>
+                  <label className="block text-sm font-medium">Problem Solving</label>
                   <textarea
-                    placeholder="Detail..."
-                    className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 h-32"
-                  />
+                    value={problem}
+                    onChange={(e) => setProblem(e.target.value)}
+                    className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md h-32"
+                  ></textarea>
                 </div>
 
                 {/* Testcases */}
                 <div>
-                  <h3 className="text-lg font-medium text-gray-700 mb-4 ">
-                    Create Testcase
-                  </h3>
+                  <h3 className="text-lg font-medium mb-4">Create Testcase</h3>
 
-                  {testCases.map((testCase, index) => (
+                  {testCases.map((tc, idx) => (
                     <div
-                      key={index}
-                      className="relative border rounded-lg p-4 mb-4 shadow-sm bg-gray-50"
+                      key={idx}
+                      className="relative border rounded-lg p-4 mb-4 shadow bg-gray-50"
                     >
-                      {/* ปุ่มลบ */}
                       <button
-                        onClick={() => removeTestCase(index)}
-                        className="absolute top-2 right-2 text-red-500 hover:text-red-700"
-                        title="Remove this Testcase"
+                        onClick={() => removeTestCase(idx)}
+                        className="absolute top-2 right-2 text-red-500"
                       >
                         ✕
                       </button>
 
-                      <div className="mb-2 text-gray-700 font-semibold">
-                        Testcase {index + 1}
+                      <div className="mb-2 font-semibold">
+                        Testcase {idx + 1}
                       </div>
 
-                      {/* Public input/output */}
                       <div className="grid grid-cols-12 gap-4 mb-3 ml-5">
                         <div className="col-span-6">
-                          <label className="block text-sm text-gray-700 mb-1">
-                            Input
-                          </label>
+                          <label>Input</label>
                           <input
                             type="text"
-                            value={testCase.input}
+                            value={tc.input}
                             onChange={(e) =>
-                              handleTestCaseChange(
-                                index,
-                                "input",
-                                e.target.value
-                              )
+                              handleTestCaseChange(idx, "input", e.target.value)
                             }
-                            placeholder="Public Input"
-                            className="w-full bg-white p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
 
                         <div className="col-span-6">
-                          <label className="block text-sm text-gray-700 mb-1">
-                            Output
-                          </label>
+                          <label>Output</label>
                           <input
                             type="text"
-                            value={testCase.output}
+                            value={tc.output}
                             onChange={(e) =>
-                              handleTestCaseChange(
-                                index,
-                                "output",
-                                e.target.value
-                              )
+                              handleTestCaseChange(idx, "output", e.target.value)
                             }
-                            placeholder="Public Output"
-                            className="w-full bg-white p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
                       </div>
 
-                      {/* Hidden input/output */}
+                      {/* Hidden */}
                       <div className="grid grid-cols-12 gap-4 ml-5">
                         <div className="col-span-6">
-                          <label className="block text-sm text-gray-700 mb-1">
-                            Hidden Input
-                          </label>
+                          <label>Hidden Input</label>
                           <input
                             type="text"
-                            value={testCase.hiddenInput}
+                            value={tc.hiddenInput}
                             onChange={(e) =>
                               handleTestCaseChange(
-                                index,
+                                idx,
                                 "hiddenInput",
                                 e.target.value
                               )
                             }
-                            placeholder="Hidden Input"
-                            className="w-full bg-white p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
 
                         <div className="col-span-6">
-                          <label className="block text-sm text-gray-700 mb-1">
-                            Hidden Output
-                          </label>
+                          <label>Hidden Output</label>
                           <input
                             type="text"
-                            value={testCase.hiddenOutput}
+                            value={tc.hiddenOutput}
                             onChange={(e) =>
                               handleTestCaseChange(
-                                index,
+                                idx,
                                 "hiddenOutput",
                                 e.target.value
                               )
                             }
-                            placeholder="Hidden Output"
-                            className="w-full bg-white p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-12 gap-4 mb-3 ml-5">
+                      <div className="grid grid-cols-12 gap-4 mt-3 ml-5">
                         <div className="col-span-6">
-                          <label className="block text-sm text-gray-700 mb-1">
-                            Score
-                          </label>
+                          <label>Score</label>
                           <input
                             type="text"
-                            value={testCase.input}
+                            value={tc.score}
                             onChange={(e) =>
-                              handleTestCaseChange(
-                                index,
-                                "score",
-                                e.target.value
-                              )
+                              handleTestCaseChange(idx, "score", e.target.value)
                             }
-                            placeholder="Score"
-                            className="w-full bg-white p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
                       </div>
                     </div>
                   ))}
 
-                  {/* ปุ่มเพิ่ม */}
                   <div className="flex justify-end mt-4">
                     <button
                       onClick={addTestCase}
-                      className="text-sm text-black hover:underline"
+                      className="text-sm hover:underline"
                     >
-                      + Add to Your Testcase
+                      + Add Testcase
                     </button>
                   </div>
                 </div>
               </div>
 
-              {/* ส่วนขวา */}
+              {/* RIGHT */}
               <SymbolSection onChange={handleSymbolChange} />
             </div>
           </div>

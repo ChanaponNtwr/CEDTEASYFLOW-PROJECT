@@ -23,6 +23,43 @@ function ImportLabModal({ isOpen, onClose, onAddClick, formData, setFormData }: 
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Try to open native picker when user clicks the input area.
+  // For browsers that support `showPicker()` this will open the native UI.
+  // Fallback: focus the input so the built-in browser behavior still works.
+  const openDatePicker = () => {
+    const el = dateInputRef.current;
+    if (!el) return;
+    // @ts-ignore - showPicker is experimental on some browsers
+    if (typeof el.showPicker === "function") {
+      // call showPicker if available
+      // wrap try/catch because some browsers might throw
+      try {
+        // @ts-ignore
+        el.showPicker();
+      } catch (e) {
+        el.focus();
+      }
+    } else {
+      el.focus();
+    }
+  };
+
+  const openTimePicker = () => {
+    const el = timeInputRef.current;
+    if (!el) return;
+    // @ts-ignore
+    if (typeof el.showPicker === "function") {
+      try {
+        // @ts-ignore
+        el.showPicker();
+      } catch (e) {
+        el.focus();
+      }
+    } else {
+      el.focus();
+    }
+  };
+
   const handleSubmit = () => {
     if (formData.dueDate && formData.dueTime) {
       console.log("Submitted:", { ...formData });
@@ -30,16 +67,6 @@ function ImportLabModal({ isOpen, onClose, onAddClick, formData, setFormData }: 
     } else {
       alert("กรุณากรอกข้อมูลวันที่และเวลให้ครบถ้วน");
     }
-  };
-
-  const handleDateIconClick = () => {
-    dateInputRef.current?.focus();
-    dateInputRef.current?.showPicker();
-  };
-
-  const handleTimeIconClick = () => {
-    timeInputRef.current?.focus();
-    timeInputRef.current?.showPicker();
   };
 
   return (
@@ -97,16 +124,10 @@ function ImportLabModal({ isOpen, onClose, onAddClick, formData, setFormData }: 
                       value={formData.dueDate}
                       onChange={handleInputChange}
                       ref={dateInputRef}
+                      onClick={openDatePicker}
+                      onFocus={openDatePicker}
                       className="w-full h-12 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 appearance-none"
                       min={new Date().toISOString().split("T")[0]}
-                    />
-                    <Image
-                      src="/images/date.png"
-                      alt="Date Icon"
-                      width={24}
-                      height={24}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer"
-                      onClick={handleDateIconClick}
                     />
                   </div>
                 </div>
@@ -121,18 +142,12 @@ function ImportLabModal({ isOpen, onClose, onAddClick, formData, setFormData }: 
                       value={formData.dueTime}
                       onChange={handleInputChange}
                       ref={timeInputRef}
+                      onClick={openTimePicker}
+                      onFocus={openTimePicker}
                       className="w-full h-12 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 appearance-none"
                       min="08:00"
                       max="18:00"
                       step={900}
-                    />
-                    <Image
-                      src="/images/clock.png"
-                      alt="Clock Icon"
-                      width={24}
-                      height={24}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer"
-                      onClick={handleTimeIconClick}
                     />
                   </div>
                 </div>

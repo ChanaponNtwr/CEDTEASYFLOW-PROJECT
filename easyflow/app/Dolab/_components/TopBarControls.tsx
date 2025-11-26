@@ -765,7 +765,24 @@ export default function TopBarControls({
         <div className="p-3 bg-white border-t border-gray-100">
           {expectingInput ? (
             <div className="flex gap-2">
-              <input type="number" value={inputValue} onChange={(e) => setInputValue(e.target.value === "" ? "" : Number(e.target.value))} onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitInput(); }} className="flex-1 border border-gray-300 rounded px-3 py-2" placeholder="พิมพ์ค่าที่ต้องการส่ง..." />
+              {/* เปลี่ยนเป็น text + inputMode เพื่อเลี่ยง spinner */}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={inputValue}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    // เอาเฉพาะตัวเลข จุดทศนิยม และลบ (ปรับตามต้องการ)
+                    const cleaned = raw.replace(/[^\d.-]/g, "");
+                    setInputValue(cleaned === "" ? "" : Number(cleaned));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSubmitInput();
+                  }}
+                  className="flex-1 border border-gray-300 rounded px-3 py-2"
+                  placeholder="พิมพ์ค่าที่ต้องการส่ง..."
+                />
+
               <button onClick={handleSubmitInput} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">ส่ง</button>
               <button onClick={cancelInput} className="bg-gray-200 text-gray-800 px-3 py-2 rounded hover:bg-gray-300">ยกเลิก</button>
             </div>
