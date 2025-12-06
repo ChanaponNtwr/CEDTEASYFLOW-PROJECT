@@ -443,6 +443,24 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
     const nodeExists = (saved.nodes || []).some(n => n.id === nodeId);
     if (!nodeExists) return res.status(404).json({ ok: false, error: "Node not found" });
 
+    // --- EXTRACT declared variable names from the node being deleted ---
+    // (so we can remove them from any cached executor state or other registries)
+    const deletedNodeRaw = (saved.nodes || []).find(n => n.id === nodeId) || null;
+    const declaredNames = [];
+    if (deletedNodeRaw) {
+      // normalize type check (node may store type as "DC" or "declare")
+      const nodeType = normalizeType(deletedNodeRaw.type ?? deletedNodeRaw.typeShort ?? deletedNodeRaw.typeFull ?? "");
+      if (nodeType === "DC") {
+        const d = deletedNodeRaw.data || {};
+        if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
+        if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
+        if (Array.isArray(d.names)) {
+          for (const nm of d.names) if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
+        }
+      }
+    }
+    const uniqueDeclaredNames = [...new Set(declaredNames)];
+
     // hydrate to Flowchart instance and keep before snapshot for diffs
     const fcBefore = hydrateFlowchart(saved);
     const beforeSerialized = serializeFlowchart(fcBefore);
@@ -471,19 +489,86 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
     // compute diffs (same helper used by other endpoints)
     const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
+    // --- Persist changes to DB ---
     // persist to DB (use number key if possible)
-    const dbKey = Number(mapKey) ? Number(mapKey) : mapKey;
+    const dbKey = Number.isNaN(Number(mapKey)) ? mapKey : Number(mapKey);
     await prisma.flowchart.update({
       where: { flowchartId: dbKey },
       data: { content: afterSerialized }
     });
 
-    // update in-memory cache
+    // update in-memory cache (flowchart content)
     savedFlowcharts.set(mapKey, afterSerialized);
+
+    // --- Remove declared vars from any stored executor states (cache) ---
+    // Update any keys starting with 'executorState_' to remove variables that were declared by deleted node.
+    if (uniqueDeclaredNames.length > 0) {
+      for (const [k, v] of Array.from(savedFlowcharts.entries())) {
+        try {
+          // We care only about executor snapshots saved under keys like executorState_<id>
+          if (String(k).startsWith("executorState_") && v && typeof v === "object" && v.executor) {
+            const es = v.executor;
+
+            // remove from es.context.variables (array of { name, value, varType } or similar)
+            if (es.context && Array.isArray(es.context.variables)) {
+              es.context.variables = es.context.variables.filter(varObj => {
+                if (!varObj || !varObj.name) return true;
+                return !uniqueDeclaredNames.includes(String(varObj.name));
+              });
+            }
+
+            // remove from es.context.output? (unlikely, but preserve)
+            // remove from es.lastNode.variables if present
+            if (es.lastNode && Array.isArray(es.lastNode.variables)) {
+              es.lastNode.variables = es.lastNode.variables.filter(varObj => {
+                if (!varObj || !varObj.name) return true;
+                return !uniqueDeclaredNames.includes(String(varObj.name));
+              });
+            }
+
+            // If flowchartNodeInternal or other internal snapshots hold variable-like keys, we leave them.
+            // Save back modified snapshot
+            savedFlowcharts.set(k, v);
+          }
+        } catch (e) {
+          // don't fail delete because of cache cleanup; just warn (but keep going)
+          console.warn("Failed to clean executor snapshot for deleted variables:", e);
+        }
+      }
+
+      // Additionally: if the saved flowchart content included any top-level registry of variables (custom),
+      // remove those entries too (defensive)
+      try {
+        const flowSaved = savedFlowcharts.get(mapKey);
+        if (flowSaved && typeof flowSaved === "object") {
+          // common possible places: flowSaved.variables (array of { name,... }) or flowSaved.declaredVariables
+          if (Array.isArray(flowSaved.variables)) {
+            flowSaved.variables = flowSaved.variables.filter(v => {
+              if (!v || !v.name) return true;
+              return !uniqueDeclaredNames.includes(String(v.name));
+            });
+          }
+          if (Array.isArray(flowSaved.declaredVariables)) {
+            flowSaved.declaredVariables = flowSaved.declaredVariables.filter(nm => !uniqueDeclaredNames.includes(String(nm)));
+          }
+          // save back
+          savedFlowcharts.set(mapKey, flowSaved);
+        }
+      } catch (e) {
+        console.warn("Failed to clean top-level declared variables in saved content:", e);
+      }
+    }
 
     // optional: remove any stored executorState for this flowchart (to avoid inconsistency)
     const execKey = `executorState_${mapKey}`;
-    if (savedFlowcharts.has(execKey)) savedFlowcharts.delete(execKey);
+    if (savedFlowcharts.has(execKey)) {
+      // If you prefer to delete executor snapshot entirely instead of cleaning names, you can:
+      // savedFlowcharts.delete(execKey);
+      // For now we already attempted cleaning above; but keep this delete as a safety fallback:
+      // If snapshot still contains no variables and you want to remove it, uncomment next lines:
+      // const maybe = savedFlowcharts.get(execKey);
+      // if (maybe && maybe.executor && Array.isArray(maybe.executor.context?.variables) && maybe.executor.context.variables.length === 0) savedFlowcharts.delete(execKey);
+    }
 
     return res.json({
       ok: true,
