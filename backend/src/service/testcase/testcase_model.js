@@ -79,4 +79,37 @@ export default class Testcase {
       createdAt: this.createdAt
     };
   }
+// =============== เพิ่มเข้าไปในไฟล์นี้ (ด้านล่างสุดของ class) ==================
+
+  // clone testcase
+  clone() {
+    return new Testcase({
+      testcaseId: this.testcaseId,
+      labId: this.labId,
+      title: this.title,
+      inputVal: this.inputVal,
+      outputVal: this.outputVal,
+      inHiddenVal: this.inHiddenVal,
+      outHiddenVal: this.outHiddenVal,
+      score: this.score,
+      comparatorType: this.comparatorType,
+      isHidden: this.isHidden,
+      createdAt: this.createdAt
+    });
+  }
+
+  // summary used by TestRunner.toSummary()
+  toSummary() {
+    return {
+      testcaseId: this.testcaseId,
+      labId: this.labId,
+      expected: this.parseOutputs(),
+      score: this.score,
+      comparatorType: this.comparatorType
+    };
+  }
 }
+
+// =================== END (เพิ่มเท่านี้) ===================
+
+
