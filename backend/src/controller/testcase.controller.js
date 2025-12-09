@@ -5,6 +5,7 @@ import { TestRunner } from "../service/testcase/index.js";
 import Executor from "../service/flowchart/classexecutor.js";
 import TestcaseRepository from "../service/testcase/testcaseRepository.js";
 import Testcase from "../service/testcase/testcase_model.js";
+import { hydrateFlowchart } from "../controller/flowchart.controller.js";
 
 
 
@@ -219,7 +220,7 @@ export async function runFromFlowchartHandler(req, res) {
     }
 
     // flowchart JSON stored in Prisma
-    const flowchartObj = fcRow.content;
+    const flowchartObj = hydrateFlowchart(fcRow.content);
     let tcInstances = [];
 
     // ----------------------------------------------------
