@@ -580,76 +580,89 @@ export default function TopBarControls({
     }
   };
 
-  const handleSubmitInput = async () => {
-    if (!expectingInput) return;
-    setIsLoading(true);
-    setErrorMsg(null);
+const handleSubmitInput = async () => {
+  if (!expectingInput) return;
+  setIsLoading(true);
+  setErrorMsg(null);
 
-    try {
-      let currentVars: Variable[] = lastResponse?.result?.node?.variables ?? lastResponse?.result?.context?.variables ?? fetchedVariables ?? [];
+  try {
+    // current vars from response / context / fetched flowchart vars
+    let currentVars: Variable[] = lastResponse?.result?.node?.variables ?? lastResponse?.result?.context?.variables ?? fetchedVariables ?? [];
 
-      if (currentVars.length === 0 && !inputVarName) {
-        throw new Error("No variable available to input.");
-      }
+    // determine node id to try to resolve var name from
+    const targetNodeIdRaw = inputNodeId ?? lastResponse?.nextNodeId ?? null;
+    const targetNodeId = targetNodeIdRaw !== null && typeof targetNodeIdRaw !== "undefined" ? String(targetNodeIdRaw) : null;
 
-      const targetNodeIdRaw = inputNodeId ?? lastResponse?.nextNodeId ?? null;
-      const targetNodeId = targetNodeIdRaw !== null && typeof targetNodeIdRaw !== "undefined" ? String(targetNodeIdRaw) : null;
+    // Try to resolve variable name from several places (inputVarName -> flowchart -> currentVars)
+    const resolvedFromFlow = await getFirstVarNameForNode(targetNodeId);
+    const resolvedVarName = inputVarName ?? resolvedFromFlow ?? currentVars[0]?.name ?? null;
 
-      const resolvedVarName = inputVarName ?? (await getFirstVarNameForNode(targetNodeId)) ?? currentVars[0]?.name ?? "input";
-
-      setChatMessages((m) => [...m, { sender: "user", text: String(inputValue) }]);
-
-      const singleVarPayload: Variable[] = [{ name: resolvedVarName, value: inputValue }];
-
-      const resp = (await executeStepNode(flowchartId, singleVarPayload, forceAdvanceBP)) as ExecuteResponse;
-
-      setLastResponse(resp);
-      setStepCount((s) => s + 1);
-      setVariablesSent(true);
-
-      const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
-
-      setInputValue("");
-      setInputNodeId(null);
-      setInputVarName(null);
-
-      const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-      const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
-      safeHighlight(currentNodeId);
-
-      const hadOutputs = handleResponseOutputs(resp);
-      if (hadOutputs) {
-        const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
-        const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
-        setPendingHighlightAfterOutput(nextId);
-        // leave expectingInput=false and keep persistent panel visible so user can acknowledge
-        setExpectingInput(false);
-      } else {
-        if (nextType === "IN" || nextType === "INPUT") {
-          const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
-          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
-          setExpectingInput(true);
-        } else {
-          setExpectingInput(false);
-        }
-      }
-
-      if (runAllWaitingForInputRef.current) {
-        try {
-          runAllWaitingForInputRef.current();
-        } catch {
-          /* ignore */
-        }
-        runAllWaitingForInputRef.current = null;
-      }
-    } catch (err) {
-      console.error("submit input error", err);
-      const message = err instanceof Error ? err.message : String(err);
-      setErrorMsg(message);
-    } finally {
+    if (!resolvedVarName) {
+      // debug info for why frontend can't find a var name
+      console.warn("No variable name found for input. lastResponse:", lastResponse, "fetchedVariables:", fetchedVariables, "targetNodeId:", targetNodeId);
+      setErrorMsg("ไม่พบชื่อตัวแปรสำหรับการป้อนข้อมูล — โปรดตรวจสอบ response จาก backend (result.node / result.context / nextNodeId) หรือ node ใน flowchart ว่ามี data.variable / data.name หรือไม่");
       setIsLoading(false);
+      return;
     }
-  };
+
+    // debug: what we're about to send
+    console.log("Submitting input:", { targetNodeId, resolvedVarName, inputValue });
+
+    setChatMessages((m) => [...m, { sender: "user", text: String(inputValue) }]);
+
+    const singleVarPayload: Variable[] = [{ name: resolvedVarName, value: inputValue }];
+
+    const resp = (await executeStepNode(flowchartId, singleVarPayload, forceAdvanceBP)) as ExecuteResponse;
+
+    // save response and update UI state (same as original)
+    setLastResponse(resp);
+    setStepCount((s) => s + 1);
+    setVariablesSent(true);
+
+    const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+
+    setInputValue("");
+    setInputNodeId(null);
+    setInputVarName(null);
+
+    const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+    const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
+    safeHighlight(currentNodeId);
+
+    const hadOutputs = handleResponseOutputs(resp);
+    if (hadOutputs) {
+      const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
+      const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
+      setPendingHighlightAfterOutput(nextId);
+      // leave expectingInput=false and keep persistent panel visible so user can acknowledge
+      setExpectingInput(false);
+    } else {
+      if (nextType === "IN" || nextType === "INPUT") {
+        const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
+        setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
+        setExpectingInput(true);
+      } else {
+        setExpectingInput(false);
+      }
+    }
+
+    if (runAllWaitingForInputRef.current) {
+      try {
+        runAllWaitingForInputRef.current();
+      } catch {
+        /* ignore */
+      }
+      runAllWaitingForInputRef.current = null;
+    }
+  } catch (err) {
+    console.error("submit input error", err);
+    const message = err instanceof Error ? err.message : String(err);
+    setErrorMsg(message);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   const acknowledgeOutputs = () => {
     const pending = pendingHighlightAfterOutput;
