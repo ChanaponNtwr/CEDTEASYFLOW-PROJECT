@@ -5,21 +5,25 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import { useRouter } from "next/navigation";
+import { apiCreateTestcase } from "@/app/service/FlowchartService"; // <-- import API
 
 interface TestCase {
   input: string;
   output: string;
   hiddenInput: string;
   hiddenOutput: string;
-  score: string;
+  score: string | number;
 }
 
-function Createlab() {
+export default function Createlab() {
   const router = useRouter();
 
   const [name, setName] = useState("");
   const [dateline, setDateline] = useState("");
   const [problem, setProblem] = useState("");
+
+  // ใช้ mock labId แบบคงที่ = 2
+  const serverLabId = "2";
 
   const [testCases, setTestCases] = useState<TestCase[]>([
     { input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" },
@@ -33,6 +37,8 @@ function Createlab() {
     if: 0,
     call: 0,
   });
+
+  const [submitting, setSubmitting] = useState(false);
 
   const addTestCase = () => {
     setTestCases([
@@ -66,7 +72,17 @@ function Createlab() {
     router.push("/mylab");
   };
 
-  const handleCreate = () => {
+  // helper: แปลง string -> string[]
+  const parseValues = (raw: string) => {
+    if (!raw) return [];
+    const hasComma = raw.indexOf(",") !== -1;
+    const parts = hasComma ? raw.split(",") : raw.split(/\s+/);
+    return parts.map((s) => s.trim()).filter((s) => s !== "");
+  };
+
+  const handleCreate = async () => {
+    setSubmitting(true);
+
     const newLab = {
       id: Date.now(),
       name,
@@ -77,18 +93,66 @@ function Createlab() {
       createdAt: new Date().toISOString(),
     };
 
-    // อ่านข้อมูลเก่าจาก localStorage
-    const stored = localStorage.getItem("labs");
-    const labs = stored ? JSON.parse(stored) : [];
+    try {
+      // อ่านข้อมูลเก่าจาก localStorage แล้วเซฟ lab ใหม่
+      const stored = localStorage.getItem("labs");
+      const labs = stored ? JSON.parse(stored) : [];
+      labs.push(newLab);
+      localStorage.setItem("labs", JSON.stringify(labs));
 
-    // เพิ่ม lab ใหม่เข้าไป
-    labs.push(newLab);
+      console.log("[Createlab] saved lab to localStorage:", newLab);
+      console.log("[Createlab] all labs in localStorage:", labs);
 
-    // เซฟกลับลง localStorage
-    localStorage.setItem("labs", JSON.stringify(labs));
+      // ส่ง testcases ขึ้น server โดยใช้ serverLabId = 2
+      console.log(`[Createlab] will send ${testCases.length} testcase(s) to server labId=${serverLabId}`);
 
-    // Redirect ไปหน้า MyLabs
-    router.push("/mylab");
+      const promises = testCases.map((tc, idx) => {
+        const payload = {
+          inputVal: parseValues(tc.input),
+          outputVal: parseValues(tc.output),
+          inHiddenVal: parseValues(tc.hiddenInput),
+          outHiddenVal: parseValues(tc.hiddenOutput),
+          score: Number(tc.score) || 0,
+        };
+
+        console.log(`[Createlab] payload for testcase[${idx}] ->`, payload);
+
+        return apiCreateTestcase(serverLabId, {
+          inputVal: payload.inputVal,
+          outputVal: payload.outputVal,
+          score: payload.score,
+          inHiddenVal: payload.inHiddenVal && payload.inHiddenVal.length ? payload.inHiddenVal : null,
+          outHiddenVal: payload.outHiddenVal && payload.outHiddenVal.length ? payload.outHiddenVal : null,
+        })
+          .then((res) => {
+            console.log(`[Createlab] server response for testcase[${idx}] ->`, res);
+            return res;
+          })
+          .catch((err) => {
+            console.error(`[Createlab] server error for testcase[${idx}] ->`, err);
+            throw err;
+          });
+      });
+
+      const results = await Promise.allSettled(promises);
+
+      console.log("[Createlab] all API results ->", results);
+
+      const rejected = results.filter((r) => r.status === "rejected");
+      if (rejected.length > 0) {
+        console.error("Some testcase uploads failed:", rejected);
+        alert("สร้าง Lab สำเร็จ แต่มีบาง Testcase ส่งไป server ไม่สำเร็จ ดู console เพิ่มเติม");
+      } else {
+        alert("สร้าง Lab และส่ง Testcase ขึ้น server เรียบร้อยแล้ว (ดู console log สำหรับรายละเอียด)");
+      }
+
+      router.push("/mylab");
+    } catch (err) {
+      console.error("handleCreate error:", err);
+      alert("เกิดข้อผิดพลาด ข้อมูลอาจจะยังไม่ถูกส่ง กรุณาดู console");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -99,7 +163,6 @@ function Createlab() {
           <Sidebar />
 
           <div className="flex-1 flex flex-col p-6 md:p-10">
-
             {/* ปุ่ม */}
             <div className="flex justify-end space-x-4 mb-6">
               <button
@@ -111,9 +174,10 @@ function Createlab() {
 
               <button
                 onClick={handleCreate}
-                className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center hover:bg-blue-700"
+                disabled={submitting}
+                className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center hover:bg-blue-700 disabled:opacity-60"
               >
-                Create
+                {submitting ? "Creating..." : "Create"}
               </button>
             </div>
 
@@ -123,7 +187,6 @@ function Createlab() {
             </h2>
 
             <div className="flex flex-col md:flex-row gap-6">
-
               {/* LEFT */}
               <div className="flex-1 space-y-6">
                 <div className="flex flex-col md:flex-row gap-4">
@@ -157,6 +220,8 @@ function Createlab() {
                   ></textarea>
                 </div>
 
+                <div className="text-sm text-gray-600">Sending testcases to server with mock labId = 2</div>
+
                 {/* Testcases */}
                 <div>
                   <h3 className="text-lg font-medium mb-4">Create Testcase</h3>
@@ -173,19 +238,18 @@ function Createlab() {
                         ✕
                       </button>
 
-                      <div className="mb-2 font-semibold">
-                        Testcase {idx + 1}
-                      </div>
+                      <div className="mb-2 font-semibold">Testcase {idx + 1}</div>
 
                       <div className="grid grid-cols-12 gap-4 mb-3 ml-5">
                         <div className="col-span-6">
                           <label>Input</label>
                           <input
                             type="text"
-                            value={tc.input}
+                            value={tc.input as string}
                             onChange={(e) =>
                               handleTestCaseChange(idx, "input", e.target.value)
                             }
+                            placeholder='เช่น 10,20,30 หรือ 10 20 30'
                             className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
@@ -194,10 +258,11 @@ function Createlab() {
                           <label>Output</label>
                           <input
                             type="text"
-                            value={tc.output}
+                            value={tc.output as string}
                             onChange={(e) =>
                               handleTestCaseChange(idx, "output", e.target.value)
                             }
+                            placeholder='เช่น 60'
                             className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
@@ -209,7 +274,7 @@ function Createlab() {
                           <label>Hidden Input</label>
                           <input
                             type="text"
-                            value={tc.hiddenInput}
+                            value={tc.hiddenInput as string}
                             onChange={(e) =>
                               handleTestCaseChange(
                                 idx,
@@ -225,7 +290,7 @@ function Createlab() {
                           <label>Hidden Output</label>
                           <input
                             type="text"
-                            value={tc.hiddenOutput}
+                            value={tc.hiddenOutput as string}
                             onChange={(e) =>
                               handleTestCaseChange(
                                 idx,
@@ -242,8 +307,8 @@ function Createlab() {
                         <div className="col-span-6">
                           <label>Score</label>
                           <input
-                            type="text"
-                            value={tc.score}
+                            type="number"
+                            value={tc.score as number | string}
                             onChange={(e) =>
                               handleTestCaseChange(idx, "score", e.target.value)
                             }
@@ -255,10 +320,7 @@ function Createlab() {
                   ))}
 
                   <div className="flex justify-end mt-4">
-                    <button
-                      onClick={addTestCase}
-                      className="text-sm hover:underline"
-                    >
+                    <button onClick={addTestCase} className="text-sm hover:underline">
                       + Add Testcase
                     </button>
                   </div>
@@ -274,5 +336,3 @@ function Createlab() {
     </div>
   );
 }
-
-export default Createlab;
