@@ -1,3 +1,4 @@
+// InputHandler.js (patch)
 export default function InputHandler(node, context, flowchart, options = {}) {
   const varName = node?.data?.variable || node?.data?.name;
   const varTypeRaw = node?.data?.varType;
@@ -17,43 +18,96 @@ export default function InputHandler(node, context, flowchart, options = {}) {
       ? flowchart._inputProvider
       : null;
 
+  // try to get provided value
   let provided;
   if (provider) {
     try {
       provided = provider(node.data.prompt ?? "", varName);
     } catch (e) {
-      console.warn("Input provider threw:", e);
-      provided = node?.data?.default ?? "";
+      // provider explicitly failed => interpret as INPUT MISSING
+      const err = new Error(`Input missing for '${varName}': ${e.message || 'no value provided'}`);
+      err.code = 'INPUT_MISSING';
+      // rethrow so Executor/TestRunner can mark INPUT_MISSING
+      throw err;
     }
   } else {
-    provided = node?.data?.default ?? "";
+    // no provider — use default if exists, otherwise treat as missing
+    if (node?.data?.default !== undefined) {
+      provided = node.data.default;
+    } else {
+      const err = new Error(`Input missing for '${varName}': no input provider and no default`);
+      err.code = 'INPUT_MISSING';
+      throw err;
+    }
+  }
+
+  // Normalize provided (treat null/undefined as missing)
+  if (provided === undefined || provided === null) {
+    const err = new Error(`Input missing for '${varName}': provided value is ${String(provided)}`);
+    err.code = 'INPUT_MISSING';
+    throw err;
   }
 
   // cast according to varType if given (else let Context infer)
   const varType = varTypeRaw ? String(varTypeRaw).toLowerCase() : undefined;
   let inputValue = provided;
   try {
+    // normalize strings by trimming
+    const normalized = (typeof provided === 'string') ? provided.trim() : provided;
+
     switch (varType) {
       case "int":
       case "integer":
+        // Empty string => missing
+        if (normalized === "") {
+          const err = new Error(`Input missing for '${varName}' (empty)`);
+          err.code = 'INPUT_MISSING';
+          throw err;
+        }
+        if (isNaN(Number(normalized))) {
+          throw new Error(`Invalid value for ${varName}: must be integer`);
+        }
+        const intVal = Number(normalized);
+        if (!Number.isInteger(intVal)) throw new Error(`Invalid value for ${varName}: must be integer`);
+        inputValue = intVal;
+        break;
+
       case "number":
-        inputValue = parseInt(provided, 10);
-        if (isNaN(inputValue)) throw new Error(`Variable ${varName} must be integer`);
-        break;
       case "float":
-        inputValue = parseFloat(provided);
-        if (isNaN(inputValue)) throw new Error(`Variable ${varName} must be number`);
+        if (normalized === "") {
+          const err = new Error(`Input missing for '${varName}' (empty)`);
+          err.code = 'INPUT_MISSING';
+          throw err;
+        }
+        const numVal = Number(normalized);
+        if (isNaN(numVal)) throw new Error(`Invalid value for ${varName}: must be number`);
+        inputValue = numVal;
         break;
+
       case "bool":
       case "boolean":
-        inputValue = String(provided).toLowerCase() === "true" || provided === 1 || provided === "1";
+        if (typeof normalized === "boolean") {
+          inputValue = normalized;
+        } else {
+          const lower = String(normalized).toLowerCase();
+          if (["true", "1"].includes(lower)) inputValue = true;
+          else if (["false", "0"].includes(lower)) inputValue = false;
+          else throw new Error(`Invalid value for ${varName}: must be boolean`);
+        }
         break;
+
       case "string":
       default:
-        inputValue = provided === null || provided === undefined ? "" : String(provided);
+        inputValue = String(normalized);
+        break;
     }
   } catch (e) {
-    throw new Error(e.message || `Invalid input for ${varName}`);
+    // if we set err.code earlier (INPUT_MISSING) rethrow
+    if (e && e.code === 'INPUT_MISSING') throw e;
+    // else wrap as INVALID_VALUE (keeps distinct from missing)
+    const err = new Error(e.message || `Invalid input for ${varName}`);
+    err.code = 'INVALID_VALUE';
+    throw err;
   }
 
   context.set(varName, inputValue, varType);
