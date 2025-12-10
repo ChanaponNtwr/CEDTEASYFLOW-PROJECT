@@ -44,7 +44,7 @@ interface TopBarControlsProps {
 }
 
 export default function TopBarControls({
-  flowchartId = 8,
+  flowchartId = 9,
   initialVariables = null,
   forceAdvanceBP = true,
   onHighlightNode,
@@ -824,7 +824,7 @@ export default function TopBarControls({
                     <td className="p-2 border-b border-gray-200">8</td>
                     <td className="p-2 border-b border-gray-200" />
                     <td className="p-2 border-b border-gray-200">
-                      <button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">Test</button>
+                     
                     </td>
                   </tr>
                   <tr>
@@ -833,7 +833,7 @@ export default function TopBarControls({
                     <td className="p-2 border-b border-gray-200">ลอง</td>
                     <td className="p-2 border-b border-gray-200" />
                     <td className="p-2 border-b border-gray-200">
-                      <button className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full hover:bg-yellow-600 transition-colors">Test</button>
+                     
                     </td>
                   </tr>
                 </tbody>
