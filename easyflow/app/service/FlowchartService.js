@@ -114,3 +114,13 @@ export const apiResetFlowchart = async (flowchartId) => {
     throw error;
   }
 };
+
+export const apiCreateTestcase = async (labId, tcPayload) => {
+  try {
+    const resp = await axios.post(`${BASE_URL}/api/testcase/lab/${encodeURIComponent(labId)}/create`, tcPayload);
+    return resp.data;
+  } catch (err) {
+    console.error("apiCreateTestcase error:", err);
+    throw err;
+  }
+};
