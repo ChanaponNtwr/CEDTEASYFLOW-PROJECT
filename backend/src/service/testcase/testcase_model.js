@@ -108,6 +108,21 @@ export default class Testcase {
       comparatorType: this.comparatorType
     };
   }
+
+    hasHidden() {
+    return this.inHiddenVal !== null || this.outHiddenVal !== null;
+  }
+
+  parseHiddenInputs() {
+    if (!this.inHiddenVal) return null;
+    return JSON.parse(this.inHiddenVal);
+  }
+
+  parseHiddenOutputs() {
+    if (!this.outHiddenVal) return null;
+    return JSON.parse(this.outHiddenVal);
+  }
+
 }
 
 // =================== END (เพิ่มเท่านี้) ===================
