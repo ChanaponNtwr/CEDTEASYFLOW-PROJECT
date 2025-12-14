@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { FaPlay, FaStepForward, FaStop } from "react-icons/fa";
-import { executeStepNode, apiGetFlowchart, apiResetFlowchart } from "@/app/service/FlowchartService";
+import { executeStepNode, apiGetFlowchart, apiResetFlowchart, apiRunTestcaseFromFlowchart, apiGetTestcases } from "@/app/service/FlowchartService";
 
 type Variable = { name: string; value: any };
 
@@ -568,13 +568,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
     }
@@ -669,7 +669,7 @@ export default function TopBarControls({
     setPendingHighlightAfterOutput(null);
     try {
       if (outputResumeRef.current) outputResumeRef.current();
-    } catch (e) {}
+    } catch (e) { }
     outputResumeRef.current = null;
     setTimeout(() => safeHighlight(pending ?? null), 80);
   };
@@ -682,7 +682,7 @@ export default function TopBarControls({
     if (runAllWaitingForInputRef.current) {
       try {
         runAllWaitingForInputRef.current();
-      } catch {}
+      } catch { }
       runAllWaitingForInputRef.current = null;
     }
   };
@@ -708,13 +708,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
       runAllActiveRef.current = false;
@@ -744,30 +744,73 @@ export default function TopBarControls({
   // -------------------
   type TestLevel = "error" | "warning" | "info" | "success";
   const [testResults, setTestResults] = useState<Record<string, { level: TestLevel; text: string }[]>>({});
+
   const [runningTests, setRunningTests] = useState(false);
+  const [labTestcases, setLabTestcases] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!flowchartId) return;
+    // Attempt to fetch lab testcases if we can find a labId from flowchart details
+    // Since we already fetch flowchart in another effect, we might want to consolidate or just fetch here again for simplicity, 
+    // or better, store labId when we fetch variables.
+    // For now, let's try to fetch flowchart details to get labId, then testcases.
+
+    let mounted = true;
+    const loadTestcases = async () => {
+      try {
+        // Mockup labId = 2 as requested by user
+        const labId = 2;
+
+        if (labId) {
+          const resp = await apiGetTestcases(labId);
+          console.log("apiGetTestcases response:", resp);
+
+          let tcs = [];
+          if (Array.isArray(resp)) {
+            tcs = resp;
+          } else if (resp && Array.isArray(resp.data)) {
+            tcs = resp.data;
+          } else if (resp && Array.isArray(resp.testcases)) {
+            tcs = resp.testcases;
+          }
+
+          if (mounted) {
+            setLabTestcases(tcs);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load testcases", err);
+      }
+    };
+    loadTestcases();
+    return () => { mounted = false; };
+  }, [flowchartId]);
+
 
   const handleRunTests = async () => {
-    // simulate running tests (replace with real API call as needed)
+    if (!flowchartId) return;
     setRunningTests(true);
     setTestResults({});
 
-    // small delay to simulate
-    await new Promise((r) => setTimeout(r, 350));
+    try {
+      // Call real API
+      const data = await apiRunTestcaseFromFlowchart(flowchartId);
+      console.log("Test run response:", data);
 
-    const results: Record<string, { level: TestLevel; text: string }[]> = {
-      // show multiple badges under each testcase row
-      "1": [
-        { level: "error", text: "Error: Too many FOR nodes (max allowed 2). Remove one to proceed." },
-        { level: "info", text: "Info: Hidden tests exist (2) — their results will not be shown to students." },
-      ],
-      "2": [
-        { level: "warning", text: "Warning: Node n4 ASSIGN has expression with unsupported operator '**'. Consider using c*c or Math.pow(c,2)." },
-        { level: "success", text: "Success: Flowchart is valid." },
-      ],
-    };
+      // TODO: Map backend response to UI format
+      // Expected UI format: Record<string, { level: "error"|"warning"|"info"|"success"; text: string }[]>
+      // Example mapping (adjust based on actual backend response):
+      // if (data.results) setTestResults(data.results);
+      // else setTestResults(data);
 
-    setTestResults(results);
-    setRunningTests(false);
+      if (data && typeof data === "object") {
+        setTestResults(data);
+      }
+    } catch (err) {
+      console.error("Failed to run tests:", err);
+    } finally {
+      setRunningTests(false);
+    }
   };
 
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
@@ -819,13 +862,7 @@ export default function TopBarControls({
     }
   };
 
-  // sample testcases metadata (could be derived from props or API)
-  const sampleTestcases = [
-    { id: "1", label: "y", input: "8", output: "", status: "" },
-    { id: "2", label: "x", input: "ลอง", output: "", status: "" },
-    { id: "3", label: "z", input: "5 6", output: "", status: "" },
-    { id: "4", label: "hidden", input: "-", output: "", status: "" },
-  ];
+
 
   return (
     <div className="absolute z-1 pt-4">
@@ -920,48 +957,125 @@ export default function TopBarControls({
 
             {/* Non-table testcases layout: cards/list */}
             <div className="space-y-3 max-h-96 overflow-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300">
-              {sampleTestcases.map((tc) => (
-                <div key={tc.id} className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <div className="text-xs font-semibold text-gray-600">No {tc.id}</div>
-                        <div className="text-sm font-medium">Testcase: {tc.label}</div>
-                        <div className="ml-2 text-sm text-gray-500">Input: <span className="font-medium text-gray-700">{tc.input}</span></div>
-                      </div>
+              {labTestcases.map((tc, index) => {
+                // Map API fields to UI fields
+                // API: { inputVal: string[], outputVal: string[], inHiddenVal: string[], outHiddenVal: string[], id: ... }
+                // UI expects: id, label, input, output
 
-                      <div className="mt-2 text-sm text-gray-500">Output: <span className="ml-1 text-gray-700">{tc.output || '—'}</span></div>
-                    </div>
+                // If it's a real API object, it might not have 'label' or 'input' as string.
+                // We construct display values.
 
-                    <div className="w-28 text-right">
-                      <div className="text-xs text-gray-400">Status</div>
-                      <div className="mt-2">
-                        {/* summary badge: simplified to only show level word */}
-                        {(testResults[tc.id] ?? []).length === 0 ? (
-                          <div className="inline-block text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200">Not run</div>
-                        ) : (
-                          (() => {
-                            const items = testResults[tc.id] ?? [];
-                            const top = items.find((i) => i.level === 'error') ?? items.find((i) => i.level === 'warning') ?? items.find((i) => i.level === 'info') ?? items.find((i) => i.level === 'success');
-                            return renderSummaryBadge(top?.level ?? null);
-                          })()
+                // Use actual ID if available, else index+1
+                const displayId = tc.testcaseId ?? tc.id ?? String(index + 1);
+
+                // Helper to parse if string or use as is
+                // Helper to parse if string or use as is
+                const parseVal = (val: any): any => {
+                  if (typeof val === "string") {
+                    const trimmed = val.trim();
+                    try {
+                      // Try parsing as JSON
+                      const parsed = JSON.parse(val);
+                      // Recursively parse the result if it was a string or became an object/array
+                      return parseVal(parsed);
+                    } catch {
+                      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                        const content = trimmed.slice(1, -1);
+                        const items = content.split(",").map(part => {
+                          const p = part.trim();
+                          if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+                            return p.slice(1, -1);
+                          }
+                          return p;
+                        });
+                        return parseVal(items);
+                      }
+                      return val;
+                    }
+                  }
+                  if (Array.isArray(val)) {
+                    return val.map(parseVal);
+                  }
+                  return val;
+                };
+
+                const flattenDeep = (arr: any[]): any[] => {
+                  return arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
+                };
+
+                const rawInput = parseVal(tc.inputVal ?? tc.input);
+                const rawOutput = parseVal(tc.outputVal ?? tc.output);
+
+                const format = (v: any) => {
+                  if (Array.isArray(v)) {
+                    return flattenDeep(v).join(", ");
+                  }
+                  return String(v ?? "-");
+                };
+
+                // Join array values for display
+                const inputDisplay = format(rawInput);
+                const outputDisplay = format(rawOutput);
+
+                // If there are hidden inputs/outputs and this is a student view, we might not show them, 
+                // but the requirement says "Show input and output".
+
+                return (
+                  <div key={displayId} className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <div className="text-xs font-semibold text-gray-600">No {displayId}</div>
+                          {/* <div className="text-sm font-medium">Testcase: {tc.label ?? `Test ${displayId}`}</div> */}
+                          <div className="text-sm text-gray-500">Input: <span className="font-medium text-gray-700">{inputDisplay}</span></div>
+
+                        </div>
+
+                        <div className="mt-2 text-sm text-gray-500">Output: <span className="ml-1 text-gray-700">{outputDisplay}</span></div>
+
+                        {/* Optional: Show hidden cases if present and desired */}
+                        {Array.isArray(tc.inHiddenVal) && tc.inHiddenVal.length > 0 && (
+                          <div className="mt-1 text-xs text-gray-400">Hidden Inputs: {tc.inHiddenVal.join(", ")}</div>
                         )}
                       </div>
-                    </div>
-                  </div>
 
-                  {/* expanded messages under card */}
-                  <div className="mt-3 border-t border-gray-200 pt-3">
-                    <div className="flex flex-col">
-                      {(testResults[tc.id] ?? []).map((r, idx) => (
-                        <div key={idx} className="mb-2">
-                          {renderBadge(r, idx)}
+                      <div className="flex gap-4">
+                        <div className="w-16 text-center">
+                          <div className="text-xs text-gray-400">Score</div>
+                          <div className="mt-2 text-sm font-semibold text-blue-600">{tc.score ?? 0}</div>
                         </div>
-                      ))}
+
+                        <div className="w-24 text-right">
+                          <div className="text-xs text-gray-400">Status</div>
+                          <div className="mt-2">
+                            {/* summary badge: simplified to only show level word */}
+                            {(testResults[displayId] ?? []).length === 0 ? (
+                              <div className="inline-block text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200">Not run</div>
+                            ) : (
+                              (() => {
+                                const items = testResults[displayId] ?? [];
+                                const top = items.find((i) => i.level === 'error') ?? items.find((i) => i.level === 'warning') ?? items.find((i) => i.level === 'info') ?? items.find((i) => i.level === 'success');
+                                return renderSummaryBadge(top?.level ?? null);
+                              })()
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* expanded messages under card */}
+                    <div className="mt-3 border-t border-gray-200 pt-3">
+                      <div className="flex flex-col">
+                        {(testResults[displayId] ?? []).map((r, idx) => (
+                          <div key={idx} className="mb-2">
+                            {renderBadge(r, idx)}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="flex items-center justify-end gap-3 mt-4">
@@ -976,7 +1090,8 @@ export default function TopBarControls({
             </div>
           </div>
         </div>
-      )}
-    </div>
+      )
+      }
+    </div >
   );
 }

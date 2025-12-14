@@ -282,6 +282,7 @@ export default function Createlab() {
                                 e.target.value
                               )
                             }
+                            placeholder='เช่น 10,20,30 หรือ 10 20 30'
                             className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
@@ -298,6 +299,7 @@ export default function Createlab() {
                                 e.target.value
                               )
                             }
+                            placeholder='เช่น 60'
                             className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
@@ -312,6 +314,7 @@ export default function Createlab() {
                             onChange={(e) =>
                               handleTestCaseChange(idx, "score", e.target.value)
                             }
+                            placeholder='เช่น 5'
                             className="w-full p-2 border bg-white rounded-md"
                           />
                         </div>
