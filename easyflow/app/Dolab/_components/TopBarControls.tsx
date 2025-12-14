@@ -751,10 +751,6 @@ export default function TopBarControls({
   useEffect(() => {
     if (!flowchartId) return;
     // Attempt to fetch lab testcases if we can find a labId from flowchart details
-    // Since we already fetch flowchart in another effect, we might want to consolidate or just fetch here again for simplicity, 
-    // or better, store labId when we fetch variables.
-    // For now, let's try to fetch flowchart details to get labId, then testcases.
-
     let mounted = true;
     const loadTestcases = async () => {
       try {
@@ -793,19 +789,133 @@ export default function TopBarControls({
     setTestResults({});
 
     try {
-      // Call real API
       const data = await apiRunTestcaseFromFlowchart(flowchartId);
-      console.log("Test run response:", data);
+      console.log("apiRunTestcaseFromFlowchart raw response:", data);
 
-      // TODO: Map backend response to UI format
-      // Expected UI format: Record<string, { level: "error"|"warning"|"info"|"success"; text: string }[]>
-      // Example mapping (adjust based on actual backend response):
-      // if (data.results) setTestResults(data.results);
-      // else setTestResults(data);
+      // รองรับหลายโครงสร้างที่เป็นไปได้
+      const rawResults =
+        data?.session?.results ??
+        data?.results ??
+        data?.data?.results ??
+        data?.testcases ??
+        data?.session?.testcases ??
+        data?.session?.results ??
+        [];
 
-      if (data && typeof data === "object") {
-        setTestResults(data);
+      if (!Array.isArray(rawResults)) {
+        console.warn("runTests: rawResults is not an array", rawResults);
+        setRunningTests(false);
+        return;
       }
+
+      const newResults: Record<string, { level: TestLevel; text: string }[]> = {};
+
+      rawResults.forEach((r: any, idx: number) => {
+        // normalize testcase id (รองรับหลายชื่อตัวแปร)
+        const rawId =
+          r.testcaseId ??
+          r.testcase_id ??
+          r.id ??
+          r.tcId ??
+          r.testcase?.id ??
+          r.testcase?.testcaseId ??
+          (typeof r === "object" && r?.inputVal ? idx + 1 : undefined);
+
+        const tcId = String(rawId ?? idx + 1);
+
+        // normalize status (รองรับ string / object / number / nested)
+        let statusRaw =
+          r.status ??
+          r.result?.status ??
+          r.statusCode ??
+          r.status_code ??
+          r.state ??
+          r.outcome ??
+          r.verdict ??
+          r.status?.name ??
+          r.status?.code ??
+          null;
+
+        let status = "UNKNOWN";
+        if (statusRaw === null || typeof statusRaw === "undefined") {
+          status = "UNKNOWN";
+        } else if (typeof statusRaw === "string" || typeof statusRaw === "number") {
+          status = String(statusRaw).toUpperCase();
+        } else if (typeof statusRaw === "object") {
+          status = (statusRaw.name ?? statusRaw.code ?? JSON.stringify(statusRaw)).toString().toUpperCase();
+        }
+
+        // normalize error / message fields
+        const errorMessage =
+          r.errorMessage ??
+          r.error_message ??
+          r.error ??
+          (typeof r.error === "object" ? r.error?.message ?? JSON.stringify(r.error) : undefined) ??
+          r.message ??
+          r.msg ??
+          (Array.isArray(r.errors) ? r.errors.join("; ") : undefined) ??
+          null;
+
+        // expected / actual (เพื่อแสดงรายละเอียด)
+        const expected =
+          r.expected ??
+          r.expectedVal ??
+          r.expected_val ??
+          r.expectedOutput ??
+          r.expected_output ??
+          r.expectedResult ??
+          r.expected_result ??
+          r.expected?.output ??
+          null;
+        const actual =
+          r.actual ??
+          r.actualVal ??
+          r.actual_val ??
+          r.output ??
+          r.outputVal ??
+          r.output_val ??
+          r.resultOutput ??
+          r.result_output ??
+          null;
+
+        // Decide level
+        let level: TestLevel = "info";
+        if (["PASS", "PASSED", "OK", "SUCCESS"].includes(status)) level = "success";
+        else if (["FAIL", "FAILED", "ERROR", "INPUT_MISSING", "TIMEOUT", "WRONG"].includes(status)) level = "error";
+        else if (["WARN", "WARNING"].includes(status)) level = "warning";
+
+        const messages: { level: TestLevel; text: string }[] = [];
+
+        messages.push({ level, text: `Status: ${status}` });
+
+        if (errorMessage) {
+          messages.push({ level: "error", text: String(errorMessage) });
+        }
+
+        // If expected/actual exist, show them
+        if (expected !== null && typeof expected !== "undefined") {
+          try {
+            const eStr = Array.isArray(expected) ? expected.join(", ") : String(expected);
+            messages.push({ level: "info", text: `Expected: ${eStr}` });
+          } catch {
+            messages.push({ level: "info", text: `Expected: ${String(expected)}` });
+          }
+        }
+        if (actual !== null && typeof actual !== "undefined") {
+          try {
+            const aStr = Array.isArray(actual) ? actual.join(", ") : String(actual);
+            messages.push({ level: "info", text: `Actual: ${aStr}` });
+          } catch {
+            messages.push({ level: "info", text: `Actual: ${String(actual)}` });
+          }
+        }
+
+        // store mapped result
+        newResults[tcId] = messages;
+      });
+
+      console.log("Mapped test results:", newResults);
+      setTestResults(newResults);
     } catch (err) {
       console.error("Failed to run tests:", err);
     } finally {
@@ -862,7 +972,37 @@ export default function TopBarControls({
     }
   };
 
+  // helper parse helpers used in render
+  const parseVal = (val: any): any => {
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      try {
+        const parsed = JSON.parse(val);
+        return parseVal(parsed);
+      } catch {
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+          const content = trimmed.slice(1, -1);
+          const items = content.split(",").map(part => {
+            const p = part.trim();
+            if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+              return p.slice(1, -1);
+            }
+            return p;
+          });
+          return parseVal(items);
+        }
+        return val;
+      }
+    }
+    if (Array.isArray(val)) {
+      return val.map(parseVal);
+    }
+    return val;
+  };
 
+  const flattenDeep = (arr: any[]): any[] => {
+    return arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
+  };
 
   return (
     <div className="absolute z-1 pt-4">
@@ -959,52 +1099,12 @@ export default function TopBarControls({
             <div className="space-y-3 max-h-96 overflow-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300">
               {labTestcases.map((tc, index) => {
                 // Map API fields to UI fields
-                // API: { inputVal: string[], outputVal: string[], inHiddenVal: string[], outHiddenVal: string[], id: ... }
-                // UI expects: id, label, input, output
+                // Normalize ID to match what handleRunTests sets in testResults
+                const displayId = String(tc.testcaseId ?? tc.testcase_id ?? tc.id ?? tc.tcId ?? (index + 1));
 
-                // If it's a real API object, it might not have 'label' or 'input' as string.
-                // We construct display values.
-
-                // Use actual ID if available, else index+1
-                const displayId = tc.testcaseId ?? tc.id ?? String(index + 1);
-
-                // Helper to parse if string or use as is
-                // Helper to parse if string or use as is
-                const parseVal = (val: any): any => {
-                  if (typeof val === "string") {
-                    const trimmed = val.trim();
-                    try {
-                      // Try parsing as JSON
-                      const parsed = JSON.parse(val);
-                      // Recursively parse the result if it was a string or became an object/array
-                      return parseVal(parsed);
-                    } catch {
-                      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-                        const content = trimmed.slice(1, -1);
-                        const items = content.split(",").map(part => {
-                          const p = part.trim();
-                          if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
-                            return p.slice(1, -1);
-                          }
-                          return p;
-                        });
-                        return parseVal(items);
-                      }
-                      return val;
-                    }
-                  }
-                  if (Array.isArray(val)) {
-                    return val.map(parseVal);
-                  }
-                  return val;
-                };
-
-                const flattenDeep = (arr: any[]): any[] => {
-                  return arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
-                };
-
-                const rawInput = parseVal(tc.inputVal ?? tc.input);
-                const rawOutput = parseVal(tc.outputVal ?? tc.output);
+                // parse input/output values for display
+                const rawInput = parseVal(tc.inputVal ?? tc.input ?? tc.in ?? tc.input_values ?? []);
+                const rawOutput = parseVal(tc.outputVal ?? tc.output ?? tc.out ?? tc.output_values ?? []);
 
                 const format = (v: any) => {
                   if (Array.isArray(v)) {
@@ -1013,12 +1113,8 @@ export default function TopBarControls({
                   return String(v ?? "-");
                 };
 
-                // Join array values for display
                 const inputDisplay = format(rawInput);
                 const outputDisplay = format(rawOutput);
-
-                // If there are hidden inputs/outputs and this is a student view, we might not show them, 
-                // but the requirement says "Show input and output".
 
                 return (
                   <div key={displayId} className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm">
@@ -1026,14 +1122,11 @@ export default function TopBarControls({
                       <div className="flex-1">
                         <div className="flex items-center gap-3">
                           <div className="text-xs font-semibold text-gray-600">No {displayId}</div>
-                          {/* <div className="text-sm font-medium">Testcase: {tc.label ?? `Test ${displayId}`}</div> */}
                           <div className="text-sm text-gray-500">Input: <span className="font-medium text-gray-700">{inputDisplay}</span></div>
-
                         </div>
 
                         <div className="mt-2 text-sm text-gray-500">Output: <span className="ml-1 text-gray-700">{outputDisplay}</span></div>
 
-                        {/* Optional: Show hidden cases if present and desired */}
                         {Array.isArray(tc.inHiddenVal) && tc.inHiddenVal.length > 0 && (
                           <div className="mt-1 text-xs text-gray-400">Hidden Inputs: {tc.inHiddenVal.join(", ")}</div>
                         )}
@@ -1048,7 +1141,6 @@ export default function TopBarControls({
                         <div className="w-24 text-right">
                           <div className="text-xs text-gray-400">Status</div>
                           <div className="mt-2">
-                            {/* summary badge: simplified to only show level word */}
                             {(testResults[displayId] ?? []).length === 0 ? (
                               <div className="inline-block text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200">Not run</div>
                             ) : (
