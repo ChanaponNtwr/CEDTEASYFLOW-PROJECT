@@ -580,89 +580,89 @@ export default function TopBarControls({
     }
   };
 
-const handleSubmitInput = async () => {
-  if (!expectingInput) return;
-  setIsLoading(true);
-  setErrorMsg(null);
+  // --- Input submit (unchanged) ---
+  const handleSubmitInput = async () => {
+    if (!expectingInput) return;
+    setIsLoading(true);
+    setErrorMsg(null);
 
-  try {
-    // current vars from response / context / fetched flowchart vars
-    let currentVars: Variable[] = lastResponse?.result?.node?.variables ?? lastResponse?.result?.context?.variables ?? fetchedVariables ?? [];
+    try {
+      // current vars from response / context / fetched flowchart vars
+      let currentVars: Variable[] = lastResponse?.result?.node?.variables ?? lastResponse?.result?.context?.variables ?? fetchedVariables ?? [];
 
-    // determine node id to try to resolve var name from
-    const targetNodeIdRaw = inputNodeId ?? lastResponse?.nextNodeId ?? null;
-    const targetNodeId = targetNodeIdRaw !== null && typeof targetNodeIdRaw !== "undefined" ? String(targetNodeIdRaw) : null;
+      // determine node id to try to resolve var name from
+      const targetNodeIdRaw = inputNodeId ?? lastResponse?.nextNodeId ?? null;
+      const targetNodeId = targetNodeIdRaw !== null && typeof targetNodeIdRaw !== "undefined" ? String(targetNodeIdRaw) : null;
 
-    // Try to resolve variable name from several places (inputVarName -> flowchart -> currentVars)
-    const resolvedFromFlow = await getFirstVarNameForNode(targetNodeId);
-    const resolvedVarName = inputVarName ?? resolvedFromFlow ?? currentVars[0]?.name ?? null;
+      // Try to resolve variable name from several places (inputVarName -> flowchart -> currentVars)
+      const resolvedFromFlow = await getFirstVarNameForNode(targetNodeId);
+      const resolvedVarName = inputVarName ?? resolvedFromFlow ?? currentVars[0]?.name ?? null;
 
-    if (!resolvedVarName) {
-      // debug info for why frontend can't find a var name
-      console.warn("No variable name found for input. lastResponse:", lastResponse, "fetchedVariables:", fetchedVariables, "targetNodeId:", targetNodeId);
-      setErrorMsg("ไม่พบชื่อตัวแปรสำหรับการป้อนข้อมูล — โปรดตรวจสอบ response จาก backend (result.node / result.context / nextNodeId) หรือ node ใน flowchart ว่ามี data.variable / data.name หรือไม่");
-      setIsLoading(false);
-      return;
-    }
+      if (!resolvedVarName) {
+        // debug info for why frontend can't find a var name
+        console.warn("No variable name found for input. lastResponse:", lastResponse, "fetchedVariables:", fetchedVariables, "targetNodeId:", targetNodeId);
+        setErrorMsg("ไม่พบชื่อตัวแปรสำหรับการป้อนข้อมูล — โปรดตรวจสอบ response จาก backend (result.node / result.context / nextNodeId) หรือ node ใน flowchart ว่ามี data.variable / data.name หรือไม่");
+        setIsLoading(false);
+        return;
+      }
 
-    // debug: what we're about to send
-    console.log("Submitting input:", { targetNodeId, resolvedVarName, inputValue });
+      // debug: what we're about to send
+      console.log("Submitting input:", { targetNodeId, resolvedVarName, inputValue });
 
-    setChatMessages((m) => [...m, { sender: "user", text: String(inputValue) }]);
+      setChatMessages((m) => [...m, { sender: "user", text: String(inputValue) }]);
 
-    const singleVarPayload: Variable[] = [{ name: resolvedVarName, value: inputValue }];
+      const singleVarPayload: Variable[] = [{ name: resolvedVarName, value: inputValue }];
 
-    const resp = (await executeStepNode(flowchartId, singleVarPayload, forceAdvanceBP)) as ExecuteResponse;
+      const resp = (await executeStepNode(flowchartId, singleVarPayload, forceAdvanceBP)) as ExecuteResponse;
 
-    // save response and update UI state (same as original)
-    setLastResponse(resp);
-    setStepCount((s) => s + 1);
-    setVariablesSent(true);
+      // save response and update UI state (same as original)
+      setLastResponse(resp);
+      setStepCount((s) => s + 1);
+      setVariablesSent(true);
 
-    const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
+      const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
 
-    setInputValue("");
-    setInputNodeId(null);
-    setInputVarName(null);
+      setInputValue("");
+      setInputNodeId(null);
+      setInputVarName(null);
 
-    const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-    const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
-    safeHighlight(currentNodeId);
+      const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+      const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
+      safeHighlight(currentNodeId);
 
-    const hadOutputs = handleResponseOutputs(resp);
-    if (hadOutputs) {
-      const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
-      const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
-      setPendingHighlightAfterOutput(nextId);
-      // leave expectingInput=false and keep persistent panel visible so user can acknowledge
-      setExpectingInput(false);
-    } else {
-      if (nextType === "IN" || nextType === "INPUT") {
-        const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
-        setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
-        setExpectingInput(true);
-      } else {
+      const hadOutputs = handleResponseOutputs(resp);
+      if (hadOutputs) {
+        const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
+        const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
+        setPendingHighlightAfterOutput(nextId);
+        // leave expectingInput=false and keep persistent panel visible so user can acknowledge
         setExpectingInput(false);
+      } else {
+        if (nextType === "IN" || nextType === "INPUT") {
+          const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
+          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
+          setExpectingInput(true);
+        } else {
+          setExpectingInput(false);
+        }
       }
-    }
 
-    if (runAllWaitingForInputRef.current) {
-      try {
-        runAllWaitingForInputRef.current();
-      } catch {
-        /* ignore */
+      if (runAllWaitingForInputRef.current) {
+        try {
+          runAllWaitingForInputRef.current();
+        } catch {
+          /* ignore */
+        }
+        runAllWaitingForInputRef.current = null;
       }
-      runAllWaitingForInputRef.current = null;
+    } catch (err) {
+      console.error("submit input error", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(message);
+    } finally {
+      setIsLoading(false);
     }
-  } catch (err) {
-    console.error("submit input error", err);
-    const message = err instanceof Error ? err.message : String(err);
-    setErrorMsg(message);
-  } finally {
-    setIsLoading(false);
-  }
-};
-
+  };
 
   const acknowledgeOutputs = () => {
     const pending = pendingHighlightAfterOutput;
@@ -739,6 +739,94 @@ const handleSubmitInput = async () => {
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [chatMessages]);
 
+  // -------------------
+  // New: test UI state & handler
+  // -------------------
+  type TestLevel = "error" | "warning" | "info" | "success";
+  const [testResults, setTestResults] = useState<Record<string, { level: TestLevel; text: string }[]>>({});
+  const [runningTests, setRunningTests] = useState(false);
+
+  const handleRunTests = async () => {
+    // simulate running tests (replace with real API call as needed)
+    setRunningTests(true);
+    setTestResults({});
+
+    // small delay to simulate
+    await new Promise((r) => setTimeout(r, 350));
+
+    const results: Record<string, { level: TestLevel; text: string }[]> = {
+      // show multiple badges under each testcase row
+      "1": [
+        { level: "error", text: "Error: Too many FOR nodes (max allowed 2). Remove one to proceed." },
+        { level: "info", text: "Info: Hidden tests exist (2) — their results will not be shown to students." },
+      ],
+      "2": [
+        { level: "warning", text: "Warning: Node n4 ASSIGN has expression with unsupported operator '**'. Consider using c*c or Math.pow(c,2)." },
+        { level: "success", text: "Success: Flowchart is valid." },
+      ],
+    };
+
+    setTestResults(results);
+    setRunningTests(false);
+  };
+
+  const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
+    const base = "inline-block text-xs px-2 py-1 rounded-md mb-2";
+    switch (r.level) {
+      case "error":
+        return (
+          <div key={idx} className={`${base} bg-red-100 text-red-800 border border-red-200`}>
+            {r.text}
+          </div>
+        );
+      case "warning":
+        return (
+          <div key={idx} className={`${base} bg-yellow-100 text-yellow-800 border border-yellow-200`}>
+            {r.text}
+          </div>
+        );
+      case "info":
+        return (
+          <div key={idx} className={`${base} bg-blue-100 text-blue-800 border border-blue-200`}>
+            {r.text}
+          </div>
+        );
+      case "success":
+        return (
+          <div key={idx} className={`${base} bg-green-100 text-green-800 border border-green-200`}>
+            {r.text}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // New: compact summary badge that shows only the level word
+  const renderSummaryBadge = (level?: TestLevel | null) => {
+    const base = "inline-block text-xs px-2 py-1 rounded-md font-semibold";
+    switch (level) {
+      case "error":
+        return <div className={`${base} bg-red-100 text-red-800 border border-red-200`}>Error</div>;
+      case "warning":
+        return <div className={`${base} bg-yellow-100 text-yellow-800 border border-yellow-200`}>Warning</div>;
+      case "info":
+        return <div className={`${base} bg-blue-100 text-blue-800 border border-blue-200`}>Info</div>;
+      case "success":
+        return <div className={`${base} bg-green-100 text-green-800 border border-green-200`}>Success</div>;
+      default:
+        return null;
+    }
+  };
+
+  // sample testcases metadata (could be derived from props or API)
+  const sampleTestcases = [
+    { id: "1", label: "y", input: "8", output: "", status: "" },
+    { id: "2", label: "x", input: "ลอง", output: "", status: "" },
+    { id: "3", label: "z", input: "5 6", output: "", status: "" },
+    { id: "4", label: "hidden", input: "-", output: "", status: "" },
+  ];
+
   return (
     <div className="absolute z-1 pt-4">
       {/* Control bar */}
@@ -747,12 +835,16 @@ const handleSubmitInput = async () => {
           <FaPlay />
         </button>
         <button onClick={handleStep} disabled={isLoading || done} title={done ? "Finished" : "Step"} className={`text-yellow-600 text-lg p-2 rounded-full transition-colors ${isLoading ? "opacity-50 cursor-not-allowed" : "hover:text-yellow-700 hover:bg-yellow-100"} ${done ? "opacity-40 cursor-not-allowed" : ""}`}>
-          <span className={`${isLoading ? "animate-pulse" : ""}`}><FaStepForward /></span>
+          <span className={`${isLoading ? "animate-pulse" : ""}`}>
+            <FaStepForward />
+          </span>
         </button>
         <button onClick={resetFlowchart} className="text-gray-600 hover:text-gray-700 text-lg p-2 rounded-full hover:bg-gray-100 transition-colors">
           <FaStop />
         </button>
-        <span onClick={togglePopup} className="ml-2 px-3 py-1 bg-blue-200 text-blue-800 text-sm font-semibold rounded-lg cursor-pointer hover:bg-blue-300 transition-colors select-none">Problem solving</span>
+        <span onClick={togglePopup} className="ml-2 px-3 py-1 bg-blue-200 text-blue-800 text-sm font-semibold rounded-lg cursor-pointer hover:bg-blue-300 transition-colors select-none">
+          Problem solving
+        </span>
       </div>
 
       {/* Persistent single chat panel (always visible) */}
@@ -763,9 +855,7 @@ const handleSubmitInput = async () => {
         </div>
 
         <div ref={chatRef} className="p-3 overflow-auto bg-gray-50" style={{ maxHeight: 260 }}>
-          {chatMessages.length === 0 && (
-            <div className="text-sm text-gray-400">ระบบพร้อม — กด Step หรือ Run เพื่อเริ่ม</div>
-          )}
+          {chatMessages.length === 0 && <div className="text-sm text-gray-400">ระบบพร้อม — กด Step หรือ Run เพื่อเริ่ม</div>}
           {chatMessages.map((m, i) => (
             <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[78%] px-3 py-2 rounded-lg whitespace-pre-wrap ${m.sender === "user" ? "bg-blue-600 text-white rounded-br-sm" : "bg-gray-200 text-gray-800 rounded-bl-sm"}`}>
@@ -779,32 +869,40 @@ const handleSubmitInput = async () => {
           {expectingInput ? (
             <div className="flex gap-2">
               {/* เปลี่ยนเป็น text + inputMode เพื่อเลี่ยง spinner */}
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={inputValue}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    // เอาเฉพาะตัวเลข จุดทศนิยม และลบ (ปรับตามต้องการ)
-                    const cleaned = raw.replace(/[^\d.-]/g, "");
-                    setInputValue(cleaned === "" ? "" : Number(cleaned));
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSubmitInput();
-                  }}
-                  className="flex-1 border border-gray-300 rounded px-3 py-2"
-                  placeholder="พิมพ์ค่าที่ต้องการส่ง..."
-                />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={inputValue}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  // เอาเฉพาะตัวเลข จุดทศนิยม และลบ (ปรับตามต้องการ)
+                  const cleaned = raw.replace(/[^\d.-]/g, "");
+                  setInputValue(cleaned === "" ? "" : Number(cleaned));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSubmitInput();
+                }}
+                className="flex-1 border border-gray-300 rounded px-3 py-2"
+                placeholder="พิมพ์ค่าที่ต้องการส่ง..."
+              />
 
-              <button onClick={handleSubmitInput} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">ส่ง</button>
-              <button onClick={cancelInput} className="bg-gray-200 text-gray-800 px-3 py-2 rounded hover:bg-gray-300">ยกเลิก</button>
+              <button onClick={handleSubmitInput} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                ส่ง
+              </button>
+              <button onClick={cancelInput} className="bg-gray-200 text-gray-800 px-3 py-2 rounded hover:bg-gray-300">
+                ยกเลิก
+              </button>
             </div>
           ) : (
             <div className="flex justify-between items-center gap-2">
               <div className="text-sm text-gray-500">ไม่มีข้อความที่ต้องการการป้อนข้อมูล</div>
               <div className="flex gap-2">
-                <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">Clear</button>
-                <button onClick={acknowledgeOutputs} className="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700">Acknowledge</button>
+                <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
+                  Clear
+                </button>
+                <button onClick={acknowledgeOutputs} className="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700">
+                  Acknowledge
+                </button>
               </div>
             </div>
           )}
@@ -812,47 +910,70 @@ const handleSubmitInput = async () => {
       </div>
 
       {showPopup && (
-        <div className="absolute z-50 w-96 h-80 rounded-xl bg-white p-3 shadow-xl border border-gray-200 ml-20 mt-3 transform translate-x-[-10%] animate-fadeIn">
-          <div className="relative w-full h-full">
-            <div className="text-gray-800 text-sm font-medium font-['Sarabun'] leading-snug mb-6">
+        <div className="absolute z-50 w-120 h-auto rounded-xl bg-white p-4 shadow-xl border border-gray-200 ml-20 mt-3 transform translate-x-[-10%] animate-fadeIn">
+          <div className="relative w-full">
+            <div className="text-gray-800 text-sm font-medium font-['Sarabun'] leading-snug mb-4">
               จงเขียนโปรแกรม เพื่อคํานวณหาพื้นที่ของสามเหลี่ยม <br />
               Area = 1⁄2 x ฐาน x สูง โดยมีข้อมูลเข้า (Input) <br />
               จากคีย์บอร์ด คือ ค่าของฐานของสามเหลี่ยม (b: Base) และค่าความสูงของสามเหลี่ยม (h: Height)
             </div>
-            <div className="mt-6">
-              <table className="w-full text-sm font-['Sarabun'] border-collapse">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="p-2 text-left border-b border-gray-300">No</th>
-                    <th className="p-2 text-left border-b border-gray-300">Testcase</th>
-                    <th className="p-2 text-left border-b border-gray-300">Input</th>
-                    <th className="p-2 text-left border-b border-gray-300">Output</th>
-                    <th className="p-2 text-left border-b border-gray-300">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="p-2 border-b border-gray-200">1</td>
-                    <td className="p-2 border-b border-gray-200">y</td>
-                    <td className="p-2 border-b border-gray-200">8</td>
-                    <td className="p-2 border-b border-gray-200" />
-                    <td className="p-2 border-b border-gray-200">
-                     
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="p-2 border-b border-gray-200">2</td>
-                    <td className="p-2 border-b border-gray-200">x</td>
-                    <td className="p-2 border-b border-gray-200">ลอง</td>
-                    <td className="p-2 border-b border-gray-200" />
-                    <td className="p-2 border-b border-gray-200">
-                     
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+
+            {/* Non-table testcases layout: cards/list */}
+            <div className="space-y-3 max-h-96 overflow-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300">
+              {sampleTestcases.map((tc) => (
+                <div key={tc.id} className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <div className="text-xs font-semibold text-gray-600">No {tc.id}</div>
+                        <div className="text-sm font-medium">Testcase: {tc.label}</div>
+                        <div className="ml-2 text-sm text-gray-500">Input: <span className="font-medium text-gray-700">{tc.input}</span></div>
+                      </div>
+
+                      <div className="mt-2 text-sm text-gray-500">Output: <span className="ml-1 text-gray-700">{tc.output || '—'}</span></div>
+                    </div>
+
+                    <div className="w-28 text-right">
+                      <div className="text-xs text-gray-400">Status</div>
+                      <div className="mt-2">
+                        {/* summary badge: simplified to only show level word */}
+                        {(testResults[tc.id] ?? []).length === 0 ? (
+                          <div className="inline-block text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200">Not run</div>
+                        ) : (
+                          (() => {
+                            const items = testResults[tc.id] ?? [];
+                            const top = items.find((i) => i.level === 'error') ?? items.find((i) => i.level === 'warning') ?? items.find((i) => i.level === 'info') ?? items.find((i) => i.level === 'success');
+                            return renderSummaryBadge(top?.level ?? null);
+                          })()
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* expanded messages under card */}
+                  <div className="mt-3 border-t border-gray-200 pt-3">
+                    <div className="flex flex-col">
+                      {(testResults[tc.id] ?? []).map((r, idx) => (
+                        <div key={idx} className="mb-2">
+                          {renderBadge(r, idx)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <button className="mt-6 bg-blue-900 text-white text-sm px-6 py-2 rounded-full hover:bg-blue-800 transition-colors absolute bottom-4 right-6">Submit</button>
+
+            <div className="flex items-center justify-end gap-3 mt-4">
+              <button
+                onClick={handleRunTests}
+                disabled={runningTests}
+                className={`text-sm px-6 py-2 rounded-full ${runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600"}`}>
+                {runningTests ? "Testing..." : "Test"}
+              </button>
+
+              <button className="mt-0 bg-blue-900 text-white text-sm px-6 py-2 rounded-full hover:bg-blue-800 transition-colors">Submit</button>
+            </div>
           </div>
         </div>
       )}
