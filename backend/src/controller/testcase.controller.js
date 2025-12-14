@@ -5,9 +5,7 @@ import { TestRunner } from "../service/testcase/index.js";
 import Executor from "../service/flowchart/classexecutor.js";
 import TestcaseRepository from "../service/testcase/testcaseRepository.js";
 import Testcase from "../service/testcase/testcase_model.js";
-import { hydrateFlowchart } from "../controller/flowchart.controller.js";
-
-
+import { hydrateFlowchart } from "./flowchart.controller.js";
 
 const prisma = new PrismaClient();
 
@@ -17,11 +15,9 @@ function executorFactory(flowchart, opts = {}) {
 }
 
 // create repo + runner singletons
-const repo = new TestcaseRepository(); // ✅ use real repo
-const runner = new TestRunner({ executorFactory, repo }); // ✅ pass repo
+const repo = new TestcaseRepository();
+const runner = new TestRunner({ executorFactory, repo });
 
-// -----------------------
-// Helper utilities
 // -----------------------
 function normalizeToJSONString(v) {
   if (typeof v === "string") return v;
@@ -77,10 +73,9 @@ async function saveSubmissionSafe({ userId, labId, testcaseId, status }) {
 }
 
 // -----------------------
-// Handlers (exported)
+// Handlers
 // -----------------------
 
-// GET /api/flowchart/:flowchartId
 export async function getFlowchartHandler(req, res) {
   try {
     const { flowchartId } = req.params;
@@ -96,7 +91,6 @@ export async function getFlowchartHandler(req, res) {
   }
 }
 
-// GET /api/testcase/lab/:labId
 export async function getTestcasesByLabHandler(req, res) {
   try {
     const { labId } = req.params;
@@ -110,7 +104,6 @@ export async function getTestcasesByLabHandler(req, res) {
   }
 }
 
-// POST /api/testcase/lab/:labId
 export async function createTestcaseHandler(req, res) {
   try {
     const { labId } = req.params;
@@ -125,8 +118,8 @@ export async function createTestcaseHandler(req, res) {
         labId: Number(labId),
         inputVal: normalizeToJSONString(body.inputVal),
         outputVal: normalizeToJSONString(body.outputVal),
-        inHiddenVal: body.inHiddenVal ?? null,
-        outHiddenVal: body.outHiddenVal ?? null,
+        inHiddenVal: body.inHiddenVal !== undefined ? normalizeToJSONString(body.inHiddenVal) : null,
+        outHiddenVal: body.outHiddenVal !== undefined ? normalizeToJSONString(body.outHiddenVal) : null,
         score: Number(body.score || 0),
       },
     });
@@ -138,7 +131,6 @@ export async function createTestcaseHandler(req, res) {
   }
 }
 
-// PUT /api/testcase/:testcaseId
 export async function updateTestcaseHandler(req, res) {
   try {
     const { testcaseId } = req.params;
@@ -150,8 +142,8 @@ export async function updateTestcaseHandler(req, res) {
       data: {
         inputVal: body.inputVal !== undefined ? normalizeToJSONString(body.inputVal) : undefined,
         outputVal: body.outputVal !== undefined ? normalizeToJSONString(body.outputVal) : undefined,
-        inHiddenVal: body.inHiddenVal !== undefined ? body.inHiddenVal : undefined,
-        outHiddenVal: body.outHiddenVal !== undefined ? body.outHiddenVal : undefined,
+        inHiddenVal: body.inHiddenVal !== undefined ? (typeof body.inHiddenVal === 'string' ? body.inHiddenVal : normalizeToJSONString(body.inHiddenVal)) : undefined,
+        outHiddenVal: body.outHiddenVal !== undefined ? (typeof body.outHiddenVal === 'string' ? body.outHiddenVal : normalizeToJSONString(body.outHiddenVal)) : undefined,
         score: body.score !== undefined ? Number(body.score) : undefined,
       },
     });
@@ -163,37 +155,59 @@ export async function updateTestcaseHandler(req, res) {
   }
 }
 
-// DELETE /api/testcase/:testcaseId
 export async function deleteTestcaseHandler(req, res) {
   try {
     const { testcaseId } = req.params;
-    if (!testcaseId) return res.status(400).json({ ok: false, message: "testcaseId required" });
+    if (!testcaseId) {
+      return res.status(400).json({ ok: false, message: "testcaseId required" });
+    }
 
-    await prisma.testcase.delete({ where: { testcaseId: Number(testcaseId) } });
-    return res.json({ ok: true, message: "deleted" });
+    const id = Number(testcaseId);
+
+    // 1) ลบ submission ที่อ้าง testcase นี้ก่อน
+    await prisma.submission.deleteMany({
+      where: { testcaseId: id },
+    });
+
+    // 2) ค่อยลบ testcase
+    await prisma.testcase.delete({
+      where: { testcaseId: id },
+    });
+
+    return res.json({ ok: true, message: "Testcase and related submissions deleted" });
   } catch (err) {
     console.error("deleteTestcaseHandler error:", err);
-    return res.status(500).json({ ok: false, message: err.message || String(err) });
+    return res.status(500).json({
+      ok: false,
+      message: err.message || String(err),
+    });
   }
 }
 
-// POST /api/testcase/runBatch
+
+// POST /api/testcase/run/batch
+// body: { flowchart, testcases: [ { inputVal, outputVal, inHiddenVal?, outHiddenVal?, score?, comparatorType? } ], userId? }
 export async function runBatchHandler(req, res) {
   try {
     const { flowchart, testcases = [], userId = null } = req.body || {};
-    if (!flowchart) return res.status(400).json({ ok: false, message: "flowchart object required" });
+    if (!flowchart) return res.status(400).json({ ok: false, message: "flowchart object is required" });
     if (!Array.isArray(testcases) || testcases.length === 0) return res.status(400).json({ ok: false, message: "testcases array required" });
 
-    const tcList = testcases.map((t, idx) => ({
+    // Convert plain objects to Testcase instances (ensure hidden fields are included)
+    const tcInstances = testcases.map((t = {}, idx) => new Testcase({
       testcaseId: t.testcaseId ?? null,
       labId: t.labId ?? null,
-      inputVal: typeof t.inputVal === "string" ? t.inputVal : normalizeToJSONString(t.inputVal),
-      outputVal: typeof t.outputVal === "string" ? t.outputVal : normalizeToJSONString(t.outputVal),
+      title: t.title || `tc_${idx+1}`,
+      inputVal: typeof t.inputVal === 'string' ? t.inputVal : normalizeToJSONString(t.inputVal || []),
+      outputVal: typeof t.outputVal === 'string' ? t.outputVal : normalizeToJSONString(t.outputVal || []),
+      inHiddenVal: t.inHiddenVal !== undefined ? (typeof t.inHiddenVal === 'string' ? t.inHiddenVal : normalizeToJSONString(t.inHiddenVal)) : null,
+      outHiddenVal: t.outHiddenVal !== undefined ? (typeof t.outHiddenVal === 'string' ? t.outHiddenVal : normalizeToJSONString(t.outHiddenVal)) : null,
       score: Number(t.score || 0),
-      comparatorType: t.comparatorType || "exact",
+      comparatorType: t.comparatorType || 'exact',
+      isHidden: !!t.isHidden
     }));
 
-    const session = await runner.runBatch(flowchart, tcList, userId);
+    const session = await runner.runBatch(flowchart, tcInstances, userId);
     return res.json({ ok: true, session: session.toSummary ? session.toSummary(true) : session });
   } catch (err) {
     console.error("runBatchHandler error:", err);
@@ -201,107 +215,72 @@ export async function runBatchHandler(req, res) {
   }
 }
 
-// POST /api/testcase/runFromFlowchart/:flowchartId
+
+// POST /api/testcase/run/from-flowchart/:flowchartId
 export async function runFromFlowchartHandler(req, res) {
   try {
     const { flowchartId } = req.params;
     const { testcases = null, userId = null } = req.body || {};
 
-    if (!flowchartId) {
-      return res.status(400).json({ ok: false, message: "flowchartId required" });
-    }
+    if (!flowchartId) return res.status(400).json({ ok: false, message: "flowchartId required" });
 
-    const fcRow = await prisma.flowchart.findUnique({
-      where: { flowchartId: Number(flowchartId) },
-    });
+    const fcRow = await prisma.flowchart.findUnique({ where: { flowchartId: Number(flowchartId) } });
+    if (!fcRow) return res.status(404).json({ ok: false, message: "flowchart not found" });
 
-    if (!fcRow) {
-      return res.status(404).json({ ok: false, message: "flowchart not found" });
-    }
-
-    // flowchart JSON stored in Prisma
+    // hydrate flowchart stored content (we expect stored JSON)
     const flowchartObj = hydrateFlowchart(fcRow.content);
     let tcInstances = [];
 
-    // ----------------------------------------------------
-    // CASE A: Testcases are provided in req.body
-    // ----------------------------------------------------
     if (Array.isArray(testcases) && testcases.length > 0) {
+      // save provided testcases into DB and use them
       for (const t of testcases) {
         if (t.inputVal === undefined || t.outputVal === undefined) continue;
-
-        // Save testcase to DB first
         const rec = await prisma.testcase.create({
           data: {
             labId: fcRow.labId ?? null,
             inputVal: normalizeToJSONString(t.inputVal),
             outputVal: normalizeToJSONString(t.outputVal),
-            inHiddenVal: t.inHiddenVal ?? null,
-            outHiddenVal: t.outHiddenVal ?? null,
+            inHiddenVal: t.inHiddenVal !== undefined ? normalizeToJSONString(t.inHiddenVal) : null,
+            outHiddenVal: t.outHiddenVal !== undefined ? normalizeToJSONString(t.outHiddenVal) : null,
             score: Number(t.score || 0),
           },
         });
 
-        // Convert to Testcase CLASS instance
-        tcInstances.push(
-          new Testcase({
-            testcaseId: rec.testcaseId,
-            labId: rec.labId,
-            inputVal: rec.inputVal,
-            outputVal: rec.outputVal,
-            score: rec.score,
-            comparatorType: t.comparatorType || "exact",
-          })
-        );
+        tcInstances.push(new Testcase({
+          testcaseId: rec.testcaseId,
+          labId: rec.labId,
+          inputVal: rec.inputVal,
+          outputVal: rec.outputVal,
+          inHiddenVal: rec.inHiddenVal,
+          outHiddenVal: rec.outHiddenVal,
+          score: rec.score,
+          comparatorType: t.comparatorType || 'exact'
+        }));
       }
+    } else {
+      // load testcases from DB by labId
+      if (!fcRow.labId) return res.status(400).json({ ok: false, message: "flowchart has no labId and no testcases provided" });
+      const rows = await prisma.testcase.findMany({ where: { labId: Number(fcRow.labId) } });
+      if (!rows || rows.length === 0) return res.status(400).json({ ok: false, message: "no testcases found for this lab" });
+
+      tcInstances = rows.map(r => new Testcase({
+        testcaseId: r.testcaseId,
+        labId: r.labId,
+        inputVal: r.inputVal,
+        outputVal: r.outputVal,
+        inHiddenVal: r.inHiddenVal,
+        outHiddenVal: r.outHiddenVal,
+        score: r.score,
+        comparatorType: r.comparatorType ?? 'exact'
+      }));
     }
 
-    // ----------------------------------------------------
-    // CASE B: Load testcases from DB by labId
-    // ----------------------------------------------------
-    else {
-      if (!fcRow.labId) {
-        return res.status(400).json({
-          ok: false,
-          message: "flowchart has no labId and no testcases provided",
-        });
-      }
-
-      const rows = await prisma.testcase.findMany({
-        where: { labId: Number(fcRow.labId) },
-      });
-
-      if (!rows || rows.length === 0) {
-        return res.status(400).json({
-          ok: false,
-          message: "no testcases found for this lab",
-        });
-      }
-
-      // Convert each row into Testcase class instance
-      tcInstances = rows.map((r) => {
-        return new Testcase({
-          testcaseId: r.testcaseId,
-          labId: r.labId,
-          inputVal: r.inputVal,
-          outputVal: r.outputVal,
-          score: r.score,
-          comparatorType: r.comparatorType ?? "exact",
-        });
-      });
-    }
-
-    // ----------------------------------------------------
-    // RUN TestRunner with real testcase CLASS instances
-    // ----------------------------------------------------
+    // run
     const session = await runner.runBatch(flowchartObj, tcInstances, userId);
 
-    // ----------------------------------------------------
-    // SAVE submission results
-    // ----------------------------------------------------
+    // persist per-testcase submission statuses if userId provided
     if (userId) {
       const results = session.results || [];
-
       for (const r of results) {
         try {
           await saveSubmissionSafe({
@@ -316,65 +295,29 @@ export async function runFromFlowchartHandler(req, res) {
       }
     }
 
-    // ----------------------------------------------------
-    // RETURN SESSION SUMMARY
-    // ----------------------------------------------------
     return res.json({
       ok: true,
       flowchartId: fcRow.flowchartId,
       labId: fcRow.labId,
       session: session.toSummary ? session.toSummary(true) : session,
     });
-
   } catch (err) {
     console.error("runFromFlowchartHandler error:", err);
     const code = err && err.code ? err.code : null;
-    return res.status(500).json({
-      ok: false,
-      message: err.message || String(err),
-      code,
-    });
+    return res.status(500).json({ ok: false, message: err.message || String(err), code });
   }
 }
 
 
-// -----------------------
-// Router: bind paths to handlers
-// -----------------------
-// src/router/testcase.router.js
+// Router bindings (export router if you prefer)
 import { Router } from "express";
-
 const router = Router();
 
-
-router.get(
-  "/api/testcase/lab/:labId/list",
-  getTestcasesByLabHandler
-);
-
-router.post(
-  "/api/testcase/lab/:labId/create",
-  createTestcaseHandler
-);
-
-router.put(
-  "/api/testcase/:testcaseId/update",
-  updateTestcaseHandler
-);
-
-router.delete(
-  "/api/testcase/:testcaseId/delete",
-  deleteTestcaseHandler
-);
-
-router.post(
-  "/api/testcase/run/batch",
-  runBatchHandler
-);
-
-router.post(
-  "/api/testcase/run/from-flowchart/:flowchartId",
-  runFromFlowchartHandler 
-);
+router.get("/api/testcase/lab/:labId/list", getTestcasesByLabHandler);
+router.post("/api/testcase/lab/:labId/create", createTestcaseHandler);
+router.put("/api/testcase/:testcaseId/update", updateTestcaseHandler);
+router.delete("/api/testcase/:testcaseId/delete", deleteTestcaseHandler);
+router.post("/api/testcase/run/batch", runBatchHandler);
+router.post("/api/testcase/run/from-flowchart/:flowchartId", runFromFlowchartHandler);
 
 export default router;

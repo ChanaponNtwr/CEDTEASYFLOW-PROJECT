@@ -22,7 +22,7 @@ export default class ArrayInputProvider {
 
   next(prompt, varName) {
     if (this.index >= this.inputs.length) {
-      // attach helpful info on the error
+      // throw InputMissingError with helpful message (TestRunner will interpret)
       throw new InputMissingError(`Input ไม่พอ: Flowchart ขอค่าเพิ่มเติมสำหรับ "${varName || prompt || 'input'}" แต่ไม่มีค่าให้ (provided ${this.inputs.length})`);
     }
     const value = this.inputs[this.index++];
@@ -35,5 +35,9 @@ export default class ArrayInputProvider {
 
   reset() {
     this.index = 0;
+  }
+
+  remaining() {
+    return this.inputs.length - this.index;
   }
 }

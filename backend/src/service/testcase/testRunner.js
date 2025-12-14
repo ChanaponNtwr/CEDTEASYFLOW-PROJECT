@@ -5,6 +5,8 @@ import Comparator from './comparator.js';
 import ArrayInputProvider, { InputMissingError } from './inputProvider.js';
 import TestcaseResult from './testcaseResult.js';
 import TestSession from './testSession.js';
+import Testcase from './testcase_model.js';
+import { hydrateFlowchart } from '../flowchart/index.js'; // Import hydrate logic
 
 export default class TestRunner {
   constructor({ executorFactory, repo }) {
@@ -17,6 +19,55 @@ export default class TestRunner {
     this.repo = repo;
   }
 
+  // [FIX 1] Helper: Parse input string to number to prevent string concatenation
+  // แปลง "50" -> 50 เพื่อให้บวกเลขได้ ไม่ใช่เอา string มาต่อกัน
+  parseInputType(val) {
+    if (typeof val === 'string' && val.trim() !== '') {
+      const num = Number(val);
+      if (!isNaN(num)) return num;
+    }
+    return val;
+  }
+
+  // [FIX 2] Helper: Clone and Sanitize flowchart carefully
+  // ล้างค่าเก่าที่ค้างอยู่ (เช่น 50) แต่เก็บสูตรการคำนวณไว้
+  cloneFlowchart(flowchart) {
+    if (!flowchart) return null;
+    try {
+      // 1. Deep Copy
+      const plainData = JSON.parse(JSON.stringify(flowchart));
+
+      // 2. Sanitize: Clear runtime data only
+      if (plainData.nodes) {
+        const nodes = Array.isArray(plainData.nodes)
+          ? plainData.nodes
+          : Object.values(plainData.nodes);
+
+        nodes.forEach(node => {
+          if (node.data) {
+             const type = (node.type || '').toUpperCase();
+             // [IMPORTANT] ลบ 'value' เฉพาะโหนด Input เท่านั้น! 
+             // ห้ามลบของ AS (Assign) หรือ DC (Declare) เพราะนั่นคือ Logic ของโหนด
+             if (['IN', 'INPUT', 'READ'].includes(type)) {
+                delete node.data.value;
+             }
+             // ลบตัวแปร runtime อื่นๆ
+             delete node.data.visited;
+             delete node.data.loopCount;
+             delete node.data.visitCount;
+          }
+        });
+      }
+
+      // 3. Re-hydrate
+      return hydrateFlowchart(plainData);
+    } catch (e) {
+      console.warn("Failed to clone/hydrate flowchart", e);
+      return flowchart;
+    }
+  }
+
+  // optional convenience
   validateBeforeRun(flowchartMeta, testcases = []) {
     const combined = this.inputCombiner.combine(testcases);
     return this.inputCombiner.validateCombinedInputs(flowchartMeta, combined);
@@ -24,182 +75,319 @@ export default class TestRunner {
 
   /**
    * runBatch:
-   * - flowchart: object that will be passed to executorFactory to create Executor
-   * - testcases: array of Testcase instances
-   * - userId: number (for session)
+   * - flowchart: object (hydrated or raw) passed to executorFactory
+   * - testcases: array of Testcase instances OR plain objects
+   * - userId: optional (for session/submissions)
    */
   async runBatch(flowchart, testcases = [], userId = null) {
-    const session = new TestSession({ userId, labId: (testcases[0] && testcases[0].labId) || null, flowchartId: flowchart?.flowchartId || null, mode: 'batch' });
+    const session = new TestSession({
+      userId,
+      labId: (testcases[0] && testcases[0].labId) || null,
+      flowchartId: flowchart?.flowchartId || null,
+      mode: 'batch'
+    });
     session.start();
 
-    // create session record (persist)
+    // try persist session
     try {
-      const created = await this.repo.createSession({ userId: session.userId, labId: session.labId, flowchartId: session.flowchartId, mode: session.mode, createdAt: session.createdAt });
-      session.runId = created.runId || created.runId || session.runId;
+      const created = await this.repo.createSession({
+        userId: session.userId,
+        labId: session.labId,
+        flowchartId: session.flowchartId,
+        mode: session.mode,
+        createdAt: session.createdAt
+      });
+      session.runId = created.runId || session.runId;
     } catch (e) {
-      // fallback: continue without persistent id
       session.runId = session.runId || null;
     }
 
-    // combine inputs
-    const combinedInputs = this.inputCombiner.combine(testcases);
+    // Normalize incoming testcases into Testcase class instances
+    const tcInstances = (testcases || []).map(t => {
+      if (!t) return null;
+      if (typeof t.parseInputs === 'function' && typeof t.parseOutputs === 'function') return t;
+      return new Testcase({
+        testcaseId: t.testcaseId ?? null,
+        labId: t.labId ?? null,
+        title: t.title ?? '',
+        inputVal: typeof t.inputVal === 'string' ? t.inputVal : JSON.stringify(t.inputVal ?? []),
+        outputVal: typeof t.outputVal === 'string' ? t.outputVal : JSON.stringify(t.outputVal ?? []),
+        inHiddenVal: typeof t.inHiddenVal === 'string' ? t.inHiddenVal : (t.inHiddenVal ? JSON.stringify(t.inHiddenVal) : null),
+        outHiddenVal: typeof t.outHiddenVal === 'string' ? t.outHiddenVal : (t.outHiddenVal ? JSON.stringify(t.outHiddenVal) : null),
+        score: Number(t.score || 0),
+        comparatorType: t.comparatorType || 'exact',
+        isHidden: !!t.isHidden
+      });
+    }).filter(Boolean);
 
-    // validate
-    const v = this.inputCombiner.validateCombinedInputs(flowchart, combinedInputs);
-    if (!v.ok) {
-      // create a failing result for each testcase (or mark overall input missing)
-      for (const tc of testcases) {
-        const res = new TestcaseResult({
+    // iterate testcases
+    for (const tc of tcInstances) {
+      // --- parse expected outputs (visible) ---
+      let expectedOutputs = [];
+      try {
+        expectedOutputs = tc.parseOutputs();
+      } catch (e) {
+        const r = new TestcaseResult({
           runId: session.runId,
           testcaseId: tc.testcaseId,
-          status: 'INPUT_MISSING',
-          expected: tc.parseOutputs(),
-          actual: [],
+          status: 'ERROR',
           scoreAwarded: 0,
-          errorMessage: v.message
+          errorMessage: `Invalid expected output JSON: ${e.message}`
         });
-        session.recordResult(res);
-        await this.repo.saveResult(res).catch(() => {});
+        session.recordResult(r);
+        await this.repo.saveResult(r).catch(()=>{});
+        continue;
       }
-      session.finish();
-      await this.repo.saveSession(session).catch(() => {});
-      return session;
-    }
 
-    // build input provider
-    const provider = new ArrayInputProvider(combinedInputs);
+      // --- parse inputs (visible) ---
+      let inputsArr = [];
+      try {
+        inputsArr = tc.parseInputs();
+        if (Array.isArray(inputsArr) && Array.isArray(inputsArr[0])) inputsArr = inputsArr[0];
+        if (!Array.isArray(inputsArr)) inputsArr = [inputsArr];
 
-    // create executor
-    const executor = this.executorFactory(flowchart, { maxTimeMs: flowchart?.maxTimeMs || undefined });
+        // [FIX 1 Applied] Parse inputs to numbers
+        inputsArr = inputsArr.map(v => this.parseInputType(v));
 
-    // set provider onto executor (so handlers can call flowchart._inputProvider or executor.options)
-    if (typeof executor.setInputProvider === 'function') {
-      executor.setInputProvider((prompt, varName) => provider.next(prompt, varName));
-    } else if (executor.flowchart) {
-      executor.flowchart._inputProvider = (prompt, varName) => provider.next(prompt, varName);
-    }
+      } catch (e) {
+        const r = new TestcaseResult({
+          runId: session.runId,
+          testcaseId: tc.testcaseId,
+          status: 'ERROR',
+          scoreAwarded: 0,
+          errorMessage: `Invalid input JSON: ${e.message}`
+        });
+        session.recordResult(r);
+        await this.repo.saveResult(r).catch(()=>{});
+        continue;
+      }
 
-    // run using step loop to capture step results/errors
-    let lastStepRes = null;
-    try {
-      while (true) {
-        // call step and capture return object
-        const res = executor.step({ forceAdvanceBP: true });
-        lastStepRes = res;
-        // if handler returned an error object
-        if (res && res.error) {
-          // treat as run error
-          const errMsg = (res.error && res.error.message) || String(res.error);
-          // create a result marking INPUT_MISSING if the underlying error is InputMissingError
-          const isInputMissing = errMsg && errMsg.toUpperCase().includes('INPUT') && errMsg.toUpperCase().includes('MISSING');
-          // Mark all remaining testcases as failed with error
-          for (const tc of testcases) {
-            const r = new TestcaseResult({
+      // --- VISIBLE RUN ---
+      let visibleResult = null;
+      try {
+        const provider = new ArrayInputProvider(inputsArr);
+        
+        // [FIX 2 Applied] Clone and Sanitize Flowchart
+        const cleanFlowchart = this.cloneFlowchart(flowchart);
+
+        const executor = this.executorFactory(cleanFlowchart, { maxTimeMs: cleanFlowchart?.maxTimeMs || undefined });
+
+        if (typeof executor.setInputProvider === 'function') {
+          executor.setInputProvider((prompt, varName) => provider.next(prompt, varName));
+        } else if (executor.flowchart) {
+          executor.flowchart._inputProvider = (prompt, varName) => provider.next(prompt, varName);
+        }
+
+        // [Manual Step Loop] Matches Controller behavior
+        try {
+          const maxSteps = (cleanFlowchart && cleanFlowchart.limits && cleanFlowchart.limits.maxSteps) || cleanFlowchart.maxSteps || 100000;
+          let stepCount = 0;
+
+          while (!executor.finished && stepCount < maxSteps) {
+            const result = executor.step({ forceAdvanceBP: true });
+            
+            if (result && result.error) {
+              throw new Error(result.error);
+            }
+            stepCount++;
+          }
+
+          if (stepCount >= maxSteps && !executor.finished) {
+            throw new Error(`Execution exceeded max steps (${maxSteps})`);
+          }
+
+        } catch (runErr) {
+          const errMsg = runErr && runErr.message ? runErr.message : String(runErr);
+          visibleResult = new TestcaseResult({
+            runId: session.runId,
+            testcaseId: tc.testcaseId,
+            status: errMsg.toUpperCase().includes('INPUT') ? 'INPUT_MISSING' : 'ERROR',
+            expected: expectedOutputs,
+            actual: (executor && executor.context && Array.isArray(executor.context.output)) ? executor.context.output.slice() : [],
+            scoreAwarded: 0,
+            errorMessage: errMsg
+          });
+        }
+
+        // If no error thrown above, extract outputs
+        if (!visibleResult) {
+          const actualOutputs = (executor && executor.context && Array.isArray(executor.context.output)) ? executor.context.output.slice() : [];
+          // split outputs into chunks per testcase
+          const chunks = this.outputSplitter.split(actualOutputs, [tc]);
+          const chunk = chunks.find(c => c.testcaseId === tc.testcaseId) || chunks[0];
+          
+          if (!chunk) {
+            visibleResult = new TestcaseResult({
               runId: session.runId,
               testcaseId: tc.testcaseId,
-              status: isInputMissing ? 'INPUT_MISSING' : 'ERROR',
-              expected: (() => { try { return tc.parseOutputs(); } catch(e){ return []; } })(),
-              actual: (() => { try { return executor.context && executor.context.output ? executor.context.output.slice() : []; } catch(e){ return []; } })(),
+              status: 'ERROR',
+              expected: expectedOutputs,
+              actual: actualOutputs,
               scoreAwarded: 0,
-              errorMessage: errMsg
+              errorMessage: `Output not enough`
             });
-            session.recordResult(r);
-            await this.repo.saveResult(r).catch(()=>{});
+          } else if (chunk.error) {
+            visibleResult = new TestcaseResult({
+              runId: session.runId,
+              testcaseId: tc.testcaseId,
+              status: 'ERROR',
+              expected: chunk.expected || expectedOutputs,
+              actual: chunk.actual || actualOutputs,
+              scoreAwarded: 0,
+              errorMessage: chunk.error
+            });
+          } else {
+            const pass = this.comparator.compare(chunk.actual, chunk.expected, tc.comparatorType || 'exact');
+            const score = pass ? tc.score : 0;
+            visibleResult = new TestcaseResult({
+              runId: session.runId,
+              testcaseId: tc.testcaseId,
+              status: pass ? 'PASS' : 'FAIL',
+              expected: chunk.expected,
+              actual: chunk.actual,
+              scoreAwarded: score,
+              errorMessage: pass ? null : 'Mismatch'
+            });
           }
-          break;
         }
-
-        // if paused because breakpoint (should not happen with forceAdvanceBP true) -> break
-        if (res && res.paused) {
-          break;
-        }
-
-        // if done -> stop
-        if (res && res.done) {
-          break;
-        }
-
-        // continue loop (executor.step will progress)
-      }
-    } catch (err) {
-      // unexpected thrown error
-      const errMsg = err && err.message ? err.message : String(err);
-      for (const tc of testcases) {
-        const r = new TestcaseResult({
+      } catch (err) {
+        // unexpected
+        visibleResult = new TestcaseResult({
           runId: session.runId,
           testcaseId: tc.testcaseId,
           status: 'ERROR',
-          expected: (() => { try { return tc.parseOutputs(); } catch(e){ return []; } })(),
-          actual: executor && executor.context && executor.context.output ? executor.context.output.slice() : [],
-          scoreAwarded: 0,
-          errorMessage: errMsg
-        });
-        session.recordResult(r);
-        await this.repo.saveResult(r).catch(()=>{});
-      }
-      session.finish();
-      await this.repo.saveSession(session).catch(()=>{});
-      return session;
-    }
-
-    // At this point execution finished (or stopped). Collect outputs
-    const combinedOutputs = (executor && executor.context && Array.isArray(executor.context.output)) ? executor.context.output.slice() : [];
-
-    // split by expected counts
-    const chunks = this.outputSplitter.split(combinedOutputs, testcases);
-
-    // produce results per testcase
-    for (let i = 0; i < testcases.length; i++) {
-      const tc = testcases[i];
-      const chunk = chunks.find(c => c.testcaseId === tc.testcaseId);
-      if (!chunk) {
-        // no output provided for this testcase
-        const r = new TestcaseResult({
-          runId: session.runId,
-          testcaseId: tc.testcaseId,
-          status: 'ERROR',
-          expected: tc.parseOutputs(),
+          expected: expectedOutputs,
           actual: [],
           scoreAwarded: 0,
-          errorMessage: 'No output chunk for testcase'
+          errorMessage: err && err.message ? err.message : String(err)
         });
-        session.recordResult(r);
-        await this.repo.saveResult(r).catch(()=>{});
-        continue;
       }
 
-      if (chunk.error) {
-        const r = new TestcaseResult({
+      // if still null (shouldn't), mark error
+      if (!visibleResult) {
+        visibleResult = new TestcaseResult({
           runId: session.runId,
           testcaseId: tc.testcaseId,
           status: 'ERROR',
-          expected: chunk.expected,
-          actual: chunk.actual,
+          expected: expectedOutputs,
+          actual: [],
           scoreAwarded: 0,
-          errorMessage: chunk.error
+          errorMessage: 'Unknown runner state'
         });
-        session.recordResult(r);
-        await this.repo.saveResult(r).catch(()=>{});
-        continue;
       }
 
-      const pass = this.comparator.compare(chunk.actual, chunk.expected, tc.comparatorType || 'exact');
-      const score = pass ? tc.score : 0;
-      const r = new TestcaseResult({
-        runId: session.runId,
-        testcaseId: tc.testcaseId,
-        status: pass ? 'PASS' : 'FAIL',
-        expected: chunk.expected,
-        actual: chunk.actual,
-        scoreAwarded: score,
-        errorMessage: pass ? null : 'Mismatch'
-      });
-      session.recordResult(r);
-      await this.repo.saveResult(r).catch(()=>{});
-    }
+      // --- HIDDEN CHECK (only if visible passed and hidden provided) ---
+      let finalResult = visibleResult;
+      if (visibleResult.status === 'PASS' && (tc.inHiddenVal || tc.outHiddenVal)) {
+        // parse hidden input & hidden expected (if present)
+        let hidInputs = null;
+        let hidExpected = null;
+        try {
+          if (tc.inHiddenVal) {
+            hidInputs = (typeof tc.inHiddenVal === 'string') ? JSON.parse(tc.inHiddenVal) : tc.inHiddenVal;
+            if (Array.isArray(hidInputs) && Array.isArray(hidInputs[0])) hidInputs = hidInputs[0];
+            if (!Array.isArray(hidInputs)) hidInputs = [hidInputs];
+            // [FIX 1 Applied] Parse hidden inputs too
+            hidInputs = hidInputs.map(v => this.parseInputType(v));
+          }
+          if (tc.outHiddenVal) {
+            hidExpected = (typeof tc.outHiddenVal === 'string') ? JSON.parse(tc.outHiddenVal) : tc.outHiddenVal;
+            if (!Array.isArray(hidExpected)) hidExpected = [hidExpected];
+          }
+        } catch (e) {
+          finalResult = new TestcaseResult({
+            runId: session.runId,
+            testcaseId: tc.testcaseId,
+            status: 'ERROR',
+            expected: visibleResult.expected,
+            actual: visibleResult.actual,
+            scoreAwarded: 0,
+            errorMessage: `Invalid hidden JSON: ${e.message}`
+          });
+        }
 
+        // run hidden round only when both parsed ok and at least hidExpected exists
+        if (finalResult && finalResult.status !== 'ERROR' && hidExpected) {
+          try {
+            const hidProvider = new ArrayInputProvider(hidInputs || []);
+            
+            // [FIX 2 Applied] Clone and Sanitize Flowchart for hidden run
+            const cleanFlowchartHidden = this.cloneFlowchart(flowchart);
+
+            const hidExec = this.executorFactory(cleanFlowchartHidden, { maxTimeMs: cleanFlowchartHidden?.maxTimeMs || undefined });
+
+            if (typeof hidExec.setInputProvider === 'function') {
+              hidExec.setInputProvider((prompt, varName) => hidProvider.next(prompt, varName));
+            } else if (hidExec.flowchart) {
+              hidExec.flowchart._inputProvider = (prompt, varName) => hidProvider.next(prompt, varName);
+            }
+
+            // [Manual Step Loop] for hidden run
+            try {
+              const maxSteps = (cleanFlowchartHidden && cleanFlowchartHidden.limits && cleanFlowchartHidden.limits.maxSteps) || cleanFlowchartHidden.maxSteps || 100000;
+              let stepCount = 0;
+
+              while (!hidExec.finished && stepCount < maxSteps) {
+                 const result = hidExec.step({ forceAdvanceBP: true });
+                 if (result && result.error) throw new Error(result.error);
+                 stepCount++;
+              }
+              if (stepCount >= maxSteps && !hidExec.finished) {
+                 throw new Error(`Hidden run exceeded max steps (${maxSteps})`);
+              }
+
+            } catch (hErr) {
+              finalResult = new TestcaseResult({
+                runId: session.runId,
+                testcaseId: tc.testcaseId,
+                status: 'ERROR',
+                expected: visibleResult.expected,
+                actual: visibleResult.actual,
+                scoreAwarded: 0,
+                errorMessage: `Hidden run error: ${hErr && hErr.message ? hErr.message : String(hErr)}`
+              });
+            }
+
+            if (finalResult && finalResult.status !== 'ERROR') {
+              const hidActualOutputs = (hidExec && hidExec.context && Array.isArray(hidExec.context.output)) ? hidExec.context.output.slice() : [];
+              const hidPass = this.comparator.compare(hidActualOutputs, hidExpected, tc.comparatorType || 'exact');
+              if (!hidPass) {
+                finalResult = new TestcaseResult({
+                  runId: session.runId,
+                  testcaseId: tc.testcaseId,
+                  status: 'FAIL',
+                  expected: visibleResult.expected,
+                  actual: visibleResult.actual,
+                  scoreAwarded: 0,
+                  errorMessage: 'Hidden mismatch'
+                });
+              } else {
+                // hidden passed -> keep visibleResult as finalResult (already PASS)
+                finalResult = visibleResult;
+              }
+            }
+          } catch (e) {
+            finalResult = new TestcaseResult({
+              runId: session.runId,
+              testcaseId: tc.testcaseId,
+              status: 'ERROR',
+              expected: visibleResult.expected,
+              actual: visibleResult.actual,
+              scoreAwarded: 0,
+              errorMessage: e && e.message ? e.message : String(e)
+            });
+          }
+        }
+      } // end hidden check
+
+      // record finalResult
+      session.recordResult(finalResult);
+      await this.repo.saveResult(finalResult).catch(()=>{});
+    } // end foreach testcase
+
+    // finish session persistence
     session.finish();
-    await this.repo.saveSession(session).catch(()=>{});
+    try { await this.repo.saveSession(session); } catch(e){/* ignore */ }
 
     return session;
   }
