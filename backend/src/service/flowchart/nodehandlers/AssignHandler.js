@@ -1,20 +1,43 @@
-export default function AssignHandler(node, context /*, flowchart optional */) {
+export default function AssignHandler(node, context /*, flowchart */) {
   const varName = node?.data?.variable || node?.data?.name;
   const raw = node?.data?.value;
 
   if (!varName) return { nextCondition: "auto" };
 
-  // build env from context and cast numeric types to Number so arithmetic works
+  /* ================= build env ================= */
+
   const env = {};
   context.variables.forEach(v => {
-    const vt = String(v.varType || "").toLowerCase();
-    if (["int", "integer", "number", "float"].includes(vt)) env[v.name] = Number(v.value);
-    else if (["bool", "boolean"].includes(vt)) env[v.name] = Boolean(v.value);
-    else env[v.name] = v.value;
+    let val = v.value;
+
+    // 🔥 FIX: auto-cast numeric strings
+    if (typeof val === "string") {
+      const s = val.trim();
+
+      // int
+      if (/^[+-]?\d+$/.test(s)) {
+        val = Number(s);
+      }
+      // float
+      else if (/^[+-]?\d*\.\d+$/.test(s) || /^[+-]?\d+\.\d*$/.test(s)) {
+        val = Number(s);
+      }
+      // boolean
+      else if (s.toLowerCase() === "true") {
+        val = true;
+      }
+      else if (s.toLowerCase() === "false") {
+        val = false;
+      }
+    }
+
+    env[v.name] = val;
   });
 
   const names = Object.keys(env);
   const vals = names.map(n => env[n]);
+
+  /* ================= evaluate ================= */
 
   let value;
   try {
@@ -25,29 +48,31 @@ export default function AssignHandler(node, context /*, flowchart optional */) {
       if (expr === "") {
         value = "";
       } else {
-        // evaluate expression in a Function scope
         const fn = new Function(...names, `return (${expr});`);
         value = fn(...vals);
       }
     }
   } catch (e) {
-    console.error(`❌ Error evaluating assignment '${raw}': ${e.message}`);
-    // don't throw — just skip assignment (or you could set undefined)
+    console.error(`❌ Assign eval error: ${raw}`, e.message);
     return { nextCondition: "auto" };
   }
 
-  // decide varType: prefer existing, else hint from node, else infer
-  let targetVarType;
-  const idx = context.index_map[varName];
-  if (idx !== undefined && context.variables[idx]) {
-    targetVarType = context.variables[idx].varType;
+  /* ================= set result ================= */
+
+  let varType;
+  if (typeof value === "number") {
+    varType = Number.isInteger(value) ? "int" : "float";
+  } else if (typeof value === "boolean") {
+    varType = "bool";
   } else {
-    targetVarType = node?.data?.varType ? String(node.data.varType).toLowerCase() : undefined;
+    varType = "string";
   }
 
-  context.set(varName, value, targetVarType);
-  const stored = context.get(varName);
-  const storedType = context.variables[context.index_map[varName]]?.varType;
-  console.log(`Assigned: ${varName} = ${JSON.stringify(stored)} (${storedType})`);
+  context.set(varName, value, varType);
+
+  console.log(
+    `Assigned: ${varName} = ${JSON.stringify(value)} (${varType})`
+  );
+
   return { nextCondition: "auto" };
 }
