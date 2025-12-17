@@ -1,10 +1,11 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { FaFileAlt } from "react-icons/fa";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import Link from "next/link";
+import { apiGetTestcases } from "@/app/service/FlowchartService";
 
 // Define TestCase interface
 interface TestCase {
@@ -16,11 +17,73 @@ interface TestCase {
 
 function Labinfo() {
   // State for test cases
-  const [testCases] = useState<TestCase[]>([
-    { no: 1, input: "n = 8", output: "32", score: 5 },
-    { no: 2, input: "i = 1", output: "true", score: 5 },
-    { no: 3, input: "i = 2", output: "false", score: 5 },
-  ]);
+  // State for test cases
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
+  const LAB_ID = 2; // Mockup fixed Lab ID
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const data = await apiGetTestcases(LAB_ID);
+        const list = Array.isArray(data) ? data : (data?.data ?? data?.testcases ?? []);
+
+        const parseVal = (val: any): any => {
+          if (typeof val === "string") {
+            const trimmed = val.trim();
+            try {
+              const parsed = JSON.parse(val);
+              return parseVal(parsed);
+            } catch {
+              if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                const content = trimmed.slice(1, -1);
+                const items = content.split(",").map(part => {
+                  const p = part.trim();
+                  if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+                    return p.slice(1, -1);
+                  }
+                  return p;
+                });
+                return parseVal(items);
+              }
+              return val;
+            }
+          }
+          if (Array.isArray(val)) {
+            return val.map(parseVal);
+          }
+          return val;
+        };
+
+        const flattenDeep = (arr: any[]): any[] => {
+          return arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
+        };
+
+        const mapped = list.map((tc: any, index: number) => {
+          const rawInput = parseVal(tc.inputVal);
+          const rawOutput = parseVal(tc.outputVal);
+
+          const format = (v: any) => {
+            if (Array.isArray(v)) {
+              return flattenDeep(v).join(", ");
+            }
+            return String(v ?? "");
+          };
+
+          return {
+            no: index + 1,
+            input: format(rawInput),
+            output: format(rawOutput),
+            score: Number(tc.score ?? 0)
+          };
+        });
+
+        setTestCases(mapped);
+      } catch (err) {
+        console.error("Failed to load testcases in labinfo", err);
+      }
+    };
+    fetchData();
+  }, []);
 
   // State for symbol counts
   const [symbols, setSymbols] = useState({
@@ -48,7 +111,7 @@ function Labinfo() {
         <Navbar />
         <div className="flex min-h-screen">
           <Sidebar />
-            <div className="flex-1 flex justify-center p-6 md:p-10">
+          <div className="flex-1 flex justify-center p-6 md:p-10">
             <div className="w-full max-w-5xl bg-white p-6 rounded-lg shadow-md">
               {/* Buttons (Edit) */}
               <div className="flex justify-end space-x-4 mb-6">
@@ -128,9 +191,9 @@ function Labinfo() {
                 </div>
               </div>
             </div>
+          </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }
