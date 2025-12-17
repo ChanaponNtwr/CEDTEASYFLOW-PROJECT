@@ -886,7 +886,8 @@ export default function TopBarControls({
 
         const messages: { level: TestLevel; text: string }[] = [];
 
-
+        // Add status message first
+        messages.push({ level, text: `${status}` });
 
         if (errorMessage) {
           messages.push({ level: "error", text: String(errorMessage) });
@@ -956,17 +957,18 @@ export default function TopBarControls({
   };
 
   // New: compact summary badge that shows only the level word
-  const renderSummaryBadge = (level?: TestLevel | null) => {
+  const renderSummaryBadge = (level?: TestLevel | null, text?: string) => {
     const base = "inline-block text-xs px-2 py-1 rounded-md font-semibold";
+    const displayText = text || ""; // Use provided text or fallback to level name
     switch (level) {
       case "error":
-        return <div className={`${base} bg-red-100 text-red-800 border border-red-200`}>Error</div>;
+        return <div className={`${base} bg-red-100 text-red-800 border border-red-200`}>{displayText || "Error"}</div>;
       case "warning":
-        return <div className={`${base} bg-yellow-100 text-yellow-800 border border-yellow-200`}>Warning</div>;
+        return <div className={`${base} bg-yellow-100 text-yellow-800 border border-yellow-200`}>{displayText || "Warning"}</div>;
       case "info":
-        return <div className={`${base} bg-blue-100 text-blue-800 border border-blue-200`}>Info</div>;
+        return <div className={`${base} bg-blue-100 text-blue-800 border border-blue-200`}>{displayText || "Info"}</div>;
       case "success":
-        return <div className={`${base} bg-green-100 text-green-800 border border-green-200`}>Success</div>;
+        return <div className={`${base} bg-green-100 text-green-800 border border-green-200`}>{displayText || "Success"}</div>;
       default:
         return null;
     }
@@ -1146,8 +1148,12 @@ export default function TopBarControls({
                             ) : (
                               (() => {
                                 const items = testResults[displayId] ?? [];
-                                const top = items.find((i) => i.level === 'error') ?? items.find((i) => i.level === 'warning') ?? items.find((i) => i.level === 'info') ?? items.find((i) => i.level === 'success');
-                                return renderSummaryBadge(top?.level ?? null);
+                                // Get the first message which should be the status (PASS/FAIL/etc)
+                                const statusMsg = items[0];
+                                if (statusMsg) {
+                                  return renderSummaryBadge(statusMsg.level, statusMsg.text);
+                                }
+                                return renderSummaryBadge(null);
                               })()
                             )}
                           </div>
