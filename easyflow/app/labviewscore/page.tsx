@@ -123,30 +123,46 @@ function Labviewscore() {
                 <div className="border-b-2 border-gray-300 pb-1 mb-6"></div>
 
                 {/* Test Case Table */}
-                <div className="flex-1 mb-6">
-                  <table className="w-4xl table-auto">
-                    <thead>
-                      <tr className="bg-gray-100">
-                        {tableHeaders.map((header) => (
-                          <th key={header} className="px-4 py-2 text-left">
-                            {header}
-                          </th>
-                        ))}
+                <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          No.
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Input
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Output
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Score
+                        </th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {testCases.map((testCase) => (
-                        <tr key={testCase.no} className="border-t">
-                          {[testCase.no, testCase.input, testCase.output, testCase.score].map(
-                            (value, idx) => (
-                              <td
-                                key={idx}
-                                className={`px-4 py-2 ${idx === 3 ? "px-8" : ""}`}
-                              >
-                                {value}
-                              </td>
-                            )
-                          )}
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {testCases.map((tc, index) => (
+                        <tr
+                          key={tc.no}
+                          className={`transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-600">
+                            {tc.no}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-semibold text-gray-700">
+                            <span className="px-2 py-1 rounded text-xs text-gray-800">
+                              {tc.input}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm font-semibold text-gray-700">
+                            <span className="px-2 py-1 rounded text-xs text-blue-800">
+                              {tc.output}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-center">
+                            {tc.score}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -162,7 +178,7 @@ function Labviewscore() {
             </div>
           </div>
         </div>
-      </div> 
+      </div>
     </div>
   );
 }

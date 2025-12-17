@@ -165,36 +165,59 @@ function Studentlab() {
                 <div className="border-b-2 border-gray-300 pb-1 mb-6"></div>
 
                 {/* Test Case Table */}
-                <div className="flex-1 mb-6 overflow-x-auto">
-                  <table className="w-full table-auto border border-gray-200 rounded-lg overflow-hidden">
-                    <thead className="bg-gray-100">
+                <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-2 text-left border-b">No.</th>
-                        <th className="px-4 py-2 text-left border-b">Input</th>
-                        <th className="px-4 py-2 text-left border-b">Output</th>
-                        <th className="px-4 py-2 text-left border-b">Score</th>
-                        <th className="px-4 py-2 text-left border-b">Status</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          No.
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Input
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Output
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Score
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {enhancedTestCases.map((tc) => {
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {enhancedTestCases.map((tc, index) => {
                         const statusClasses =
                           tc.status === "Pass"
                             ? "bg-green-100 text-green-800"
                             : tc.status === "Pending"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-red-100 text-red-800";
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-red-100 text-red-800";
 
                         return (
-                          <tr key={tc.no} className="border-t hover:bg-gray-50 transition-colors">
-                            <td className="px-4 py-2">{tc.no}</td>
-                            <td className="px-4 py-2">{tc.input}</td>
-                            <td className="px-4 py-2">{tc.output}</td>
-                            <td className="px-4 py-2 flex items-center gap-2">
-                              <span>{tc.score}</span>
+                          <tr
+                            key={tc.no}
+                            className={`transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-600">
+                              {tc.no}
                             </td>
-                            <td className="px-4 py-2">
-                              <span className={`px-2 py-1 rounded-full font-medium ${statusClasses}`}>
+                            <td className="px-6 py-4 text-sm font-semibold text-gray-700">
+                              <span className="px-2 py-1 rounded text-xs text-gray-800">
+                                {tc.input}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm font-semibold text-gray-700">
+                              <span className="px-2 py-1 rounded text-xs text-blue-800">
+                                {tc.output}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-center">
+                              {tc.score}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClasses}`}>
                                 {tc.status}
                               </span>
                             </td>
@@ -214,7 +237,7 @@ function Studentlab() {
             </div>
           </div>
         </div>
-      </div> 
+      </div>
     </div>
   );
 }
