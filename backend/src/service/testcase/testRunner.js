@@ -19,8 +19,6 @@ export default class TestRunner {
     this.repo = repo;
   }
 
-  // [FIX 1] Helper: Parse input string to number to prevent string concatenation
-  // แปลง "50" -> 50 เพื่อให้บวกเลขได้ ไม่ใช่เอา string มาต่อกัน
   parseInputType(val) {
     if (typeof val === 'string' && val.trim() !== '') {
       const num = Number(val);
