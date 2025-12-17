@@ -10,6 +10,9 @@ import FRHandler from "./FRHandler.js";
 import DeclareHandler from "./DeclareHandler.js";
 import BPHandler from "./BPHandler.js";
 
+// ✅ DEBUG: confirm handlers are loaded
+console.log("✅ nodeHandlers/index.js loaded");
+
 // mapping short codes -> handler functions
 const handlers = {
   ST: StartHandler,
@@ -25,14 +28,19 @@ const handlers = {
 };
 
 export function getHandler(type) {
-  const h = handlers[type];
-  if (h) return h;
+  if (!type) return null;
 
-  // fallback handler (function) — must be a function that accepts (node, context, flowchart)
-  return (node, context /*, flowchart */) => {
-    console.warn(`No handler registered for node type "${type}" — using noop fallback.`);
-    return { nextCondition: "auto" };
-  };
+  // ✅ normalize type (CRITICAL)
+  const key = String(type).trim().toUpperCase();
+  const handler = handlers[key];
+
+  if (!handler) {
+    console.warn(`⚠️ No handler registered for node type "${type}"`);
+    return (node, context) => ({ nextCondition: "auto" });
+  }
+
+  return handler;
 }
 
-export default getHandler;
+// ❌ REMOVE default export (important)
+// export default getHandler;
