@@ -886,21 +886,21 @@ export default function TopBarControls({
 
         const messages: { level: TestLevel; text: string }[] = [];
 
-        messages.push({ level, text: `Status: ${status}` });
+
 
         if (errorMessage) {
           messages.push({ level: "error", text: String(errorMessage) });
         }
 
         // If expected/actual exist, show them
-        if (expected !== null && typeof expected !== "undefined") {
-          try {
-            const eStr = Array.isArray(expected) ? expected.join(", ") : String(expected);
-            messages.push({ level: "info", text: `Expected: ${eStr}` });
-          } catch {
-            messages.push({ level: "info", text: `Expected: ${String(expected)}` });
-          }
-        }
+        // if (expected !== null && typeof expected !== "undefined") {
+        //   try {
+        //     const eStr = Array.isArray(expected) ? expected.join(", ") : String(expected);
+        //     messages.push({ level: "info", text: `Expected: ${eStr}` });
+        //   } catch {
+        //     messages.push({ level: "info", text: `Expected: ${String(expected)}` });
+        //   }
+        // }
         if (actual !== null && typeof actual !== "undefined") {
           try {
             const aStr = Array.isArray(actual) ? actual.join(", ") : String(actual);

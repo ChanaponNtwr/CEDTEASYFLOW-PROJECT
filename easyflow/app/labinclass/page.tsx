@@ -112,7 +112,7 @@ function LabInClass() {
         <div className="flex min-h-screen">
           <Sidebar />
           <div className="flex-1 flex justify-center p-6 md:p-10">
-            <div className="w-full max-w-7xl bg-white p-6 rounded-lg shadow-md">
+            <div className="w-full max-w-5xl bg-white p-6 rounded-lg shadow-md">
               {/* Header */}
               <div className="flex justify-between items-center border-b-2 border-gray-300 pb-1 mb-6 mt-4">
                 <div className="flex items-center">
@@ -138,30 +138,43 @@ function LabInClass() {
                 <div className="border-b-2 border-gray-300 pb-1 mb-6"></div>
 
                 {/* Test Case Table */}
-                <div className="flex-1 mb-6">
-                  <table className="w-6xl table-auto">
-                    <thead>
-                      <tr className="bg-gray-100">
+                <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
                         {testCaseHeaders.map((header) => (
-                          <th key={header} className="px-4 py-2 text-left">
+                          <th
+                            key={header}
+                            scope="col"
+                            className={`px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider ${header === "Score" ? "text-center" : "text-left"}`}
+                          >
                             {header}
                           </th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody>
-                      {testCases.map((testCase) => (
-                        <tr key={testCase.no} className="border-t">
-                          {[testCase.no, testCase.input, testCase.output, testCase.score].map(
-                            (value, idx) => (
-                              <td
-                                key={idx}
-                                className={`px-4 py-2 ${idx === 3 ? "px-8" : ""}`}
-                              >
-                                {value}
-                              </td>
-                            )
-                          )}
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {testCases.map((testCase, index) => (
+                        <tr
+                          key={testCase.no}
+                          className={`transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-600">
+                            {testCase.no}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-semibold text-gray-700">
+                            <span className="px-2 py-1 rounded text-xs text-gray-800">
+                              {testCase.input}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm font-semibold text-gray-700">
+                            <span className="px-2 py-1 rounded text-xs text-blue-800">
+                              {testCase.output}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-center">
+                            {testCase.score}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -207,20 +220,25 @@ function LabInClass() {
                 </div>
 
                 {/* Table */}
-                <div className="flex-1 mb-6">
-                  <table className="w-full table-auto">
-                    <thead>
-                      <tr className="bg-gray-100">
+                <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
                         {tableHeaders.map((header) => (
-                          <th key={header.key} className="px-4 py-2 text-left">
+                          <th
+                            key={header.key}
+                            scope="col"
+                            className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                          >
                             {header.type === "checkbox" ? (
                               <div className="flex items-center gap-2">
                                 <input
                                   type="checkbox"
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   checked={isAllChecked}
                                   onChange={(e) => handleSelectAll(e.target.checked)}
                                 />
-                                <span className="text-sm font-medium">{header.label}</span>
+                                <span>{header.label}</span>
                               </div>
                             ) : (
                               header.label
@@ -229,8 +247,8 @@ function LabInClass() {
                         ))}
                       </tr>
                     </thead>
-                    <tbody>
-                      {filteredStudents.map((student) => {
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {filteredStudents.map((student, index) => {
                         const originalIndex = students.findIndex((s) => s.name === student.name);
                         const statusClass =
                           student.status === "Pass"
@@ -238,26 +256,30 @@ function LabInClass() {
                             : "bg-yellow-100 text-yellow-800";
 
                         return (
-                          <tr key={student.name} className="border-t">
-                            <td className="px-4 py-2 pl-9">
+                          <tr
+                            key={student.name}
+                            className={`transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap">
                               <input
                                 type="checkbox"
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                 checked={student.selected}
                                 onChange={() => handleSelectStudent(originalIndex)}
                               />
                             </td>
-                            <td className="px-4 py-2">
-                              <span className={`px-2 py-1 rounded-full ${statusClass}`}>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}`}>
                                 {student.status}
                               </span>
                             </td>
-                            <td className="px-4 py-2">{student.name}</td>
-                            <td className="px-4 py-2">{student.testcase1}</td>
-                            <td className="px-4 py-2">{student.testcase2}</td>
-                            <td className="px-4 py-2">{student.testcase3}</td>
-                            <td className="px-4 py-2">{student.score}/11</td>
-                            <td className="px-4 py-2">
-                              <button className="px-4 py-2 bg-[#0D3ACE] hover:bg-blue-700 text-white rounded-full cursor-pointer">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{student.name}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.testcase1}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.testcase2}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.testcase3}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.score}/11</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              <button className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors">
                                 View
                               </button>
                             </td>
@@ -271,7 +293,7 @@ function LabInClass() {
             </div>
           </div>
         </div>
-      </div> 
+      </div>
     </div>
   );
 }

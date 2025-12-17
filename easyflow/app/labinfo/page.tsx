@@ -161,23 +161,48 @@ function Labinfo() {
                 <div className="border-b-2 border-gray-300 pb-1 mb-6"></div>
 
                 {/* Test Case Table */}
-                <div className="flex-1 mb-6">
-                  <table className="w-4xl table-auto">
-                    <thead>
-                      <tr className="bg-gray-100">
-                        <th className="px-4 py-2 text-left">No.</th>
-                        <th className="px-4 py-2 text-left">Input</th>
-                        <th className="px-4 py-2 text-left">Output</th>
-                        <th className="px-4 py-2 text-left">Score</th>
+                <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          No.
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Input
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Output
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Score
+                        </th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {testCases.map((testCase) => (
-                        <tr key={testCase.no} className="border-t">
-                          <td className="px-4 py-2">{testCase.no}</td>
-                          <td className="px-4 py-2">{testCase.input}</td>
-                          <td className="px-4 py-2">{testCase.output}</td>
-                          <td className="px-8 py-2">{testCase.score}</td>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {testCases.map((testCase, index) => (
+                        <tr
+                          key={testCase.no}
+                          className={` transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+                        >
+                          <td className="font-semibold px-6 py-4 whitespace-nowrap text-sm text-gray-600 ">
+                            {testCase.no}
+                          </td>
+                          <td className="font-semibold px-6 py-4 text-sm text-gray-700">
+                            <span className=" px-2 py-1 rounded text-xs text-gray-800">
+                              {testCase.input}
+                            </span>
+                          </td>
+                          <td className="font-semibold px-6 py-4 text-sm text-gray-700">
+                            <span className=" px-2 py-1 rounded text-xs text-blue-800">
+                              {testCase.output}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-green-800">
+                              {testCase.score} pts
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
