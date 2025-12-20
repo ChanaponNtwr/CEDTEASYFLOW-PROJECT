@@ -4,6 +4,8 @@ import cors from "cors";
 import morgan from "morgan";
 import dotenv from "dotenv";
 import flowchartController from "./controller/flowchart.controller.js";
+import testcaseRouter from "./controller/testcase.controller.js";
+
 
 dotenv.config();
 const app = express();
@@ -19,6 +21,7 @@ app.get("/", (req, res) => {
 
 // mount
 app.use("/flowchart", flowchartController);
+app.use(testcaseRouter);
 
 // start
 const PORT = process.env.PORT || 8080;

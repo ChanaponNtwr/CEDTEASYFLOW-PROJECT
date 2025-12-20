@@ -114,3 +114,53 @@ export const apiResetFlowchart = async (flowchartId) => {
     throw error;
   }
 };
+
+export const apiCreateTestcase = async (labId, tcPayload) => {
+  try {
+    const resp = await axios.post(`${BASE_URL}/api/testcase/lab/${encodeURIComponent(labId)}/create`, tcPayload);
+    return resp.data;
+  } catch (err) {
+    console.error("apiCreateTestcase error:", err);
+    throw err;
+  }
+};
+
+export const apiGetTestcases = async (labId) => {
+  try {
+    const resp = await axios.get(`${BASE_URL}/api/testcase/lab/${encodeURIComponent(labId)}/list`);
+    return resp.data;
+  } catch (err) {
+    console.error("apiGetTestcases error:", err);
+    throw err;
+  }
+};
+
+export const apiUpdateTestcase = async (testcaseId, data) => {
+  try {
+    const resp = await axios.put(`${BASE_URL}/api/testcase/${testcaseId}/update`, data);
+    return resp.data;
+  } catch (err) {
+    console.error("apiUpdateTestcase error:", err);
+    throw err;
+  }
+};
+
+export const apiDeleteTestcase = async (testcaseId) => {
+  try {
+    const resp = await axios.delete(`${BASE_URL}/api/testcase/${testcaseId}/delete`);
+    return resp.data;
+  } catch (err) {
+    console.error("apiDeleteTestcase error:", err);
+    throw err;
+  }
+};
+
+export const apiRunTestcaseFromFlowchart = async (flowchartId) => {
+  try {
+    const resp = await axios.post(`${BASE_URL}/api/testcase/run/from-flowchart/${flowchartId}`);
+    return resp.data;
+  } catch (err) {
+    console.error("apiRunTestcaseFromFlowchart error:", err);
+    throw err;
+  }
+};

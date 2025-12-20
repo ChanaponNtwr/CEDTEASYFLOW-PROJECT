@@ -6,7 +6,10 @@ class Executor {
   constructor(flowchart, options = {}) {
     this.flowchart = flowchart;
     this.context = new Context();
-    this.currentNodeId = "n_start";
+    // choose start node from flowchart when available (fallback n_start)
+    this.currentNodeId =
+      (this.flowchart && (this.flowchart.startNodeId || this.flowchart.start)) ||
+      "n_start";
     this.finished = false;
 
     // Breakpoint
@@ -42,7 +45,9 @@ class Executor {
       ? fcLimits.maxTimeMs
       : 5000;
 
-    this.maxLoopIterationsPerNode = Number.isFinite(options.maxLoopIterationsPerNode)
+    this.maxLoopIterationsPerNode = Number.isFinite(
+      options.maxLoopIterationsPerNode
+    )
       ? options.maxLoopIterationsPerNode
       : Number.isFinite(fcLimits.maxLoopIterationsPerNode)
       ? fcLimits.maxLoopIterationsPerNode
@@ -82,7 +87,9 @@ class Executor {
             _initialized: Boolean(nodeObj._initialized),
             _phase: nodeObj._phase || null,
             _loopCount: Number(nodeObj._loopCount || 0),
-            _scopePushed: Boolean(nodeObj._scopePushed)
+            _scopePushed: Boolean(nodeObj._scopePushed),
+            _initValue:
+              typeof nodeObj._initValue !== "undefined" ? nodeObj._initValue : null
           };
         }
       }
@@ -95,10 +102,8 @@ class Executor {
       // Attempt to persist internal scope stack if present (Context implementation dependent)
       if (Array.isArray(this.context._scopeStack)) {
         try {
-          // deep copy to avoid sharing refs
           ctx._scopeStack = JSON.parse(JSON.stringify(this.context._scopeStack));
         } catch (e) {
-          // fallback: skip scopeStack if not serializable
           ctx._scopeStack = undefined;
         }
       }
@@ -124,28 +129,24 @@ class Executor {
     if (!state || typeof state !== "object") return;
 
     try {
-      if ('currentNodeId' in state) this.currentNodeId = state.currentNodeId;
-      if ('finished' in state) this.finished = Boolean(state.finished);
-      if ('paused' in state) this.paused = Boolean(state.paused);
-      if ('stepCount' in state) this.stepCount = Number(state.stepCount || 0);
+      if ("currentNodeId" in state) this.currentNodeId = state.currentNodeId;
+      if ("finished" in state) this.finished = Boolean(state.finished);
+      if ("paused" in state) this.paused = Boolean(state.paused);
+      if ("stepCount" in state) this.stepCount = Number(state.stepCount || 0);
 
       // Restore context
       if (state.context && typeof state.context === 'object') {
         try {
           // If Context supports internal _scopeStack, restore that first
           if (Array.isArray(state.context._scopeStack) && Array.isArray(this.context._scopeStack)) {
-            // deep copy to avoid sharing references
             this.context._scopeStack = JSON.parse(JSON.stringify(state.context._scopeStack));
-            // re-sync public variables view if method exists
             if (typeof this.context._syncVariables === "function") this.context._syncVariables();
           } else if (Array.isArray(state.context.variables)) {
-            // fallback: restore variables into top scope via context.set
             for (const v of state.context.variables) {
               if (v && v.name) {
                 try {
                   this.context.set(v.name, v.value, v.varType);
                 } catch (e) {
-                  // as a last resort, attempt to directly manipulate variables (best-effort)
                   try {
                     this.context.variables = this.context.variables || [];
                     const existingIndex = this.context.variables.findIndex(x => x.name === v.name);
@@ -156,11 +157,9 @@ class Executor {
                 }
               }
             }
-            // if Context has _syncVariables, call it to ensure consistency
             if (typeof this.context._syncVariables === "function") this.context._syncVariables();
           }
 
-          // restore output
           if (Array.isArray(state.context.output)) this.context.output = Array.from(state.context.output);
         } catch (e) {
           console.warn("Executor.restoreState: context restore partial failure:", e);
@@ -176,6 +175,7 @@ class Executor {
           if ('_phase' in snapshot) node._phase = snapshot._phase;
           if ('_loopCount' in snapshot) node._loopCount = Number(snapshot._loopCount || 0);
           if ('_scopePushed' in snapshot) node._scopePushed = Boolean(snapshot._scopePushed);
+          if ('_initValue' in snapshot) node._initValue = snapshot._initValue;
         }
       }
     } catch (e) {
@@ -230,7 +230,6 @@ class Executor {
     console.log(`➡️ Step ${this.stepCount + 1}: Executing node ${node.id} (${node.type})`);
 
     // Ensure the effective inputProvider is applied to flowchart for handlers
-    // Priority: handlerOptions.inputProvider > this.options.inputProvider
     const effectiveProvider = typeof handlerOptions.inputProvider === "function"
       ? handlerOptions.inputProvider
       : typeof this.options.inputProvider === "function"
@@ -240,18 +239,16 @@ class Executor {
     if (this.flowchart) {
       if (effectiveProvider) this.flowchart._inputProvider = effectiveProvider;
       else if (this.flowchart._inputProvider && !this.options.inputProvider && !handlerOptions.inputProvider) {
-        // do not remove if set globally via constructor; only remove if none are provided
         delete this.flowchart._inputProvider;
       }
     }
 
-    // Handler may accept handlerOptions as 4th arg (we forward it)
     const handler = getHandler(node.type);
     let result = {};
     try {
       result = handler(node, this.context, this.flowchart, handlerOptions) || {};
     } catch (err) {
-      console.error(`❌ Error in handler for node ${node.id} (${node.type}):`, err.message);
+      console.error(`❌ Error in handler for node ${node.id} (${node.type}):`, err && err.message ? err.message : err);
       this.finished = true;
       return { error: err, node, context: this.context, done: true };
     }
@@ -274,7 +271,6 @@ class Executor {
           if (autoEdge) nextEdgeId = autoEdge.id;
         }
       } else {
-        // allow handlers to explicitly provide nextNode (edge id)
         if (result.nextNode) {
           nextEdgeId = result.nextNode;
         } else {
@@ -338,11 +334,9 @@ class Executor {
   runAll(options = {}) {
     const { ignoreBreakpoints = false, ...handlerOptions } = options;
 
-    // if caller supplies an inputProvider here, make it effective
     if (typeof handlerOptions.inputProvider === "function") {
       this.setInputProvider(handlerOptions.inputProvider);
     } else if (typeof this.options.inputProvider === "function") {
-      // keep constructor provider
       if (this.flowchart) this.flowchart._inputProvider = this.options.inputProvider;
     }
 
@@ -352,8 +346,6 @@ class Executor {
       const res = this.step({ forceAdvanceBP: ignoreBreakpoints, ...handlerOptions });
       if (res && res.error) break;
       if (this.paused && !ignoreBreakpoints) break;
-      // if reenter returned, the loop continues and step() will have incremented stepCount;
-      // protections: maxSteps and maxTimeMs will stop runaway loops.
     }
     return this.context;
   }
@@ -365,14 +357,16 @@ class Executor {
 
   reset() {
     this.context = new Context();
-    this.currentNodeId = "n_start";
+    // preserve flowchart start if available
+    this.currentNodeId =
+      (this.flowchart && (this.flowchart.startNodeId || this.flowchart.start)) ||
+      "n_start";
     this.finished = false;
     this.paused = false;
     this._pendingNextEdgeId = null;
     this.stepCount = 0;
     this.history = [];
     this._startTime = Date.now();
-    // preserve flowchart._inputProvider if constructor set it
     if (this.flowchart && typeof this.options.inputProvider === "function") {
       this.flowchart._inputProvider = this.options.inputProvider;
     }

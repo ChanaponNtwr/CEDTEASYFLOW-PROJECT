@@ -18,7 +18,8 @@ export default class Context {
         this._syncVariables();
     }
 
-    // infer varType helper
+    /* ================== helpers ================== */
+
     static _inferVarType(value) {
         if (value === null || value === undefined) return "int";
         if (Array.isArray(value)) return "array";
@@ -35,32 +36,43 @@ export default class Context {
         const merged = {};
         for (const scope of this._scopeStack) {
             for (const k of Object.keys(scope)) {
-                merged[k] = scope[k]; // later scopes override earlier ones
+                merged[k] = scope[k];
             }
         }
-        // transform to array
+
         this.variables = Object.keys(merged).map(name => ({
             name,
             value: merged[name].value,
             varType: merged[name].varType || null
         }));
-        // build quick lookup
+
         this._rebuildIndexMap();
     }
 
     _rebuildIndexMap() {
         this.index_map = {};
-        (this.variables || []).forEach((v, i) => { this.index_map[v.name] = i; });
+        (this.variables || []).forEach((v, i) => {
+            this.index_map[v.name] = i;
+        });
     }
 
-    // scope operations
+    /* ================== scope ops ================== */
+
     pushScope(bindings = {}) {
-        // normalize bindings so each entry is { value, varType }
         const scope = {};
         for (const k of Object.keys(bindings)) {
             const v = bindings[k];
-            if (v && typeof v === "object" && ("value" in v)) scope[k] = { value: v.value, varType: v.varType || Context._inferVarType(v.value) };
-            else scope[k] = { value: v, varType: Context._inferVarType(v) };
+            if (v && typeof v === "object" && ("value" in v)) {
+                scope[k] = {
+                    value: v.value,
+                    varType: v.varType || Context._inferVarType(v.value)
+                };
+            } else {
+                scope[k] = {
+                    value: v,
+                    varType: Context._inferVarType(v)
+                };
+            }
         }
         this._scopeStack.push(scope);
         this._syncVariables();
@@ -70,40 +82,94 @@ export default class Context {
         if (this._scopeStack.length > 1) {
             this._scopeStack.pop();
             this._syncVariables();
-        } else {
-            // do nothing if already at global scope
         }
     }
 
-    // get looks from top-most scope down
+    /* ================== variable ops ================== */
+
     get(name) {
         for (let i = this._scopeStack.length - 1; i >= 0; i--) {
             const scope = this._scopeStack[i];
-            if (Object.prototype.hasOwnProperty.call(scope, name)) return scope[name].value;
+            if (Object.prototype.hasOwnProperty.call(scope, name)) {
+                return scope[name].value;
+            }
         }
         return undefined;
     }
 
-    // set writes to the first (top-most) scope that contains name; otherwise writes to top scope
     set(name, value, varType) {
-        // find existing
         for (let i = this._scopeStack.length - 1; i >= 0; i--) {
             const scope = this._scopeStack[i];
             if (Object.prototype.hasOwnProperty.call(scope, name)) {
                 scope[name].value = value;
-                scope[name].varType = varType || scope[name].varType || Context._inferVarType(value);
+                scope[name].varType =
+                    varType || scope[name].varType || Context._inferVarType(value);
                 this._syncVariables();
                 return;
             }
         }
-        // not found -> set in top scope
+
         const top = this._scopeStack[this._scopeStack.length - 1];
-        top[name] = { value, varType: varType || Context._inferVarType(value) };
+        top[name] = {
+            value,
+            varType: varType || Context._inferVarType(value)
+        };
         this._syncVariables();
     }
 
-    // showAll for debug
     showAll() {
-        return (this.variables || []).map(v => `${v.name}=${JSON.stringify(v.value)} (${v.varType})`).join(", ");
+        return (this.variables || [])
+            .map(v => `${v.name}=${JSON.stringify(v.value)} (${v.varType})`)
+            .join(", ");
+    }
+
+    /* ================== SNAPSHOT (สำคัญ) ================== */
+    /**
+     * รูปแบบที่ controller / executor ใช้:
+     * {
+     *   variables: [{ name, value, varType }],
+     *   output: [...],
+     *   scopeStack: [ { varName: { value, varType } } ]
+     * }
+     */
+
+    serialize() {
+        try {
+            return {
+                variables: JSON.parse(JSON.stringify(this.variables || [])),
+                output: JSON.parse(JSON.stringify(this.output || [])),
+                scopeStack: JSON.parse(JSON.stringify(this._scopeStack || []))
+            };
+        } catch (e) {
+            console.warn("Context.serialize failed:", e);
+            return {
+                variables: [],
+                output: [],
+                scopeStack: [ {} ]
+            };
+        }
+    }
+
+    restore(snapshot) {
+        if (!snapshot || typeof snapshot !== "object") return;
+
+        try {
+            // restore scope stack (authoritative)
+            if (Array.isArray(snapshot.scopeStack) && snapshot.scopeStack.length > 0) {
+                this._scopeStack = JSON.parse(JSON.stringify(snapshot.scopeStack));
+            } else {
+                this._scopeStack = [ {} ];
+            }
+
+            // restore output
+            this.output = Array.isArray(snapshot.output)
+                ? JSON.parse(JSON.stringify(snapshot.output))
+                : [];
+
+            // rebuild variables view from scopeStack
+            this._syncVariables();
+        } catch (e) {
+            console.warn("Context.restore failed:", e);
+        }
     }
 }

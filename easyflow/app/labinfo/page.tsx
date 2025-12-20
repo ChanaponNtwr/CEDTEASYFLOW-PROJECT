@@ -1,10 +1,11 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { FaFileAlt } from "react-icons/fa";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import Link from "next/link";
+import { apiGetTestcases } from "@/app/service/FlowchartService";
 
 // Define TestCase interface
 interface TestCase {
@@ -16,11 +17,73 @@ interface TestCase {
 
 function Labinfo() {
   // State for test cases
-  const [testCases] = useState<TestCase[]>([
-    { no: 1, input: "n = 8", output: "32", score: 5 },
-    { no: 2, input: "i = 1", output: "true", score: 5 },
-    { no: 3, input: "i = 2", output: "false", score: 5 },
-  ]);
+  // State for test cases
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
+  const LAB_ID = 2; // Mockup fixed Lab ID
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const data = await apiGetTestcases(LAB_ID);
+        const list = Array.isArray(data) ? data : (data?.data ?? data?.testcases ?? []);
+
+        const parseVal = (val: any): any => {
+          if (typeof val === "string") {
+            const trimmed = val.trim();
+            try {
+              const parsed = JSON.parse(val);
+              return parseVal(parsed);
+            } catch {
+              if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                const content = trimmed.slice(1, -1);
+                const items = content.split(",").map(part => {
+                  const p = part.trim();
+                  if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+                    return p.slice(1, -1);
+                  }
+                  return p;
+                });
+                return parseVal(items);
+              }
+              return val;
+            }
+          }
+          if (Array.isArray(val)) {
+            return val.map(parseVal);
+          }
+          return val;
+        };
+
+        const flattenDeep = (arr: any[]): any[] => {
+          return arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
+        };
+
+        const mapped = list.map((tc: any, index: number) => {
+          const rawInput = parseVal(tc.inputVal);
+          const rawOutput = parseVal(tc.outputVal);
+
+          const format = (v: any) => {
+            if (Array.isArray(v)) {
+              return flattenDeep(v).join(", ");
+            }
+            return String(v ?? "");
+          };
+
+          return {
+            no: index + 1,
+            input: format(rawInput),
+            output: format(rawOutput),
+            score: Number(tc.score ?? 0)
+          };
+        });
+
+        setTestCases(mapped);
+      } catch (err) {
+        console.error("Failed to load testcases in labinfo", err);
+      }
+    };
+    fetchData();
+  }, []);
 
   // State for symbol counts
   const [symbols, setSymbols] = useState({
@@ -48,7 +111,7 @@ function Labinfo() {
         <Navbar />
         <div className="flex min-h-screen">
           <Sidebar />
-            <div className="flex-1 flex justify-center p-6 md:p-10">
+          <div className="flex-1 flex justify-center p-6 md:p-10">
             <div className="w-full max-w-5xl bg-white p-6 rounded-lg shadow-md">
               {/* Buttons (Edit) */}
               <div className="flex justify-end space-x-4 mb-6">
@@ -98,23 +161,48 @@ function Labinfo() {
                 <div className="border-b-2 border-gray-300 pb-1 mb-6"></div>
 
                 {/* Test Case Table */}
-                <div className="flex-1 mb-6">
-                  <table className="w-4xl table-auto">
-                    <thead>
-                      <tr className="bg-gray-100">
-                        <th className="px-4 py-2 text-left">No.</th>
-                        <th className="px-4 py-2 text-left">Input</th>
-                        <th className="px-4 py-2 text-left">Output</th>
-                        <th className="px-4 py-2 text-left">Score</th>
+                <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          No.
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Input
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Output
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Score
+                        </th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {testCases.map((testCase) => (
-                        <tr key={testCase.no} className="border-t">
-                          <td className="px-4 py-2">{testCase.no}</td>
-                          <td className="px-4 py-2">{testCase.input}</td>
-                          <td className="px-4 py-2">{testCase.output}</td>
-                          <td className="px-8 py-2">{testCase.score}</td>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {testCases.map((testCase, index) => (
+                        <tr
+                          key={testCase.no}
+                          className={` transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+                        >
+                          <td className="font-semibold px-6 py-4 whitespace-nowrap text-sm text-gray-600 ">
+                            {testCase.no}
+                          </td>
+                          <td className="font-semibold px-6 py-4 text-sm text-gray-700">
+                            <span className=" px-2 py-1 rounded text-xs text-gray-800">
+                              {testCase.input}
+                            </span>
+                          </td>
+                          <td className="font-semibold px-6 py-4 text-sm text-gray-700">
+                            <span className=" px-2 py-1 rounded text-xs text-blue-800">
+                              {testCase.output}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-green-800">
+                              {testCase.score} pts
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -128,9 +216,9 @@ function Labinfo() {
                 </div>
               </div>
             </div>
+          </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }
