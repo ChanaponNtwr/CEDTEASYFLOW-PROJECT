@@ -17,7 +17,7 @@ export const authOptions: NextAuthOptions = {
           name: profile.name,
           email: profile.email,
           image: profile.picture, // <- รับรูปจาก Google
-          providerAccountId: profile.sub,
+          // providerAccountId: profile.sub,
         };
       },
     }),
@@ -90,43 +90,53 @@ export const authOptions: NextAuthOptions = {
     return true;
     },
 
-    async jwt({ token, user }): Promise<JWT> {
-      if (user?.email) {
-        const dbUser = await prisma.user.findUnique({
-          where: { email: user.email },
-        });
+    // async jwt({ token, user }): Promise<JWT> {
+    //   if (user?.email) {
+    //     const dbUser = await prisma.user.findUnique({
+    //       where: { email: user.email },
+    //     });
 
-        if (!dbUser) return token;
+    //     if (!dbUser) return token;
 
-        return {
-          ...token,
-          userId: dbUser.id.toString(),
-          name: dbUser.name ?? "Unknown",
-          email: dbUser.email ?? "unknown@example.com",
-          picture: dbUser.image ?? null,
-        };
-      }
-      return token;
-    },
+    //     return {
+    //       ...token,
+    //       userId: dbUser.id.toString(),
+    //       name: dbUser.name ?? "Unknown",
+    //       email: dbUser.email ?? "unknown@example.com",
+    //       picture: dbUser.image ?? null,
+    //     };
+    //   }
+    //   return token;
+    // },
 
-    // async session({ session, token }) {
-    //   session.user = {
-    //     userId: token.userId as string,
-    //     name: token.name as string ?? "Unknown",
-    //     email: token.email as string ?? "",
-    //     image: token.picture as string | null ?? null,
-    //   };
-    //   return session;
-    async session({ session, user }) {
-    if (user) {
+    async jwt({ token, user }) {
+  if (user) {
+    token.userId = user.id;
+    token.name = user.name;
+    token.email = user.email;
+    token.picture = user.image;
+  }
+  return token;
+},
+
+    async session({ session, token }) {
       session.user = {
-        userId: user.id.toString(),
-        name: user.name ?? "Unknown",
-        email: user.email ?? "",
-        image: user.image ?? null,
+        userId: token.userId as string,
+        name: token.name as string ?? "Unknown",
+        email: token.email as string ?? "",
+        image: token.picture as string | null ?? null,
       };
-    }
-    return session;
+      return session;
+    // async session({ session, user }) {
+    // if (user) {
+    //   session.user = {
+    //     userId: user.id.toString(),
+    //     name: user.name ?? "Unknown",
+    //     email: user.email ?? "",
+    //     image: user.image ?? null,
+    //   };
+    // }
+    // return session;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,

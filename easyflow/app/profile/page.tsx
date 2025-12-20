@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import FilterActions from "./_components/FilterActions";
 import { useState, useMemo } from "react";
+import { signIn } from "next-auth/react";
 
 export default function Profile() {
   const { data: session, status } = useSession();
@@ -46,12 +47,17 @@ export default function Profile() {
     );
   }
 
+  // if (!session) {
+  //   return (
+  //     <div className="min-h-screen flex items-center justify-center bg-gray-100">
+  //       <p className="text-gray-700 text-xl">You are not logged in.</p>
+  //     </div>
+  //   );
+  // }
+
   if (!session) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <p className="text-gray-700 text-xl">You are not logged in.</p>
-      </div>
-    );
+  signIn(); // redirect ไป login
+  return null;
   }
 
   const user = session.user;
