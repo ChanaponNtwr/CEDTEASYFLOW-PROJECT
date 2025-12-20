@@ -319,56 +319,74 @@ router.post("/insert-node", async (req, res) => {
     }
 
     // ถ้าเป็น Declare node -> ตรวจสอบว่าตัวแปรที่ประกาศมีการใช้แล้วหรือไม่
-    const incomingType = normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH");
-    if (incomingType === "DC" || incomingType === "declare" || incomingType === "dc") {
-      // helper: ดึงชื่อที่ประกาศออกมา (รองรับหลายรูปแบบของ data)
-      const declaredNames = [];
-      const d = nodeSpec.data || {};
-      if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
-      if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
-      if (Array.isArray(d.names)) {
-        for (const nm of d.names) if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
-      }
-      // unique
-      const uniqueNames = [...new Set(declaredNames)];
+    // =======================
+// Declare node conflict check (FIXED)
+// =======================
+const incomingType = normalizeType(
+  nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH"
+);
 
-      if (uniqueNames.length > 0 && !force) {
-        // function: escape regex
-        const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+if (incomingType === "DC") {
+  const declaredNames = [];
+  const d = nodeSpec.data || {};
 
-        const conflicts = [];
-        const nodesArr = saved.nodes || [];
-        for (const varName of uniqueNames) {
-          const wordRe = new RegExp(`\\b${escapeRegExp(varName)}\\b`, "i");
-          for (const n of nodesArr) {
-            if (!n || !n.id) continue;
-            // skip if the node is the incoming declare itself (unlikely in insert case)
-            // check label
-            if (n.label && typeof n.label === "string" && wordRe.test(n.label)) {
-              conflicts.push({ varName, nodeId: n.id, label: n.label, foundIn: "label" });
-              continue;
-            }
-            // check data (stringify defensive)
-            try {
-              const dataStr = JSON.stringify(n.data || {});
-              if (wordRe.test(dataStr)) {
-                conflicts.push({ varName, nodeId: n.id, label: n.label ?? null, foundIn: "data" });
-              }
-            } catch (e) {
-              // ignore stringify errors
-            }
+  if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
+  if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
+  if (Array.isArray(d.names)) {
+    for (const nm of d.names) {
+      if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
+    }
+  }
+
+    const uniqueNames = [...new Set(declaredNames)];
+
+    if (uniqueNames.length > 0 && !force) {
+      const conflicts = [];
+
+      const nodesArr = saved.nodes || [];
+
+      for (const n of nodesArr) {
+        if (!n || !n.id) continue;
+
+        const nodeType = normalizeType(
+          n.type ?? n.typeShort ?? n.typeFull ?? ""
+        );
+
+        // ✅ ตรวจเฉพาะ Declare node เท่านั้น
+        if (nodeType !== "DC") continue;
+
+        const nd = n.data || {};
+        const existingNames = [];
+
+        if (typeof nd.name === "string" && nd.name.trim()) existingNames.push(nd.name.trim());
+        if (typeof nd.varName === "string" && nd.varName.trim()) existingNames.push(nd.varName.trim());
+        if (Array.isArray(nd.names)) {
+          for (const nm of nd.names) {
+            if (typeof nm === "string" && nm.trim()) existingNames.push(nm.trim());
           }
         }
 
-        if (conflicts.length > 0) {
-          return res.status(409).json({
-            ok: false,
-            error: "Variable name(s) already in use in this flowchart.",
-            conflicts
-          });
+        for (const newName of uniqueNames) {
+          if (existingNames.includes(newName)) {
+            conflicts.push({
+              varName: newName,
+              nodeId: n.id,
+              foundIn: "declare"
+            });
+          }
         }
       }
+
+      if (conflicts.length > 0) {
+        return res.status(409).json({
+          ok: false,
+          error: "Variable already declared in this flowchart.",
+          conflicts
+        });
+      }
     }
+  }
+
 
     // proceed with hydrate + insertion (เดิมของคุณ)
     const fc = hydrateFlowchart(saved);
