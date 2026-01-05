@@ -5,6 +5,8 @@ import morgan from "morgan";
 import dotenv from "dotenv";
 import flowchartController from "./controller/flowchart.controller.js";
 import testcaseRouter from "./controller/testcase.controller.js";
+import labController from "./controller/lab.controller.js";
+import classController from "./controller/class.controller.js";
 
 
 dotenv.config();
@@ -22,6 +24,8 @@ app.get("/", (req, res) => {
 // mount
 app.use("/flowchart", flowchartController);
 app.use(testcaseRouter);
+app.use("/labs", labController);
+app.use("/classes", classController);
 
 // start
 const PORT = process.env.PORT || 8080;
