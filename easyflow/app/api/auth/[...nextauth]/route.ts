@@ -90,34 +90,32 @@ export const authOptions: NextAuthOptions = {
     return true;
     },
 
-    // async jwt({ token, user }): Promise<JWT> {
-    //   if (user?.email) {
-    //     const dbUser = await prisma.user.findUnique({
-    //       where: { email: user.email },
-    //     });
+    async jwt({ token }): Promise<JWT> {
+      if (!token.email) return token;
 
-    //     if (!dbUser) return token;
+      const dbUser = await prisma.user.findUnique({
+        where: { email: token.email },
+      });
 
-    //     return {
-    //       ...token,
-    //       userId: dbUser.id.toString(),
-    //       name: dbUser.name ?? "Unknown",
-    //       email: dbUser.email ?? "unknown@example.com",
-    //       picture: dbUser.image ?? null,
-    //     };
-    //   }
-    //   return token;
-    // },
+      if (!dbUser) return token;
 
-    async jwt({ token, user }) {
-  if (user) {
-    token.userId = user.id;
-    token.name = user.name;
-    token.email = user.email;
-    token.picture = user.image;
-  }
-  return token;
-},
+      token.userId = dbUser.id.toString();
+      token.name = dbUser.name ?? "Unknown";
+      token.email = dbUser.email ?? "";
+      token.picture = dbUser.image ?? null;
+
+      return token;
+    },
+
+//     async jwt({ token, user }) {
+//   if (user) {
+//     token.userId = user.id;
+//     token.name = user.name;
+//     token.email = user.email;
+//     token.picture = user.image;
+//   }
+//   return token;
+// },
 
     async session({ session, token }) {
       session.user = {
