@@ -72,10 +72,6 @@ class ClassRepository {
     });
   }
 
-  /* =====================================================
-   * LAB RELATION
-   * =================================================== */
-
   async addLabToClass(classId, labId) {
     return prisma.classLabs.create({
       data: {
@@ -103,9 +99,6 @@ class ClassRepository {
     });
   }
 
-  /* =====================================================
-   * USER RELATION
-   * =================================================== */
 
   async addUserToClass(userId, classId, roleId) {
     return prisma.userClass.create({
@@ -149,9 +142,6 @@ class ClassRepository {
     });
   }
 
-  /* =====================================================
-   * PACKAGE
-   * =================================================== */
 
   async addPackageToClass(
     classId,
