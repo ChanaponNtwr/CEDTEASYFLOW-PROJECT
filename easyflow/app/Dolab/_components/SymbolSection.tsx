@@ -35,14 +35,21 @@ interface SymbolSectionProps {
 
 /* --- helpers --- */
 const validateConditionalExpression = (exp: string): string => {
-  const trimmedExp = exp.trim();
-  if (trimmedExp === "") return "กรุณาใส่เงื่อนไข (Condition)";
-  const operators = /==|!=|>=|<=|>|</;
-  if (!operators.test(trimmedExp)) return "เงื่อนไขไม่ถูกต้อง (ต้องมีตัวเปรียบเทียบ เช่น >, <, ==)";
-  const parts = trimmedExp.split(/==|!=|>=|<=|>|</);
-  if (parts.length < 2 || parts.some((p) => p.trim() === "")) {
+  const trimmed = exp.trim();
+  if (trimmed === "") return "กรุณาใส่เงื่อนไข (Condition)";
+
+  // จับกลุ่ม: left, operator, right
+  const match = trimmed.match(/^\s*(.+?)\s*(==|!=|>=|<=|>|<|=)\s*(.+)\s*$/);
+  if (!match) {
+    return "เงื่อนไขไม่ถูกต้อง (ต้องมีตัวเปรียบเทียบ เช่น >, <, ==)";
+  }
+
+  const [, left, operator, right] = match;
+  if (left.trim() === "" || right.trim() === "") {
     return "เงื่อนไขไม่สมบูรณ์ (เช่น 'a >' หรือ '< 10')";
   }
+
+  // ถ้าต้องการ ตรวจความถูกต้องเพิ่มเติม เช่น ให้ RHS เป็นตัวเลขหรือเป็น '...' ก็ทำได้ที่นี่
   return "";
 };
 
@@ -722,7 +729,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                     <div key={f.key} className="ml-6 mb-4">
                       <div className="text-gray-700 mb-2">Data Type</div>
                       <div className="grid grid-cols-2 gap-2">
-                        {["Integer", "Real", "String", "Boolean"].map((dt) => (
+                        {["Integer", "Float", "String", "Boolean"].map((dt) => (
                           <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
                             <input
                               type="radio"

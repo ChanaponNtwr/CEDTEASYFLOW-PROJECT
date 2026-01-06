@@ -84,7 +84,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId }) => {
     closeNodeModal,
   });
 
-  const FIXED_FLOWCHART_ID = Number(flowchartId ?? 9);
+  const FIXED_FLOWCHART_ID = Number(flowchartId ?? 11);
 
   const refreshFlowchart = React.useCallback(async () => {
     try {
