@@ -213,3 +213,24 @@ export const apiGetLab = async (labId) => {
 };
 
 
+// FlowchartService.js (axios instance 'api' ตามที่มีอยู่แล้ว)
+export const apiCreateClass = async (payload) => {
+  try {
+    const resp = await axios.post(`${BASE_URL}/classes`, payload); // <<-- Change to axios and correct URL
+    return resp.data; // Expected { ok: true, class: { ... } }
+  } catch (err) {
+    console.error("apiCreateClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+export const apiGetClasses = async () => {
+  try {
+    const resp = await axios.get(`${BASE_URL}/classes`);
+    return resp.data; // Expected { ok: true, classes: [...] }
+  } catch (err) {
+    console.error("apiGetClasses error:", err);
+    throw err;
+  }
+};
+
