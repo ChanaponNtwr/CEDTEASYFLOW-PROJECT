@@ -1,13 +1,14 @@
 "use client";
-import React, { useState, useEffect } from "react";
+
+import React, { useEffect, useState } from "react";
 import { FaFileAlt } from "react-icons/fa";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import Link from "next/link";
-import { apiGetTestcases } from "@/app/service/FlowchartService";
+import { apiGetTestcases, apiGetLab } from "@/app/service/FlowchartService";
+import { useSearchParams } from "next/navigation";
 
-// Define TestCase interface
 interface TestCase {
   no: number;
   input: string;
@@ -15,75 +16,37 @@ interface TestCase {
   score: number;
 }
 
+interface RemoteLab {
+  labId?: number | string;
+  labname?: string;
+  name?: string;
+  dueDate?: string;
+  dateline?: string;
+  testcases?: any[];
+  testCases?: any[];
+  problemSolving?: string;
+  problem?: string;
+  [k: string]: any;
+}
+
+function formatDueDate(d?: string) {
+  if (!d) return "No due";
+  try {
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return d;
+    return dt.toLocaleString();
+  } catch {
+    return d;
+  }
+}
+
 function Labinfo() {
-  // State for test cases
-  // State for test cases
+  const searchParams = useSearchParams();
+  const labIdParam = searchParams?.get("labId") ?? "2"; // fallback to 2
   const [testCases, setTestCases] = useState<TestCase[]>([]);
-  const LAB_ID = 2; // Mockup fixed Lab ID
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const data = await apiGetTestcases(LAB_ID);
-        const list = Array.isArray(data) ? data : (data?.data ?? data?.testcases ?? []);
-
-        const parseVal = (val: any): any => {
-          if (typeof val === "string") {
-            const trimmed = val.trim();
-            try {
-              const parsed = JSON.parse(val);
-              return parseVal(parsed);
-            } catch {
-              if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-                const content = trimmed.slice(1, -1);
-                const items = content.split(",").map(part => {
-                  const p = part.trim();
-                  if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
-                    return p.slice(1, -1);
-                  }
-                  return p;
-                });
-                return parseVal(items);
-              }
-              return val;
-            }
-          }
-          if (Array.isArray(val)) {
-            return val.map(parseVal);
-          }
-          return val;
-        };
-
-        const flattenDeep = (arr: any[]): any[] => {
-          return arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
-        };
-
-        const mapped = list.map((tc: any, index: number) => {
-          const rawInput = parseVal(tc.inputVal);
-          const rawOutput = parseVal(tc.outputVal);
-
-          const format = (v: any) => {
-            if (Array.isArray(v)) {
-              return flattenDeep(v).join(", ");
-            }
-            return String(v ?? "");
-          };
-
-          return {
-            no: index + 1,
-            input: format(rawInput),
-            output: format(rawOutput),
-            score: Number(tc.score ?? 0)
-          };
-        });
-
-        setTestCases(mapped);
-      } catch (err) {
-        console.error("Failed to load testcases in labinfo", err);
-      }
-    };
-    fetchData();
-  }, []);
+  const [lab, setLab] = useState<RemoteLab | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   // State for symbol counts
   const [symbols, setSymbols] = useState({
@@ -91,7 +54,7 @@ function Labinfo() {
     output: 0,
     declare: 0,
     assign: 0,
-    if: 5,
+    if: 0,
   });
 
   // Handler for updating symbol counts
@@ -105,6 +68,119 @@ function Labinfo() {
     setSymbols(newSymbols);
   };
 
+  useEffect(() => {
+    let mounted = true;
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // 1) Try to get lab info first
+        const resp = await apiGetLab(String(labIdParam));
+        // resp might be { ok: true, lab: { ... } } OR direct lab object
+        const remoteLab: RemoteLab = resp?.lab ?? resp ?? null;
+
+        if (!mounted) return;
+        setLab(remoteLab);
+
+        // 2) Get testcases: prefer remoteLab.testcases if present, otherwise call apiGetTestcases
+        let list: any[] = [];
+        if (remoteLab && (remoteLab.testcases || remoteLab.testCases)) {
+          list = remoteLab.testcases ?? remoteLab.testCases ?? [];
+        } else {
+          // fallback: call apiGetTestcases
+          const tcResp = await apiGetTestcases(String(labIdParam));
+          // api may return array directly or { data: [...] } or { testcases: [...] }
+          list = Array.isArray(tcResp)
+            ? tcResp
+            : tcResp?.data ?? tcResp?.testcases ?? tcResp ?? [];
+        }
+
+        // parsing helpers (your original logic, preserved)
+        const parseVal = (val: any): any => {
+          if (typeof val === "string") {
+            const trimmed = val.trim();
+            // try JSON.parse
+            try {
+              const parsed = JSON.parse(val);
+              return parseVal(parsed);
+            } catch {
+              // handle bracketed list like "[1,2,3]" or strings like "1 2 3"
+              if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                const content = trimmed.slice(1, -1);
+                // split by comma but be tolerant of spaces
+                const items = content.split(",").map((part) => {
+                  const p = part.trim();
+                  if (
+                    (p.startsWith('"') && p.endsWith('"')) ||
+                    (p.startsWith("'") && p.endsWith("'"))
+                  ) {
+                    return p.slice(1, -1);
+                  }
+                  return p;
+                });
+                return parseVal(items);
+              }
+              // split by whitespace if no comma found
+              const hasComma = trimmed.indexOf(",") !== -1;
+              if (!hasComma && trimmed.indexOf(" ") !== -1) {
+                return trimmed.split(/\s+/).map((s) => s.trim()).filter(Boolean);
+              }
+              return val;
+            }
+          }
+          if (Array.isArray(val)) {
+            return val.map(parseVal);
+          }
+          return val;
+        };
+
+        const flattenDeep = (arr: any[]): any[] => {
+          return arr.reduce((acc, val) => (Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val)), []);
+        };
+
+        const mapped = (list ?? []).map((tc: any, index: number) => {
+          // support both inputVal / input / inHiddenVal etc
+          const rawInput = parseVal(tc.inputVal ?? tc.input ?? tc.inHiddenVal ?? tc.inHidden ?? []);
+          const rawOutput = parseVal(tc.outputVal ?? tc.output ?? tc.outHiddenVal ?? tc.outHidden ?? []);
+
+          const format = (v: any) => {
+            if (Array.isArray(v)) {
+              // flatten nested arrays and join
+              return flattenDeep(v).join(", ");
+            }
+            return String(v ?? "");
+          };
+
+          return {
+            no: index + 1,
+            input: format(rawInput),
+            output: format(rawOutput),
+            score: Number(tc.score ?? 0),
+          } as TestCase;
+        });
+
+        if (!mounted) return;
+        setTestCases(mapped);
+      } catch (err: any) {
+        console.error("Failed to load lab/testcases in labinfo", err);
+        if (mounted) setError("Failed to load lab/testcases");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [labIdParam]);
+
+  const totalPoints = testCases.reduce((s, t) => s + (t.score ?? 0), 0);
+  const labTitle = lab?.labname ?? lab?.name ?? `Lab ${labIdParam}`;
+  const labProblem = lab?.problemSolving ?? lab?.problem ?? "";
+  const dueText = lab?.dueDate ?? lab?.dateline ?? null;
+
   return (
     <div className="min-h-screen w-full bg-gray-100">
       <div className="pt-20 pl-52">
@@ -116,7 +192,7 @@ function Labinfo() {
               {/* Buttons (Edit) */}
               <div className="flex justify-end space-x-4 mb-6">
                 <Link
-                  href="/editlab"
+                  href={`/editlab?labId=${encodeURIComponent(labIdParam)}`}
                   className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center hover:bg-blue-700"
                 >
                   <svg
@@ -141,24 +217,24 @@ function Labinfo() {
               <div className="flex justify-between items-center border-b-2 border-gray-300 pb-1 mb-6">
                 <div className="flex items-center">
                   <div className="w-20 h-20 bg-[#EEEEEE] rounded-full flex items-center justify-center mr-4">
-                    <img src="/images/lab.png" className="w-12 h-14" />
+                    <img src="/images/lab.png" className="w-12 h-14" alt="lab" />
                   </div>
                   <h2 className="text-4xl font-semibold">
-                    Lab 3 <span className="text-xs ">(10 points)</span>
+                    {labTitle} <span className="text-xs ">&nbsp;({totalPoints} points)</span>
                   </h2>
                 </div>
-                <p className="text-gray-500 text-sm">Due Dec 31, 2024, 9:00 AM</p>
+                <p className="text-gray-500 text-sm">{dueText ? formatDueDate(dueText) : "No due date"}</p>
               </div>
 
               {/* Description */}
               <div className="ml-0 md:ml-10">
                 <p className="mb-6 text-gray-700">
-                  รายวิชาการเขียนโปรแกรมคอมพิวเตอร์ 1 คะแนนเก็บ ครั้งที่ 1 ทำ N
-                  ครั้งตามที่กำหนด
-                  <br />
-                  คำสั่ง: ทำตามขั้นตอนใน N ครั้งตามที่กำหนดให้ครบถ้วน
+                  {labProblem || "รายละเอียดการบ้านยังไม่มี"}
                 </p>
                 <div className="border-b-2 border-gray-300 pb-1 mb-6"></div>
+
+                {loading && <div className="mb-4 text-sm text-gray-600">Loading testcases...</div>}
+                {error && <div className="mb-4 text-sm text-red-600">Error: {error}</div>}
 
                 {/* Test Case Table */}
                 <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
@@ -205,6 +281,13 @@ function Labinfo() {
                           </td>
                         </tr>
                       ))}
+                      {testCases.length === 0 && !loading && (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500">
+                            No testcases found for this lab.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -218,7 +301,7 @@ function Labinfo() {
             </div>
           </div>
         </div>
-      </div>
+      </div>  
     </div>
   );
 }

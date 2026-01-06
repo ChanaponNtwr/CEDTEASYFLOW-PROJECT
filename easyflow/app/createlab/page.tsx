@@ -5,7 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import { useRouter } from "next/navigation";
-import { apiCreateTestcase } from "@/app/service/FlowchartService"; // <-- import API
+import { apiCreateTestcase, apiCreateLab } from "@/app/service/FlowchartService"; // <-- import APIs
 
 interface TestCase {
   input: string;
@@ -21,9 +21,6 @@ export default function Createlab() {
   const [name, setName] = useState("");
   const [dateline, setDateline] = useState("");
   const [problem, setProblem] = useState("");
-
-  // ใช้ mock labId แบบคงที่ = 2
-  const serverLabId = "2";
 
   const [testCases, setTestCases] = useState<TestCase[]>([
     { input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" },
@@ -80,71 +77,132 @@ export default function Createlab() {
     return parts.map((s) => s.trim()).filter((s) => s !== "");
   };
 
+  const toISODueDate = (dateOnly: string) => {
+    // dateOnly expected "YYYY-MM-DD" -> convert to "YYYY-MM-DDT23:59:59Z"
+    if (!dateOnly) return null;
+    // keep as UTC end-of-day
+    return new Date(`${dateOnly}T23:59:59Z`).toISOString();
+  };
+
   const handleCreate = async () => {
     setSubmitting(true);
 
-    const newLab = {
-      id: Date.now(),
-      name,
-      dateline,
-      problem,
-      testCases,
-      symbols,
-      createdAt: new Date().toISOString(),
-    };
-
     try {
-      // อ่านข้อมูลเก่าจาก localStorage แล้วเซฟ lab ใหม่
-      const stored = localStorage.getItem("labs");
-      const labs = stored ? JSON.parse(stored) : [];
-      labs.push(newLab);
-      localStorage.setItem("labs", JSON.stringify(labs));
+      // 1) สร้าง Lab บน server ก่อน
+      const labPayload: any = {
+        ownerUserId: 1, // ปรับถ้าจำเป็น
+        labname: name || "Untitled Lab",
+        problemSolving: problem || "",
+      };
 
-      console.log("[Createlab] saved lab to localStorage:", newLab);
-      console.log("[Createlab] all labs in localStorage:", labs);
+      const dueDateIso = toISODueDate(dateline);
+      if (dueDateIso) {
+        labPayload.dueDate = dueDateIso;
+      }
 
-      // ส่ง testcases ขึ้น server โดยใช้ serverLabId = 2
-      console.log(`[Createlab] will send ${testCases.length} testcase(s) to server labId=${serverLabId}`);
+      // คุณอาจเลือกส่ง testcases ใน payload นี้ได้ ถ้า backend รองรับ
+      // แต่ที่นี่ผมสร้าง lab ก่อน แล้วส่ง testcase ทีละอันด้วย endpoint แยก
+      console.log("[Createlab] creating lab on server with payload:", labPayload);
 
+      const createLabResp = await apiCreateLab(labPayload);
+      console.log("[Createlab] createLabResp ->", createLabResp);
+
+      const labId =
+        createLabResp && createLabResp.lab && createLabResp.lab.labId
+          ? createLabResp.lab.labId
+          : createLabResp?.labId ?? null;
+
+      if (!labId) {
+        console.error("[Createlab] labId not found in createLabResp", createLabResp);
+        throw new Error("ไม่พบ labId ในการตอบกลับจาก server");
+      }
+
+      console.log("[Createlab] created labId =", labId);
+
+      // 2) ส่ง testcases ขึ้น server ทีละอัน (apiCreateTestcase)
       const promises = testCases.map((tc, idx) => {
         const payload = {
+          // ผมเลือกส่งเป็น array ตาม logic เดิม (backend ของคุณอาจรับทั้ง array หรือ string)
           inputVal: parseValues(tc.input),
           outputVal: parseValues(tc.output),
-          inHiddenVal: parseValues(tc.hiddenInput),
-          outHiddenVal: parseValues(tc.hiddenOutput),
           score: Number(tc.score) || 0,
+          inHiddenVal:
+            tc.hiddenInput && tc.hiddenInput.trim()
+              ? parseValues(tc.hiddenInput)
+              : null,
+          outHiddenVal:
+            tc.hiddenOutput && tc.hiddenOutput.trim()
+              ? parseValues(tc.hiddenOutput)
+              : null,
         };
 
-        console.log(`[Createlab] payload for testcase[${idx}] ->`, payload);
+        console.log(`[Createlab] sending testcase[${idx}] payload ->`, payload);
 
-        return apiCreateTestcase(serverLabId, {
-          inputVal: payload.inputVal,
-          outputVal: payload.outputVal,
-          score: payload.score,
-          inHiddenVal: payload.inHiddenVal && payload.inHiddenVal.length ? payload.inHiddenVal : null,
-          outHiddenVal: payload.outHiddenVal && payload.outHiddenVal.length ? payload.outHiddenVal : null,
-        })
+        return apiCreateTestcase(String(labId), payload)
           .then((res) => {
-            console.log(`[Createlab] server response for testcase[${idx}] ->`, res);
-            return res;
+            console.log(`[Createlab] testcase[${idx}] created ->`, res);
+            return { status: "fulfilled", value: res };
           })
           .catch((err) => {
-            console.error(`[Createlab] server error for testcase[${idx}] ->`, err);
+            console.error(`[Createlab] testcase[${idx}] error ->`, err);
+            // rethrow so Promise.allSettled catches as rejected
             throw err;
           });
       });
 
       const results = await Promise.allSettled(promises);
-
-      console.log("[Createlab] all API results ->", results);
+      console.log("[Createlab] all testcase results ->", results);
 
       const rejected = results.filter((r) => r.status === "rejected");
       if (rejected.length > 0) {
         console.error("Some testcase uploads failed:", rejected);
-        alert("สร้าง Lab สำเร็จ แต่มีบาง Testcase ส่งไป server ไม่สำเร็จ ดู console เพิ่มเติม");
+        // เก็บ lab ลง localStorage พร้อมสถานะว่ามี testcase ล้มเหลว
+        const newLabLocal = {
+          id: Date.now(),
+          labId,
+          name,
+          dateline,
+          problem,
+          testCases,
+          symbols,
+          createdAt: new Date().toISOString(),
+          remoteCreated: true,
+          testcaseUploadStatus: "partial-failure",
+        };
+
+        const stored = localStorage.getItem("labs");
+        const labs = stored ? JSON.parse(stored) : [];
+        labs.push(newLabLocal);
+        localStorage.setItem("labs", JSON.stringify(labs));
+
+        alert(
+          "สร้าง Lab สำเร็จ แต่มีบาง Testcase ส่งไป server ไม่สำเร็จ ดู console log สำหรับรายละเอียด"
+        );
       } else {
-        alert("สร้าง Lab และส่ง Testcase ขึ้น server เรียบร้อยแล้ว (ดู console log สำหรับรายละเอียด)");
+        // ทุก testcase สำเร็จ
+        const newLabLocal = {
+          id: Date.now(),
+          labId,
+          name,
+          dateline,
+          problem,
+          testCases,
+          symbols,
+          createdAt: new Date().toISOString(),
+          remoteCreated: true,
+          testcaseUploadStatus: "all-ok",
+        };
+
+        const stored = localStorage.getItem("labs");
+        const labs = stored ? JSON.parse(stored) : [];
+        labs.push(newLabLocal);
+        localStorage.setItem("labs", JSON.stringify(labs));
+
+        alert("สร้าง Lab และส่ง Testcase ขึ้น server เรียบร้อยแล้ว");
       }
+
+      // option: ถ้าต้องการ เซฟ labId เป็น environment variable ใน Postman/อื่น ๆ
+      // สามารถดู console.log(labId)
 
       router.push("/mylab");
     } catch (err) {
@@ -220,7 +278,7 @@ export default function Createlab() {
                   ></textarea>
                 </div>
 
-                <div className="text-sm text-gray-600">Sending testcases to server with mock labId = 2</div>
+                <div className="text-sm text-gray-600">Sending testcases to server (will create lab first)</div>
 
                 {/* Testcases */}
                 <div>

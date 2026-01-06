@@ -164,3 +164,52 @@ export const apiRunTestcaseFromFlowchart = async (flowchartId) => {
     throw err;
   }
 };
+
+// (ต่อจากไฟล์ FlowchartService.js ที่มีอยู่)
+export const apiCreateLab = async (labPayload) => {
+  try {
+    // axios จะ resolve สำหรับสถานะ 2xx (รวม 201) ดังนั้นเราตรวจสอบ status เผื่อความแน่นอน
+    const resp = await axios.post(`${BASE_URL}/labs`, labPayload, {
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (resp.status !== 201) {
+      // ขึ้นข้อความเตือนถ้า backend ตอบไม่ใช่ 201
+      console.warn(`apiCreateLab: expected status 201 but got ${resp.status}`);
+    }
+
+    return resp.data; // คาดเป็น { ok: true, lab: { labId: ..., ... } }
+  } catch (err) {
+    console.error("apiCreateLab error:", err);
+    throw err;
+  }
+};
+
+
+// เพิ่มที่ท้ายไฟล์ FlowchartService.js
+
+export const apiGetLab = async (labId) => {
+  if (!labId) {
+    throw new Error("apiGetLab: missing labId");
+  }
+
+  try {
+    const resp = await axios.get(`${BASE_URL}/labs/${encodeURIComponent(labId)}`, {
+      headers: { "Content-Type": "application/json" },
+      // NOTE: GET should not have a body. axios.get doesn't send a body by default.
+    });
+
+    // resp.status ควรเป็น 200 สำหรับ success
+    if (resp.status !== 200) {
+      console.warn(`apiGetLab: expected status 200 but got ${resp.status}`);
+    }
+
+    // คืนข้อมูลที่ backend ส่งมา (เช่น { ok: true, lab: { labId: ..., testcases: [...] } })
+    return resp.data;
+  } catch (err) {
+    console.error("apiGetLab error:", err);
+    throw err;
+  }
+};
+
+

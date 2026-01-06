@@ -5,6 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { apiGetTestcases, apiCreateTestcase, apiUpdateTestcase, apiDeleteTestcase } from "@/app/service/FlowchartService";
 
 // ประเภทข้อมูลสำหรับ Testcase
@@ -18,35 +19,38 @@ interface TestCase {
 }
 
 function Editlab() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const labIdParam = searchParams?.get("labId");
+  const LAB_ID = labIdParam ? Number(labIdParam) : null; // now derived from query string
+
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [deleteTargetIndex, setDeleteTargetIndex] = useState<number | null>(null);
-  const LAB_ID = 2; // Fixed as requested
 
   useEffect(() => {
     const loadData = async () => {
+      if (!LAB_ID) {
+        console.warn("Editlab: missing labId in query params");
+        // provide a single empty testcase so UI is usable
+        setTestCases([{ input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" }]);
+        return;
+      }
+
       try {
         const data = await apiGetTestcases(LAB_ID);
-        // data could be array or { data: [] }
         const list = Array.isArray(data) ? data : (data?.data ?? data?.testcases ?? []);
 
         const parseVal = (val: any): any => {
           if (typeof val === "string") {
             const trimmed = val.trim();
             try {
-              // Try parsing as JSON
               const parsed = JSON.parse(val);
-              // Recursively parse the result
               return parseVal(parsed);
             } catch {
-              // If JSON parse fails but it looks like an array (starts with [), try manual parsing
               if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-                // Strip brackets
                 const content = trimmed.slice(1, -1);
-                // Split by comma (rough split, assumes no commas in values)
-                // And clean up quotes
                 const items = content.split(",").map(part => {
                   const p = part.trim();
-                  // Remove surrounding quotes if present
                   if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
                     return p.slice(1, -1);
                   }
@@ -68,7 +72,6 @@ function Editlab() {
         };
 
         const mapped = list.map((tc: any) => {
-          // Parse and then flatten to ensure we just have a list of values
           const rawInput = parseVal(tc.inputVal);
           const rawOutput = parseVal(tc.outputVal);
           const rawHiddenInput = parseVal(tc.inHiddenVal);
@@ -94,10 +97,11 @@ function Editlab() {
         setTestCases(mapped.length > 0 ? mapped : [{ input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" }]);
       } catch (err) {
         console.error("Failed to load testcases", err);
+        setTestCases([{ input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" }]);
       }
     };
     loadData();
-  }, []);
+  }, [LAB_ID]);
 
   // เพิ่ม Testcase
   const addTestCase = () => {
@@ -108,12 +112,10 @@ function Editlab() {
   };
 
   // ลบ Testcase
-  // Trigger delete confirmation
   const requestDeleteTestcase = (index: number) => {
     setDeleteTargetIndex(index);
   };
 
-  // Perform actual delete
   const confirmDelete = async () => {
     if (deleteTargetIndex === null) return;
 
@@ -141,7 +143,6 @@ function Editlab() {
     setDeleteTargetIndex(null);
   }
 
-  // อัปเดตข้อมูลใน Testcase
   const handleTestCaseChange = (
     index: number,
     field: keyof TestCase,
@@ -164,14 +165,17 @@ function Editlab() {
   };
 
   const handleCancel = () => {
-    console.log("Cancel button clicked");
+    router.push("/mylab");
   };
 
   const handleSave = async () => {
-    console.log("Save button clicked", { testCases });
+    if (!LAB_ID) {
+      alert("Missing labId, cannot save");
+      return;
+    }
+
     try {
       for (const tc of testCases) {
-        // Convert comma separated string to array
         const toArray = (str: string) => str.split(",").map(s => s.trim()).filter(s => s !== "");
 
         const payload = {
@@ -189,6 +193,7 @@ function Editlab() {
         }
       }
       alert("Saved successfully!");
+
       // reload to get IDs
       const data = await apiGetTestcases(LAB_ID);
       const list = Array.isArray(data) ? data : (data?.data ?? data?.testcases ?? []);
@@ -201,6 +206,9 @@ function Editlab() {
         score: String(tc.score ?? 0)
       }));
       setTestCases(mapped);
+
+      // navigate back to mylab after save
+      router.push("/mylab");
     } catch (err) {
       console.error("Save failed", err);
       alert("Save failed, check console");
@@ -238,8 +246,9 @@ function Editlab() {
                 </svg>
                 Cancel
               </Link>
-              <Link
-                href="/mylab"
+
+              {/* Use a button for Save so we can finish save then navigate */}
+              <button
                 onClick={handleSave}
                 className="bg-[#2E8B57] text-white px-4 py-2 rounded-full flex items-center hover:bg-[#267347]"
                 aria-label="Save lab changes"
@@ -259,7 +268,7 @@ function Editlab() {
                   />
                 </svg>
                 Save
-              </Link>
+              </button>
             </div>
 
             {/* ชื่อหัวข้อ */}
@@ -310,7 +319,7 @@ function Editlab() {
 
                   {testCases.map((testCase, index) => (
                     <div
-                      key={index}
+                      key={testCase.id ?? index}
                       className="relative border rounded-lg p-4 mb-4 shadow-sm bg-gray-50"
                     >
                       {/* ปุ่มลบ */}
