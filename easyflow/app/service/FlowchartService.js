@@ -234,3 +234,32 @@ export const apiGetClasses = async () => {
   }
 };
 
+// Update (replace) lab (testcases)
+export const apiUpdateLab = async (labId, labPayload) => {
+  if (!labId) {
+    throw new Error("apiUpdateLab: missing labId");
+  }
+  if (!labPayload || typeof labPayload !== "object") {
+    throw new Error("apiUpdateLab: missing or invalid labPayload");
+  }
+
+  try {
+    const resp = await axios.put(
+      `${BASE_URL}/labs/${encodeURIComponent(labId)}`,
+      labPayload,
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+
+    if (resp.status !== 200) {
+      console.warn(`apiUpdateLab: expected status 200 but got ${resp.status}`);
+    }
+
+    // คาด backend ส่งกลับรูปแบบเช่น { ok: true, lab: { labId: ..., testcases: [...] } }
+    return resp.data;
+  } catch (err) {
+    console.error("apiUpdateLab error:", err?.response ?? err);
+    throw err;
+  }
+};
