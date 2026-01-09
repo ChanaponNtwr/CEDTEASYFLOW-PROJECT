@@ -8,9 +8,8 @@ import CreateClassModal from "./_components/CreateClassModal";
 import Link from "next/link";
 import { apiCreateClass, apiGetClasses } from "@/app/service/FlowchartService"; // <-- import api
 
-// Type definitions
 export type ClassItem = {
-  id: number;
+  id: number | string;
   code: string;
   teacher: string;
   due: string;
@@ -22,31 +21,23 @@ function Myclass() {
   const [isCreating, setIsCreating] = useState(false); // loading state
   const [classes, setClasses] = useState<ClassItem[]>([]);
 
-  // Fetch classes on mount
   React.useEffect(() => {
     apiGetClasses().then((res: any) => {
       if (res.ok && Array.isArray(res.classes)) {
-        // Map backend data to frontend ClassItem
         const mapped = res.classes.map((c: any) => {
-          console.log('API Class Object:', c); // Debug log
-          // Find owner in userClasses
           const ownerEntry = c.userClasses?.find((uc: any) => uc.role?.roleName === 'owner');
-          // If we have user data included, used it. Otherwise use placeholder.
-          // Note: listClasses repo method includes userClasses->role, but maybe not user->name
-          // actually listClassesForUser includes userClasses->role. userClasses doesn't usually include user unless specified.
-
-          const createdDate = new Date(c.createAt).toLocaleDateString('en-US', {
-            month: 'short', day: 'numeric'
-          });
-
+          const createdDate = c.createAt ? new Date(c.createAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
           return {
-            code: c.classname,
-            teacher: ownerEntry ? 'Owner' : 'Unknown Teacher',
-            due: `Created ${createdDate}`,     // Showing Created Date as requested "Due date" context is ambiguous for Class
-            problem: c.classname
+            id: c.classId ?? c.id ?? Math.random().toString(36).slice(2,9),
+            code: c.classname ?? c.name ?? 'Unnamed',
+            teacher: ownerEntry ? (ownerEntry.user?.name ?? 'Owner') : 'Unknown Teacher',
+            due: `Created ${createdDate}`,
+            problem: c.classname ?? '',
           };
         });
         setClasses(mapped);
+      } else {
+        setClasses([]);
       }
     }).catch(err => console.error("Failed to fetch classes:", err));
   }, []);
@@ -71,7 +62,6 @@ function Myclass() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Updated: handleCreateClass now calls backend API
   const handleCreateClass = async () => {
     const { className, section, room } = formData;
     if (!className || !section || !room) {
@@ -79,26 +69,22 @@ function Myclass() {
       return;
     }
 
-    // prepare payload for API
     const labname = `${className} ${section}`;
     const payload = {
-      classname: labname, // <<-- Change key to 'classname' (backend expects 'classname')
-
-      testcases: [], // ถ้าต้องการสร้าง testcases เริ่มต้น ให้ใส่ที่นี่
-      currentUserId: 3, // <-- เปลี่ยนเป็น user id จริงจาก auth ของคุณถ้ามี
-      meta: { room }, // optional metadata
+      classname: labname,
+      testcases: [],
+      currentUserId: 3,
+      meta: { room },
     };
 
     setIsCreating(true);
     try {
       const result = await apiCreateClass(payload);
-      // result expected { ok: true, class: { classId, name, ownerId, lab: {...} } }
       if (result?.ok) {
-        // Build a UI-friendly ClassItem and append to list
         const newClass: ClassItem = {
-          id: result.class.classId, // Use real ID from result
+          id: result.class.classId ?? result.class.id ?? Math.random().toString(36).slice(2,9),
           code: `${className}-${section}`,
-          teacher: 'You', // หรือ ดึงชื่อจริงจากผลลัพธ์/ผู้ใช้ที่ล็อกอิน
+          teacher: 'You',
           due: 'Due Today',
           problem: `ปัญหา: ${labname}`,
         };
@@ -125,10 +111,7 @@ function Myclass() {
           <Sidebar />
           <div className="flex-1 flex flex-col p-20">
             <div className="flex justify-end mb-6">
-              <button
-                onClick={openModal}
-                className="bg-[#0D3ACE] text-white px-4 py-2 rounded-lg flex items-center hover:bg-[#0B2EA6] hover:shadow-lg transition-all duration-200"
-              >
+              <button onClick={openModal} className="bg-[#0D3ACE] text-white px-4 py-2 rounded-lg flex items-center hover:bg-[#0B2EA6] hover:shadow-lg transition-all duration-200">
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path>
                 </svg>
@@ -142,7 +125,9 @@ function Myclass() {
                 <p className="text-gray-500">You don't have any classes yet.</p>
               ) : (
                 classes.map((classItem, index) => (
-                  <Link href={`/Classwork?id=${classItem.id || ''}`} key={index}>
+                  // Use Link WITHOUT an <a> child per Next.js new Link
+                  <Link href={`/classes/${encodeURIComponent(String(classItem.id))}`} key={index}>
+                    {/* You can pass className/aria-label directly to Link if needed */}
                     <ClassCard {...classItem} />
                   </Link>
                 ))
@@ -170,7 +155,7 @@ function Myclass() {
           onCreate={handleCreateClass}
           formData={formData}
           setFormData={setFormData}
-          isCreating={isCreating} // pass loading if modal uses it
+          isCreating={isCreating}
         />
       </div>
     </div>

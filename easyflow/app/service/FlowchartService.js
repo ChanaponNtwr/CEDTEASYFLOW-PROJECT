@@ -263,3 +263,98 @@ export const apiUpdateLab = async (labId, labPayload) => {
     throw err;
   }
 };
+
+export const apiGetClass = async (classId) => {
+  if (!classId) {
+    throw new Error("apiGetClass: missing classId");
+  }
+
+  try {
+    const resp = await axios.get(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}`,
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+
+    if (resp.status !== 200) {
+      console.warn(`apiGetClass: expected status 200 but got ${resp.status}`);
+    }
+
+    const data = resp.data;
+
+    // ✅ รองรับ backend shape { ok, class }
+    const classData = data?.class ?? data;
+
+    // ⚠️ เตือนเฉย ๆ ถ้าโครงสร้างไม่ตรงที่คาด
+    if (
+      !classData ||
+      typeof classData !== "object" ||
+      !("classLabs" in classData) ||
+      !("userClasses" in classData) ||
+      !("packageClasses" in classData)
+    ) {
+      console.warn(
+        "apiGetClass: response missing expected fields (classLabs, userClasses, packageClasses). Response keys:",
+        classData ? Object.keys(classData) : classData
+      );
+    }
+
+    // ✅ return class object จริง
+    return classData;
+  } catch (err) {
+    console.error("apiGetClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+
+
+export const apiAddUserToClass = async ({
+  classId,
+  actorUserId, // ผู้ที่ทำ action (ต้องเป็น owner)
+  userId,      // user ที่จะเพิ่ม
+  roleId,      // role ของ user ที่จะเพิ่ม (student / teacher)
+}) => {
+  if (!classId) {
+    throw new Error("apiAddUserToClass: missing classId");
+  }
+  if (!actorUserId) {
+    throw new Error("apiAddUserToClass: missing actorUserId (x-user-id)");
+  }
+  if (!userId || !roleId) {
+    throw new Error("apiAddUserToClass: missing userId or roleId");
+  }
+
+  try {
+    const resp = await axios.post(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/users`,
+      {
+        userId,
+        roleId,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": actorUserId, // ⭐ สำคัญมาก
+        },
+      }
+    );
+
+    if (resp.status !== 200 && resp.status !== 201) {
+      console.warn(
+        `apiAddUserToClass: expected 200/201 but got ${resp.status}`
+      );
+    }
+
+    return resp.data; // { ok: true }
+  } catch (err) {
+    // 403 = actor ไม่ใช่ owner
+    if (err?.response?.status === 403) {
+      console.warn("apiAddUserToClass: forbidden (actor is not owner)");
+    }
+
+    console.error("apiAddUserToClass error:", err?.response ?? err);
+    throw err;
+  }
+};

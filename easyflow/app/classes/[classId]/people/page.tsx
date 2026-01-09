@@ -2,9 +2,9 @@
 import React, { useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
-import Tabs from "./_components/Tabs";
-import AddPersonModal from "./_components/AddPersonModal";
-import PeopleList from "./_components/PeopleList";
+import Tabs from "../../../Addpeople/_components/Tabs";
+import AddPersonModal from "../../../Addpeople/_components/AddPersonModal";
+import PeopleList from "../../../Addpeople/_components/PeopleList";
 
 function Addpeople() {
   const [activeTab, setActiveTab] = useState<string>("Classwork");
