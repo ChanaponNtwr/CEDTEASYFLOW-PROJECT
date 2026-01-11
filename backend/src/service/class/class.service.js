@@ -21,6 +21,27 @@ class ClassService {
   /* =========================================================
    * CLASS
    * ======================================================= */
+  async searchUsers(query) {
+  if (!query) return [];
+
+  const users = await prisma.user.findMany({
+    where: {
+      OR: [
+        { email: { contains: query, mode: "insensitive" } },
+        { name: { contains: query, mode: "insensitive" } } // ถ้า schema ใช้ fname/lname ต้องแก้
+      ]
+    },
+    select: {
+      id: true,       // แก้จาก userId → id
+      name: true,     // ถ้า schema มี fname/lname ต้องใช้ fname/lname
+      email: true
+    },
+    take: 20
+  });
+
+  return users;
+}
+
 
   async createClass(payload = {}, currentUserId = null) {
     const errors = validator.validateCreate(payload);
@@ -57,6 +78,8 @@ class ClassService {
 
     return classRepo.findById(created.classId);
   }
+
+  
 
   async getClass(classId) {
     // validate param
@@ -99,16 +122,11 @@ class ClassService {
    * LAB RELATION (owner + teacher)
    * ======================================================= */
 
-  async addLabToClass(classId, labId, actorUserId) {
+  async addLabToClass(classId, labId, actorUserId, dueDate = null) {
     if (!actorUserId) throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
 
     const actorUC = await prisma.userClass.findUnique({
-      where: {
-        userId_classId: {
-          userId: Number(actorUserId),
-          classId: Number(classId)
-        }
-      },
+      where: { userId_classId: { userId: Number(actorUserId), classId: Number(classId) } },
       include: { role: true }
     });
 
@@ -117,21 +135,41 @@ class ClassService {
     const errs = validator.validateAddLab({ labId });
     if (errs.length) throw Object.assign(new Error("Validation failed"), { details: errs });
 
-    if (!await classRepo.existsClass(classId)) {
-      throw Object.assign(new Error("Class not found"), { code: "NOT_FOUND" });
-    }
-
-    if (!await classRepo.existsLab(labId)) {
-      throw Object.assign(new Error("Lab not found"), { code: "NOT_FOUND" });
-    }
+    if (!await classRepo.existsClass(classId)) throw Object.assign(new Error("Class not found"), { code: "NOT_FOUND" });
+    if (!await classRepo.existsLab(labId)) throw Object.assign(new Error("Lab not found"), { code: "NOT_FOUND" });
 
     const existing = await classRepo.listLabs(classId);
     if (existing.some(l => Number(l.labId) === Number(labId))) {
       return { ok: true, message: "already attached" };
     }
 
-    return classRepo.addLabToClass(classId, labId);
+    // แปลง dueDate เป็น Date object ถ้าได้รับมา
+    let parsedDueDate = null;
+    if (dueDate) {
+      parsedDueDate = new Date(dueDate);
+      if (isNaN(parsedDueDate.getTime())) throw Object.assign(new Error("Invalid dueDate"), { code: "BAD_REQUEST" });
+    }
+
+    return classRepo.addLabToClass(classId, labId, parsedDueDate);
   }
+  
+  async updateLabDueDate(classId, labId, actorUserId, dueDate) {
+    if (!actorUserId) throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
+
+    // ตรวจสิทธิ์ (owner หรือ teacher)
+    const actorUC = await prisma.userClass.findUnique({
+      where: { userId_classId: { userId: Number(actorUserId), classId: Number(classId) } },
+      include: { role: true }
+    });
+
+    assertClassRole(actorUC, ["owner", "teacher"]);
+
+    if (!await classRepo.existsClass(classId)) throw Object.assign(new Error("Class not found"), { code: "NOT_FOUND" });
+    if (!await classRepo.existsLab(labId)) throw Object.assign(new Error("Lab not found"), { code: "NOT_FOUND" });
+
+    return classRepo.updateLabDueDate(classId, labId, dueDate);
+  }
+
 
   async removeLabFromClass(classId, labId, actorUserId) {
     if (!actorUserId) throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
