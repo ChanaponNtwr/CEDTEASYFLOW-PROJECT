@@ -165,25 +165,80 @@ export const apiRunTestcaseFromFlowchart = async (flowchartId) => {
   }
 };
 
-// (ต่อจากไฟล์ FlowchartService.js ที่มีอยู่)
 export const apiCreateLab = async (labPayload) => {
+  // เบื้องต้นตรวจ payload
+  if (!labPayload || typeof labPayload !== "object") {
+    throw new Error("apiCreateLab: missing or invalid labPayload");
+  }
+
+  // ตรวจฟิลด์ที่จำเป็น
+  const requiredFields = ["ownerUserId", "labname"];
+  for (const f of requiredFields) {
+    if (!(f in labPayload) || labPayload[f] === "" || labPayload[f] == null) {
+      throw new Error(`apiCreateLab: missing required field "${f}"`);
+    }
+  }
+
+  // ถ้ามี dueDate และเป็น Date ให้แปลงเป็น ISO string
+  if (labPayload.dueDate instanceof Date) {
+    labPayload.dueDate = labPayload.dueDate.toISOString();
+  }
+
+  // ถ้ามี dueDate แต่ไม่ได้เป็น ISO string ให้พยายามแปลง (ถ้าเป็นตัวเลขหรือ string)
+  if (labPayload.dueDate && typeof labPayload.dueDate !== "string") {
+    try {
+      labPayload.dueDate = new Date(labPayload.dueDate).toISOString();
+    } catch (e) {
+      // ถ้าแปลงไม่ได้ก็ปล่อยให้ backend ตรวจจับต่อ
+    }
+  }
+
+  // ตรวจ/normalize testcases (ไม่บังคับ แต่ช่วยลด error)
+  if ("testcases" in labPayload) {
+    if (!Array.isArray(labPayload.testcases)) {
+      throw new Error("apiCreateLab: testcases must be an array");
+    }
+    labPayload.testcases = labPayload.testcases.map((tc, idx) => {
+      // คาดว่าแต่ละ testcase มี inputVal (array), outputVal (array), score (number)
+      const inputVal = Array.isArray(tc.inputVal) ? tc.inputVal : (tc.inputVal == null ? [] : [tc.inputVal]);
+      const outputVal = Array.isArray(tc.outputVal) ? tc.outputVal : (tc.outputVal == null ? [] : [tc.outputVal]);
+      const score = typeof tc.score === "number" ? tc.score : Number(tc.score || 0);
+      return { ...tc, inputVal, outputVal, score };
+    });
+  }
+
   try {
-    // axios จะ resolve สำหรับสถานะ 2xx (รวม 201) ดังนั้นเราตรวจสอบ status เผื่อความแน่นอน
     const resp = await axios.post(`${BASE_URL}/labs`, labPayload, {
       headers: { "Content-Type": "application/json" },
+      // ให้ axios ไม่โยนเลยสำหรับ 2xx เราจะจัดการเองต่อ
+      validateStatus: (status) => status >= 200 && status < 300,
     });
 
-    if (resp.status !== 201) {
-      // ขึ้นข้อความเตือนถ้า backend ตอบไม่ใช่ 201
-      console.warn(`apiCreateLab: expected status 201 but got ${resp.status}`);
+    // ยอมรับทั้ง 200 และ 201 เป็นความสำเร็จ
+    if (resp.status !== 200 && resp.status !== 201) {
+      console.warn(`apiCreateLab: expected 200/201 but got ${resp.status}`);
     }
 
-    return resp.data; // คาดเป็น { ok: true, lab: { labId: ..., ... } }
+    // ถ้า backend ห่อข้อมูลเป็น { ok: true, lab: {...} } คืน lab object ให้ caller
+    if (resp.data && resp.data.lab) {
+      return resp.data.lab;
+    }
+
+    // มิฉะนั้นคืน resp.data ทั้งหมด (flexible)
+    return resp.data;
   } catch (err) {
-    console.error("apiCreateLab error:", err);
-    throw err;
+    console.error("apiCreateLab error:", err?.response ?? err);
+    const message =
+      err?.response?.data?.message ||
+      (err?.response?.data ? JSON.stringify(err.response.data) : null) ||
+      err.message ||
+      "apiCreateLab failed";
+    const e = new Error(message);
+    e.response = err?.response;
+    throw e;
   }
 };
+
 
 
 // เพิ่มที่ท้ายไฟล์ FlowchartService.js
