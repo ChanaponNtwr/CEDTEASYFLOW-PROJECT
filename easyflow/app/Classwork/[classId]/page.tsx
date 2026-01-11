@@ -179,7 +179,7 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col space-y-4">
+            <div className="flex flex-col space-y-4 pb-16">
                 {assignments.map((a: any, idx: number) => (
                   <Link key={idx} href={`/labviewscore/${a.labId}`}>
                       <AssignmentItem

@@ -54,7 +54,7 @@ function AssignmentItem({
           }}
           className="ml-4 text-gray-500 hover:text-gray-700"
         >
-          Edit
+          
         </button>
       )}
     </div>

@@ -104,7 +104,7 @@ function Myclass() {
   };
 
   return (
-    <div className="pt-20 min-h-screen bg-gray-100">
+    <div className="pt-20 min-h-screen ">
       <div className="pl-60">
         <Navbar />
         <div className="flex">

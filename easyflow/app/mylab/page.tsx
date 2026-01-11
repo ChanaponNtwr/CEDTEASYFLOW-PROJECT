@@ -136,7 +136,7 @@ function Mylab() {
   });
 
   return (
-    <div className="min-h-screen w-full bg-gray-100">
+    <div className="min-h-screen w-full ">
       <div className="pt-20 pl-72">
         <Navbar />
         <div className="flex h-screen">
