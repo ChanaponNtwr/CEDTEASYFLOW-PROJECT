@@ -33,10 +33,25 @@ class LabService {
       throw e;
     }
 
+    // if caller provided shapeConfig, store it inside problemSolving as JSON
+    // Accept payload.shapeConfig as an object like:
+    // { "PH": { "limit": "unlimited" }, "DC": { "limit": 3 }, "ST": { "limit": 1 } }
+    let problemSolvingValue = payload.problemSolving ?? "";
+    if (payload.shapeConfig) {
+      const narrative = typeof payload.problemSolving === 'string' ? payload.problemSolving : (payload.problemSolving?.narrative ?? "");
+      problemSolvingValue = JSON.stringify({
+        narrative,
+        shapeConfig: payload.shapeConfig
+      });
+    } else if (typeof payload.problemSolving === 'object') {
+      // If caller passed problemSolving as object already, keep as JSON string
+      problemSolvingValue = JSON.stringify(payload.problemSolving);
+    }
+
     const labData = {
       ownerUserId: Number(payload.ownerUserId),
       labname: String(payload.labname).trim(),
-      problemSolving: payload.problemSolving ?? "",
+      problemSolving: problemSolvingValue,
       inSymVal: Number(payload.inSymVal ?? 0),
       outSymVal: Number(payload.outSymVal ?? 0),
       declareSymVal: Number(payload.declareSymVal ?? 0),
@@ -70,7 +85,7 @@ class LabService {
     return labRepo.findByOwner(ownerUserId, opts);
   }
 
-  async updateLab(labId, payload = {}, currentUserId = null) {
+async updateLab(labId, payload = {}, currentUserId = null) {
     const errors = validator.validateUpdate(payload);
     if (errors.length) {
       const e = new Error("Validation failed");
@@ -84,7 +99,46 @@ class LabService {
 
     const data = {};
     if (payload.labname !== undefined) data.labname = String(payload.labname).trim();
-    if (payload.problemSolving !== undefined) data.problemSolving = payload.problemSolving;
+
+    // Accept payload.shapeConfig -> merge into problemSolving JSON
+    if (payload.shapeConfig) {
+      // load existing problemSolving, try to preserve existing narrative if any
+      const prisma = await import("../../lib/prisma.js").then(m => m.default);
+      const existing = await prisma.lab.findUnique({ where: { labId: Number(labId) } });
+      let existingPS = {};
+      try {
+        existingPS = existing && existing.problemSolving ? JSON.parse(existing.problemSolving) : {};
+      } catch (e) {
+        existingPS = { narrative: String(existing?.problemSolving ?? "") };
+      }
+      existingPS.shapeConfig = payload.shapeConfig;
+      data.problemSolving = JSON.stringify(existingPS);
+    } else if (payload.problemSolving !== undefined) {
+      // if provided as object or string, normalize to string
+      if (typeof payload.problemSolving === 'object') data.problemSolving = JSON.stringify(payload.problemSolving);
+      else data.problemSolving = payload.problemSolving;
+    }
+
+    if (payload.problemSolving !== undefined && data.problemSolving === undefined) {
+      // already handled above
+    }
+
+    if (payload.problemSolving !== undefined && data.problemSolving === undefined) {
+      data.problemSolving = payload.problemSolving;
+    }
+
+    if (payload.problemSolving === undefined && payload.shapeConfig === undefined) {
+      // no change
+    }
+
+    if (payload.problemSolving !== undefined && typeof payload.problemSolving === 'string') {
+      data.problemSolving = payload.problemSolving;
+    }
+
+    if (payload.problemSolving !== undefined && typeof payload.problemSolving === 'object') {
+      data.problemSolving = JSON.stringify(payload.problemSolving);
+    }
+
     if (payload.dueDate !== undefined) data.dueDate = payload.dueDate ? new Date(payload.dueDate) : null;
     if (payload.status !== undefined) data.status = payload.status;
 
