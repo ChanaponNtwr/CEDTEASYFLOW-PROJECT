@@ -213,6 +213,7 @@ export const apiGetLab = async (labId) => {
 };
 
 
+
 // FlowchartService.js (axios instance 'api' ตามที่มีอยู่แล้ว)
 export const apiCreateClass = async (payload) => {
   try {
@@ -309,52 +310,69 @@ export const apiGetClass = async (classId) => {
 };
 
 
-
-export const apiAddUserToClass = async ({
-  classId,
-  actorUserId, // ผู้ที่ทำ action (ต้องเป็น owner)
-  userId,      // user ที่จะเพิ่ม
-  roleId,      // role ของ user ที่จะเพิ่ม (student / teacher)
-}) => {
-  if (!classId) {
-    throw new Error("apiAddUserToClass: missing classId");
-  }
-  if (!actorUserId) {
-    throw new Error("apiAddUserToClass: missing actorUserId (x-user-id)");
-  }
-  if (!userId || !roleId) {
-    throw new Error("apiAddUserToClass: missing userId or roleId");
-  }
+export const apiAddLabToClass = async (classId, labId, userId) => {
+  if (!classId) throw new Error("apiAddLabToClass: missing classId");
+  if (!labId) throw new Error("apiAddLabToClass: missing labId");
 
   try {
     const resp = await axios.post(
-      `${BASE_URL}/classes/${encodeURIComponent(classId)}/users`,
-      {
-        userId,
-        roleId,
-      },
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`,
+      { labId },
       {
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": actorUserId, // ⭐ สำคัญมาก
+          ...(userId ? { "x-user-id": String(userId) } : {}),
         },
+        // allow axios to resolve for 2xx; we'll check status below
+        validateStatus: (status) => status >= 200 && status < 300,
       }
     );
 
+    // Accept both 200 and 201 as success
     if (resp.status !== 200 && resp.status !== 201) {
-      console.warn(
-        `apiAddUserToClass: expected 200/201 but got ${resp.status}`
-      );
+      console.warn(`apiAddLabToClass: expected 200/201 but got ${resp.status}`);
     }
 
-    return resp.data; // { ok: true }
+    // Expect response like { ok: true }
+    return resp.data;
   } catch (err) {
-    // 403 = actor ไม่ใช่ owner
-    if (err?.response?.status === 403) {
-      console.warn("apiAddUserToClass: forbidden (actor is not owner)");
+    // If backend returns non-2xx, axios throws: err.response may exist
+    console.error("apiAddLabToClass error:", err?.response ?? err);
+    // Re-throw with helpful message
+    const message =
+      err?.response?.data?.message ||
+      err?.response?.data ||
+      err.message ||
+      "apiAddLabToClass failed";
+    const e = new Error(message);
+    // attach response for callers who want more detail
+    e.response = err?.response;
+    throw e;
+  }
+};
+
+
+export const apiListLabsInClass = async (classId) => {
+  if (!classId) throw new Error("apiListLabsInClass: missing classId");
+
+  try {
+    const resp = await axios.get(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`,
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+
+    if (resp.status !== 200) {
+      console.warn(`apiListLabsInClass: expected status 200 but got ${resp.status}`);
     }
 
-    console.error("apiAddUserToClass error:", err?.response ?? err);
+    // Normalize response: prefer resp.data.labs if backend wraps, otherwise return resp.data
+    const labs = resp.data && typeof resp.data === "object" && "labs" in resp.data ? resp.data.labs : resp.data;
+    return labs;
+  } catch (err) {
+    console.error("apiListLabsInClass error:", err?.response ?? err);
+    // rethrow (caller should handle)
     throw err;
   }
 };

@@ -1,29 +1,48 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 
+/* =======================
+   Props
+======================= */
 interface ClassCardProps {
+  code?: string;
   title?: string;
   problem?: string;
   teacher?: string;
-  score?: string;
+  score?: number | string;
   due?: string;
   isChecked?: boolean;
   onCheckboxChange?: (checked: boolean) => void;
+  onCardClick?: () => void; // new: click card to view details
 }
 
 function ClassCard({
+  code,
   title = "",
   problem = "",
   teacher = "",
-  score = "",
+  score,
   due = "",
   isChecked = false,
   onCheckboxChange,
+  onCardClick,
 }: ClassCardProps) {
   return (
-    <div className="bg-white shadow-md rounded-lg overflow-hidden hover:scale-105 transition-all cursor-pointer relative">
-      {/* Header Section */}
+    <div
+      role={onCardClick ? "button" : undefined}
+      tabIndex={onCardClick ? 0 : undefined}
+      onClick={() => onCardClick?.()}
+      onKeyDown={(e) => {
+        if (!onCardClick) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onCardClick();
+        }
+      }}
+      className="bg-white shadow-md rounded-lg overflow-hidden hover:scale-105 transition-all cursor-pointer relative"
+    >
+      {/* Header */}
       <div className="bg-orange-500 text-white p-4 flex items-center">
         <div className="bg-white rounded-full p-2 mr-3">
           <svg
@@ -31,81 +50,62 @@ function ClassCard({
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
           >
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth="2"
               d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v14a2 2 0 01-2 2z"
-            ></path>
+            />
           </svg>
         </div>
-        <span className="text-lg font-semibold">{title || "No Title"}</span>
+        <div>
+          {/* code not shown unless provided intentionally */}
+          {code ? <div className="text-xs opacity-90">{code}</div> : null}
+          <span className="text-lg font-semibold">{title || "No Title"}</span>
+        </div>
 
-        {/* Custom styled checkbox (using hidden input + visible box) */}
-        <label className="absolute top-4 right-4 z-50">
+        {/* Checkbox */}
+        <label
+          className="absolute top-4 right-4 z-50"
+          onClick={(e) => e.stopPropagation()} // prevent card click when clicking checkbox
+          onKeyDown={(e) => e.stopPropagation()}
+        >
           <input
             type="checkbox"
             checked={isChecked}
-            onChange={(e) => {
-              onCheckboxChange?.(e.target.checked);
-            }}
+            onChange={(e) => onCheckboxChange?.(e.target.checked)}
             className="sr-only peer"
+            onClick={(e) => e.stopPropagation()} // extra safeguard
             aria-label={`Select ${title || "class card"}`}
           />
-
-          <div className="w-6 h-6 rounded-lg border border-gray-300 bg-white flex items-center justify-center shadow-sm transform transition-all duration-150 peer-checked:bg-green-500 peer-checked:border-green-500 peer-checked:scale-105 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-green-300">
+          <div className="w-6 h-6 rounded-lg border border-gray-300 bg-white flex items-center justify-center shadow-sm peer-checked:bg-blue-600 peer-checked:border-blue-600">
             <svg
-              className="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity duration-150"
+              className="w-4 h-4 text-white opacity-0 peer-checked:opacity-100"
               viewBox="0 0 24 24"
               fill="none"
-              xmlns="http://www.w3.org/2000/svg"
             >
-              <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d="M20 6L9 17l-5-5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </div>
         </label>
       </div>
 
-      {/* Content Section */}
+      {/* Content */}
       <div className="p-6 h-32">
-        <p className="text-gray-800 font-semibold text-base">{problem || "No Problem"}</p>
-        <p className="text-gray-600 text-sm mt-1">ผู้สร้าง: {teacher || "ไม่ระบุ"}</p>
-        <p className="text-gray-600 text-sm mt-1">คะแนน: {score || "ไม่ระบุ"}</p>
-        <p className="text-gray-600 text-sm mt-1">กำหนดส่ง: {due || "ไม่ระบุ"}</p>
+        <p className="text-gray-800 font-semibold">{problem || "No Problem"}</p>
+        <p className="text-gray-600 text-sm">ผู้สร้าง: {teacher || "ไม่ระบุ"}</p>
+        <p className="text-gray-600 text-sm">คะแนน: {score ?? "ไม่ระบุ"}</p>
+        <p className="text-gray-600 text-sm">กำหนดส่ง: {due || "ไม่ระบุ"}</p>
       </div>
     </div>
   );
 }
 
-function App() {
-  const classes = [
-    { title: "Math Class", problem: "Algebra Homework", teacher: "Mr. Smith", score: "100", due: "2025-08-25" },
-  ];
-
-  const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
-
-  const handleCheckboxChange = (title: string, checked: boolean) => {
-    setSelectedTitle(checked ? title : null);
-  };
-
-  return (
-    <div className="p-4 space-y-4">
-      {classes.map((cls) => (
-        <ClassCard
-          key={cls.title}
-          title={cls.title}
-          problem={cls.problem}
-          teacher={cls.teacher}
-          score={cls.score}
-          due={cls.due}
-          isChecked={selectedTitle === cls.title}
-          onCheckboxChange={(checked) => handleCheckboxChange(cls.title, checked)}
-        />
-      ))}
-    </div>
-  );
-}
-
-export default App;
+export default ClassCard;
