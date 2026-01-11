@@ -42,7 +42,7 @@ function formatDueDate(d?: string) {
 
 function Labinfo() {
   const searchParams = useSearchParams();
-  const labIdParam = searchParams?.get("labId") ?? "2"; // fallback to 2
+  const labIdParam = searchParams?.get("labId"); // <-- fallback removed
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [lab, setLab] = useState<RemoteLab | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -69,6 +69,9 @@ function Labinfo() {
   };
 
   useEffect(() => {
+    // if no labId in URL, don't attempt to fetch
+    if (!labIdParam) return;
+
     let mounted = true;
     const fetchData = async () => {
       setLoading(true);
@@ -175,6 +178,23 @@ function Labinfo() {
       mounted = false;
     };
   }, [labIdParam]);
+
+  // If there's no labId, show a clear message and avoid rendering the main UI
+  if (!labIdParam) {
+    return (
+      <div className="min-h-screen w-full bg-gray-100 flex items-center justify-center">
+        <div className="w-full max-w-lg bg-white p-6 rounded-lg shadow-md text-center">
+          <h2 className="text-2xl font-semibold mb-2">Missing labId</h2>
+          <p className="text-gray-600 mb-4">URL parameter <code>labId</code> is required to view this page.</p>
+          <div className="flex justify-center">
+            <Link href="/labs" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+              Go to labs list
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const totalPoints = testCases.reduce((s, t) => s + (t.score ?? 0), 0);
   const labTitle = lab?.labname ?? lab?.name ?? `Lab ${labIdParam}`;

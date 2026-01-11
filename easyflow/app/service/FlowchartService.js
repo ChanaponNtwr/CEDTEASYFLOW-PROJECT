@@ -352,27 +352,3 @@ export const apiAddLabToClass = async (classId, labId, userId) => {
 };
 
 
-export const apiListLabsInClass = async (classId) => {
-  if (!classId) throw new Error("apiListLabsInClass: missing classId");
-
-  try {
-    const resp = await axios.get(
-      `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`,
-      {
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-
-    if (resp.status !== 200) {
-      console.warn(`apiListLabsInClass: expected status 200 but got ${resp.status}`);
-    }
-
-    // Normalize response: prefer resp.data.labs if backend wraps, otherwise return resp.data
-    const labs = resp.data && typeof resp.data === "object" && "labs" in resp.data ? resp.data.labs : resp.data;
-    return labs;
-  } catch (err) {
-    console.error("apiListLabsInClass error:", err?.response ?? err);
-    // rethrow (caller should handle)
-    throw err;
-  }
-};

@@ -1,4 +1,4 @@
-import Classwork from "@/app/Classwork/page";
+import Classwork from "@/app/Classwork/[classId]/page";
 
 interface PageProps {
   params: Promise<{ classId: string }>;
