@@ -72,14 +72,16 @@ class ClassRepository {
     });
   }
 
-  async addLabToClass(classId, labId) {
-    return prisma.classLabs.create({
-      data: {
-        classId: Number(classId),
-        labId: Number(labId)
-      }
-    });
-  }
+  async addLabToClass(classId, labId, dueDate = null) {
+  return prisma.classLabs.create({
+    data: {
+      classId: Number(classId),
+      labId: Number(labId),
+      dueDate: dueDate ? new Date(dueDate) : null, // <-- ใช้ argument ที่ส่งมา
+    }
+  });
+}
+
 
   async removeLabFromClass(classId, labId) {
     return prisma.classLabs.delete({
@@ -92,12 +94,31 @@ class ClassRepository {
     });
   }
 
-  async listLabs(classId) {
-    return prisma.classLabs.findMany({
-      where: { classId: Number(classId) },
-      include: { lab: true }
-    });
-  }
+  // src/service/class/class.repository.js
+async listLabs(classId) {
+  return prisma.classLabs.findMany({
+    where: { classId: Number(classId) },
+    include: {
+      lab: true // lab info
+    },
+    orderBy: { labId: "asc" } // ถ้าต้องการเรียง
+  });
+}
+
+// src/service/class/class.repository.js
+async updateLabDueDate(classId, labId, dueDate) {
+  return prisma.classLabs.update({
+    where: {
+      classId_labId: {
+        classId: Number(classId),
+        labId: Number(labId)
+      }
+    },
+    data: {
+      dueDate: dueDate ? new Date(dueDate) : null
+    }
+  });
+}
 
 
   async addUserToClass(userId, classId, roleId) {
