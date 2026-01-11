@@ -102,6 +102,7 @@ model Lab {
 model ClassLabs {
   classId Int
   labId   Int
+  dueDate DateTime?
   class   Class @relation(fields: [classId], references: [classId])
   lab     Lab   @relation(fields: [labId], references: [labId])
 

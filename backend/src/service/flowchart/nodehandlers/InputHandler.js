@@ -1,5 +1,4 @@
-// src/service/flowchart/nodeHandlers/InputHandler.js
-console.log("🔎 InputHandler v4 loaded");
+console.log("🔎 InputHandler v5 loaded");
 
 export default function InputHandler(node, context, flowchart, options = {}) {
   // validate
@@ -7,17 +6,22 @@ export default function InputHandler(node, context, flowchart, options = {}) {
   const varTypeRaw = node?.data?.varType;
   if (!varName) throw new Error("IN handler requires node.data.variable");
 
-  // if already set and not override => skip
+  /**
+   * ✅ NEW RULE
+   * IN node reads input by default
+   * Only skip when node.data.skipIfExists === true
+   */
   const existing = context.get(varName);
-  if (existing !== undefined && node?.data?.override !== true) {
-    console.log(`IN: ${varName} already set = ${JSON.stringify(existing)} (skip input)`);
+  if (node?.data?.skipIfExists === true && existing !== undefined) {
+    console.log(`IN: ${varName} already set = ${JSON.stringify(existing)} (skip input by config)`);
     return { nextCondition: "auto" };
   }
 
   // pick provider (priority: options.inputProvider > flowchart._inputProvider)
-  const provider = (typeof options.inputProvider === "function")
-    ? options.inputProvider
-    : (flowchart && typeof flowchart._inputProvider === "function")
+  const provider =
+    typeof options.inputProvider === "function"
+      ? options.inputProvider
+      : flowchart && typeof flowchart._inputProvider === "function"
       ? flowchart._inputProvider
       : null;
 
@@ -27,8 +31,8 @@ export default function InputHandler(node, context, flowchart, options = {}) {
     try {
       provided = provider(node.data?.prompt ?? "", varName);
     } catch (e) {
-      const err = new Error(`Input missing for '${varName}': ${e.message || 'no value provided'}`);
-      err.code = 'INPUT_MISSING';
+      const err = new Error(`Input missing for '${varName}': ${e.message || "no value provided"}`);
+      err.code = "INPUT_MISSING";
       throw err;
     }
   } else {
@@ -36,33 +40,35 @@ export default function InputHandler(node, context, flowchart, options = {}) {
       provided = node.data.default;
     } else {
       const err = new Error(`Input missing for '${varName}': no input provider and no default`);
-      err.code = 'INPUT_MISSING';
+      err.code = "INPUT_MISSING";
       throw err;
     }
   }
 
   if (provided === undefined || provided === null) {
     const err = new Error(`Input missing for '${varName}': provided value is ${String(provided)}`);
-    err.code = 'INPUT_MISSING';
+    err.code = "INPUT_MISSING";
     throw err;
   }
 
-  // debug: raw value from provider
-  try { console.log(`InputHandler: raw provided for ${varName}:`, provided, "typeof:", typeof provided); } catch (e) {}
+  // debug
+  try {
+    console.log(`InputHandler: raw provided for ${varName}:`, provided, "typeof:", typeof provided);
+  } catch {}
 
-  // normalizer: coerce strings that look like numbers/booleans into real types
+  // normalize
   const normalizeProvided = (val) => {
     if (val === null || val === undefined) return val;
-    if (typeof val === 'number' || typeof val === 'boolean') return val;
-    if (typeof val === 'object') return val;
+    if (typeof val === "number" || typeof val === "boolean") return val;
+    if (typeof val === "object") return val;
 
     const s = String(val).trim();
     const low = s.toLowerCase();
 
-    if (low === 'true') return true;
-    if (low === 'false') return false;
-    if (low === '1') return 1;
-    if (low === '0') return 0;
+    if (low === "true") return true;
+    if (low === "false") return false;
+    if (low === "1") return 1;
+    if (low === "0") return 0;
 
     if (/^[+-]?\d+$/.test(s)) return Number(s);
     if (/^[+-]?\d*\.\d+$/.test(s) || /^[+-]?\d+\.\d*$/.test(s)) return Number(s);
@@ -74,91 +80,71 @@ export default function InputHandler(node, context, flowchart, options = {}) {
   let finalType = declared;
   let finalValue;
 
-  const raw = provided;
-  const norm = normalizeProvided(raw);
+  const norm = normalizeProvided(provided);
 
   try {
     if (declared) {
       switch (declared) {
-        case 'int':
-        case 'integer': {
+        case "int":
+        case "integer": {
           const n = Number(norm);
-          if (!Number.isInteger(n)) {
-            const err = new Error(`Invalid integer for ${varName}`);
-            err.code = 'INVALID_VALUE';
-            throw err;
-          }
+          if (!Number.isInteger(n)) throw Object.assign(new Error(`Invalid integer for ${varName}`), { code: "INVALID_VALUE" });
           finalValue = n;
-          finalType = 'int';
+          finalType = "int";
           break;
         }
-        case 'float':
-        case 'number': {
+        case "float":
+        case "number": {
           const f = Number(norm);
-          if (isNaN(f)) {
-            const err = new Error(`Invalid number for ${varName}`);
-            err.code = 'INVALID_VALUE';
-            throw err;
-          }
+          if (isNaN(f)) throw Object.assign(new Error(`Invalid number for ${varName}`), { code: "INVALID_VALUE" });
           finalValue = f;
-          finalType = 'float';
+          finalType = "float";
           break;
         }
-        case 'bool':
-        case 'boolean': {
-          if (typeof norm === 'boolean') finalValue = norm;
-          else {
-            const low = String(norm).toLowerCase();
-            if (low === 'true' || low === '1') finalValue = true;
-            else if (low === 'false' || low === '0') finalValue = false;
-            else {
-              const err = new Error(`Invalid boolean for ${varName}`);
-              err.code = 'INVALID_VALUE';
-              throw err;
-            }
-          }
-          finalType = 'bool';
+        case "bool":
+        case "boolean": {
+          if (typeof norm === "boolean") finalValue = norm;
+          else if (norm === 1 || norm === "1" || String(norm).toLowerCase() === "true") finalValue = true;
+          else if (norm === 0 || norm === "0" || String(norm).toLowerCase() === "false") finalValue = false;
+          else throw Object.assign(new Error(`Invalid boolean for ${varName}`), { code: "INVALID_VALUE" });
+          finalType = "bool";
           break;
         }
-        case 'string':
+        case "string":
         default:
           finalValue = String(norm);
-          finalType = 'string';
+          finalType = "string";
       }
     } else {
-      // infer
-      if (typeof norm === 'number') {
-        finalType = Number.isInteger(norm) ? 'int' : 'float';
+      if (typeof norm === "number") {
+        finalType = Number.isInteger(norm) ? "int" : "float";
         finalValue = norm;
-      } else if (typeof norm === 'boolean') {
-        finalType = 'bool';
+      } else if (typeof norm === "boolean") {
+        finalType = "bool";
         finalValue = norm;
       } else {
-        finalType = 'string';
+        finalType = "string";
         finalValue = String(norm);
       }
     }
   } catch (e) {
-    if (e && e.code === 'INPUT_MISSING') throw e;
     const err = new Error(e.message || `Invalid input for ${varName}`);
-    err.code = e.code || 'INVALID_VALUE';
+    err.code = e.code || "INVALID_VALUE";
     throw err;
   }
 
-  // CRITICAL: if runtime value is numeric/boolean but declared varType is 'string',
-  // don't force string storage — allow Context to infer/store typed value.
+  // store
   let storeVarType = finalType;
-  if ((typeof finalValue === 'number' || typeof finalValue === 'boolean') && finalType === 'string') {
+  if ((typeof finalValue === "number" || typeof finalValue === "boolean") && finalType === "string") {
     storeVarType = undefined;
   }
 
   context.set(varName, finalValue, storeVarType);
 
-  // final debug
   try {
     const stored = context.get(varName);
     console.log(`Input: ${varName} = ${JSON.stringify(stored)} (type=${typeof stored})`);
-  } catch (e) {}
+  } catch {}
 
   return { nextCondition: "auto" };
 }

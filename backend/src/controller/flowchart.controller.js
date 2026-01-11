@@ -1,6 +1,7 @@
 import express from "express";
 import { Flowchart, Executor, Context, Node, Edge } from "../service/flowchart/index.js";
 import prisma from "../lib/prisma.js";
+import SubmissionService from "../service/submission/index.js";
 const router = express.Router();
 
 const savedFlowcharts = new Map();
@@ -232,10 +233,20 @@ router.post("/create", async (req, res) => {
     if (!userId) return res.status(400).json({ ok: false, error: "Missing 'userId'." });
     if (!labId) return res.status(400).json({ ok: false, error: "Missing 'labId'." });
 
+    // 🔒 check submission lock (CONFIRMED only)
+    const confirmedSubmission = await prisma.submission.findFirst({
+      where: {
+        userId,
+        labId,
+        status: "CONFIRMED"
+      }
+    });
+    const submissionLocked = Boolean(confirmedSubmission);
+
     // check DB
     const existingFC = await prisma.flowchart.findFirst({ where: { userId, labId } });
 
-    // ถ้ามีอยู่แล้ว + ไม่ overwrite → return existing (pattern insert-node)
+    // ถ้ามีอยู่แล้ว + ไม่ overwrite → return existing
     if (existingFC && !overwrite) {
       const fcHydrated = hydrateFlowchart(existingFC.content);
       const serialized = serializeFlowchart(fcHydrated);
@@ -246,11 +257,12 @@ router.post("/create", async (req, res) => {
         message: `Flowchart already exists for userId='${userId}' labId='${labId}'`,
         flowchartId: existingFC.flowchartId,
         member: { userId, labId },
+        submissionLocked,          // ✅ เพิ่ม
         flowchart: serialized
       });
     }
 
-    // สร้าง payload start/end
+    // payload start/end
     const fcPayload = {
       nodes: [
         { id: "n_start", type: "ST", label: "Start", data: { label: "Start" }, position: { x: 0, y: 0 }, incomingEdgeIds: [], outgoingEdgeIds: ["n_start-n_end"] },
@@ -273,10 +285,8 @@ router.post("/create", async (req, res) => {
       });
     }
 
-    // save memory
     savedFlowcharts.set(newFC.flowchartId, fcPayload);
 
-    // hydrate + serialize
     const fcHydrated = hydrateFlowchart(fcPayload);
     const serialized = serializeFlowchart(fcHydrated);
 
@@ -285,6 +295,7 @@ router.post("/create", async (req, res) => {
       message: `Flowchart created for userId='${userId}' labId='${labId}'`,
       flowchartId: newFC.flowchartId,
       member: { userId, labId },
+      submissionLocked,          // ✅ เพิ่ม
       flowchart: serialized
     });
 
@@ -293,6 +304,7 @@ router.post("/create", async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
 
 router.post("/insert-node", async (req, res) => {
   try {
@@ -309,93 +321,118 @@ router.post("/insert-node", async (req, res) => {
     if (!edgeId) return res.status(400).json({ ok: false, error: "Missing 'edgeId'." });
     if (!nodeSpec || typeof nodeSpec !== "object") return res.status(400).json({ ok: false, error: "Missing 'node' object." });
 
-    // โหลดจาก memory หรือ DB
     let saved = savedFlowcharts.get(flowchartId);
+    let fcFromDB = null;
+
     if (!saved) {
-      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: Number(flowchartId) } });
+      fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: Number(flowchartId) } });
       if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
       saved = fcFromDB.content;
       savedFlowcharts.set(flowchartId, saved);
+    } else {
+      fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: Number(flowchartId) } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
     }
 
-    // ถ้าเป็น Declare node -> ตรวจสอบว่าตัวแปรที่ประกาศมีการใช้แล้วหรือไม่
-    // =======================
-// Declare node conflict check (FIXED)
-// =======================
-const incomingType = normalizeType(
-  nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH"
-);
-
-if (incomingType === "DC") {
-  const declaredNames = [];
-  const d = nodeSpec.data || {};
-
-  if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
-  if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
-  if (Array.isArray(d.names)) {
-    for (const nm of d.names) {
-      if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
-    }
-  }
-
-    const uniqueNames = [...new Set(declaredNames)];
-
-    if (uniqueNames.length > 0 && !force) {
-      const conflicts = [];
-
-      const nodesArr = saved.nodes || [];
-
-      for (const n of nodesArr) {
-        if (!n || !n.id) continue;
-
-        const nodeType = normalizeType(
-          n.type ?? n.typeShort ?? n.typeFull ?? ""
-        );
-
-        // ✅ ตรวจเฉพาะ Declare node เท่านั้น
-        if (nodeType !== "DC") continue;
-
-        const nd = n.data || {};
-        const existingNames = [];
-
-        if (typeof nd.name === "string" && nd.name.trim()) existingNames.push(nd.name.trim());
-        if (typeof nd.varName === "string" && nd.varName.trim()) existingNames.push(nd.varName.trim());
-        if (Array.isArray(nd.names)) {
-          for (const nm of nd.names) {
-            if (typeof nm === "string" && nm.trim()) existingNames.push(nm.trim());
-          }
-        }
-
-        for (const newName of uniqueNames) {
-          if (existingNames.includes(newName)) {
-            conflicts.push({
-              varName: newName,
-              nodeId: n.id,
-              foundIn: "declare"
-            });
-          }
-        }
+    // 🔒 SUBMISSION LOCK
+    const confirmedSubmission = await prisma.submission.findFirst({
+      where: {
+        userId: fcFromDB.userId,
+        labId: fcFromDB.labId,
+        status: "CONFIRMED"
       }
+    });
 
-      if (conflicts.length > 0) {
-        return res.status(409).json({
-          ok: false,
-          error: "Variable already declared in this flowchart.",
-          conflicts
-        });
-      }
+    if (confirmedSubmission) {
+      return res.status(403).json({
+        ok: false,
+        error: "This lab has already been confirmed by instructor. Flowchart is read-only."
+      });
     }
-  }
 
-
-    // proceed with hydrate + insertion (เดิมของคุณ)
     const fc = hydrateFlowchart(saved);
 
+    // ตรวจสอบ edge
     if (!fc.getEdge(edgeId)) return res.status(400).json({ ok: false, error: `Edge '${edgeId}' not found in flowchart.` });
 
-    const beforeSerialized = serializeFlowchart(fc);
-
     const typ = normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH");
+
+    // ====== SHAPE LIMIT CHECK ======
+    const lab = await prisma.lab.findUnique({ where: { labId: fcFromDB.labId } });
+    if (!lab) return res.status(404).json({ ok: false, error: "Lab config not found." });
+
+    const shapeLimit = {
+      PH: Infinity,
+      DC: lab.declareSymVal,
+      AS: lab.assignSymVal,
+      IF: lab.ifSymVal,
+      FOR: lab.forSymVal,
+      WH: lab.whileSymVal,
+      IN: lab.inSymVal,
+      OU: lab.outSymVal,
+      ST: Infinity,
+      EN: Infinity,
+    };
+
+    const fcNodes = Object.values(fc.nodes || {});
+    const usedCount = {};
+    for (const key of Object.keys(shapeLimit)) usedCount[key] = 0;
+    for (const n of fcNodes) {
+      const nodeType = normalizeType(n.type ?? n.typeShort ?? n.typeFull ?? "PH");
+      if (usedCount[nodeType] !== undefined) usedCount[nodeType]++;
+    }
+
+    if (shapeLimit[typ] !== Infinity && usedCount[typ] >= shapeLimit[typ]) {
+      return res.status(409).json({
+        ok: false,
+        error: `Cannot insert node '${typ}': shape limit reached.`,
+        limit: shapeLimit[typ],
+        used: usedCount[typ]
+      });
+    }
+
+    // ====== DC CONFLICT CHECK ======
+    if (typ === "DC") {
+      const declaredNames = [];
+      const d = nodeSpec.data || {};
+      if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
+      if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
+      if (Array.isArray(d.names)) {
+        for (const nm of d.names) if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
+      }
+
+      const uniqueNames = [...new Set(declaredNames)];
+
+      if (uniqueNames.length > 0 && !force) {
+        const conflicts = [];
+        const nodesArr = saved.nodes || [];
+        for (const n of nodesArr) {
+          if (!n || !n.id) continue;
+          const nodeType = normalizeType(n.type ?? n.typeShort ?? n.typeFull ?? "");
+          if (nodeType !== "DC") continue;
+          const nd = n.data || {};
+          const existingNames = [];
+          if (typeof nd.name === "string" && nd.name.trim()) existingNames.push(nd.name.trim());
+          if (typeof nd.varName === "string" && nd.varName.trim()) existingNames.push(nd.varName.trim());
+          if (Array.isArray(nd.names)) {
+            for (const nm of nd.names) if (typeof nm === "string" && nm.trim()) existingNames.push(nm.trim());
+          }
+          for (const newName of uniqueNames) {
+            if (existingNames.includes(newName)) conflicts.push({ varName: newName, nodeId: n.id, foundIn: "declare" });
+          }
+        }
+
+        if (conflicts.length > 0) {
+          return res.status(409).json({
+            ok: false,
+            error: "Variable already declared in this flowchart.",
+            conflicts
+          });
+        }
+      }
+    }
+
+    // ====== INSERT NODE ======
     const nodeId = nodeSpec.id || fc.genId();
     const newNode = new Node(
       nodeId,
@@ -410,22 +447,29 @@ if (incomingType === "DC") {
     if (nodeSpec.loopEdge) newNode.loopEdge = nodeSpec.loopEdge;
     if (nodeSpec.loopExitEdge) newNode.loopExitEdge = nodeSpec.loopExitEdge;
 
-    try { fc.insertNodeAtEdge(edgeId, newNode); }
-    catch (err) { return res.status(500).json({ ok: false, error: String(err.message ?? err) }); }
+    const beforeSerialized = serializeFlowchart(fc);
+
+    try {
+      fc.insertNodeAtEdge(edgeId, newNode);
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+    }
 
     const afterSerialized = serializeFlowchart(fc);
     const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
-    // save memory
     savedFlowcharts.set(flowchartId, afterSerialized);
-
-    // update DB
     await prisma.flowchart.update({
       where: { flowchartId: Number(flowchartId) },
       data: { content: afterSerialized }
     });
 
-    return res.json({ ok: true, message: `Inserted node ${newNode.id} at edge ${edgeId}`, flowchartId, diffs });
+    return res.json({
+      ok: true,
+      message: `Inserted node ${newNode.id} at edge ${edgeId}`,
+      flowchartId,
+      diffs
+    });
 
   } catch (err) {
     console.error("insert-node error:", err);
@@ -438,164 +482,288 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
   try {
     const rawId = req.params.id;
     const nodeId = req.params.nodeId;
+
     if (!rawId) return res.status(400).json({ ok: false, error: "Missing flowchart id in path." });
     if (!nodeId) return res.status(400).json({ ok: false, error: "Missing nodeId in path." });
 
-    // normalize id: support numeric or string keys in cache/DB
+    // normalize id
     const numId = Number(rawId);
     const mapKey = Number.isNaN(numId) ? String(rawId) : numId;
 
-    // load saved JSON (memory cache first)
+    // =========================
+    // LOAD FLOWCHART + DB ROW
+    // =========================
     let saved = savedFlowcharts.get(mapKey);
+    let fcFromDB = null;
+
     if (!saved) {
       const whereKey = Number.isNaN(numId) ? Number(rawId) : numId;
-      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: whereKey } });
-      if (!fcFromDB) return res.status(404).json({ ok: false, error: "Flowchart not found" });
+      fcFromDB = await prisma.flowchart.findUnique({
+        where: { flowchartId: whereKey }
+      });
+
+      if (!fcFromDB) {
+        return res.status(404).json({ ok: false, error: "Flowchart not found" });
+      }
+
       saved = fcFromDB.content;
-      // normalize cache key to number when possible
+
       const cacheKey = Number(fcFromDB.flowchartId);
-      savedFlowcharts.set(Number.isNaN(cacheKey) ? String(fcFromDB.flowchartId) : cacheKey, saved);
+      savedFlowcharts.set(
+        Number.isNaN(cacheKey) ? String(fcFromDB.flowchartId) : cacheKey,
+        saved
+      );
+    } else {
+      // cache hit → still need DB row for lock check
+      fcFromDB = await prisma.flowchart.findUnique({
+        where: { flowchartId: Number(mapKey) }
+      });
+
+      if (!fcFromDB) {
+        return res.status(404).json({ ok: false, error: "Flowchart not found" });
+      }
     }
 
-    // quick check node exists in raw saved JSON (fast-fail)
-    const nodeExists = (saved.nodes || []).some(n => n.id === nodeId);
-    if (!nodeExists) return res.status(404).json({ ok: false, error: "Node not found" });
+    // =========================
+    // 🔒 SUBMISSION LOCK
+    // =========================
+    const confirmedSubmission = await prisma.submission.findFirst({
+      where: {
+        userId: fcFromDB.userId,
+        labId: fcFromDB.labId,
+        status: "CONFIRMED"
+      }
+    });
 
-    // --- EXTRACT declared variable names from the node being deleted ---
-    // (so we can remove them from any cached executor state or other registries)
+    if (confirmedSubmission) {
+      return res.status(403).json({
+        ok: false,
+        error: "This lab has already been confirmed by instructor. Flowchart is read-only."
+      });
+    }
+
+    // =========================
+    // CHECK NODE EXISTS
+    // =========================
+    const nodeExists = (saved.nodes || []).some(n => n.id === nodeId);
+    if (!nodeExists) {
+      return res.status(404).json({ ok: false, error: "Node not found" });
+    }
+
+    // =========================
+    // EXTRACT DECLARED VARIABLES
+    // =========================
     const deletedNodeRaw = (saved.nodes || []).find(n => n.id === nodeId) || null;
     const declaredNames = [];
+
     if (deletedNodeRaw) {
-      // normalize type check (node may store type as "DC" or "declare")
-      const nodeType = normalizeType(deletedNodeRaw.type ?? deletedNodeRaw.typeShort ?? deletedNodeRaw.typeFull ?? "");
+      const nodeType = normalizeType(
+        deletedNodeRaw.type ??
+        deletedNodeRaw.typeShort ??
+        deletedNodeRaw.typeFull ??
+        ""
+      );
+
       if (nodeType === "DC") {
         const d = deletedNodeRaw.data || {};
         if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
         if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
         if (Array.isArray(d.names)) {
-          for (const nm of d.names) if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
+          for (const nm of d.names) {
+            if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
+          }
         }
       }
     }
+
     const uniqueDeclaredNames = [...new Set(declaredNames)];
 
-    // hydrate to Flowchart instance and keep before snapshot for diffs
+    // =========================
+    // REMOVE NODE
+    // =========================
     const fcBefore = hydrateFlowchart(saved);
     const beforeSerialized = serializeFlowchart(fcBefore);
 
-    // use backend logic to remove node (this mutates fcBefore)
     try {
       fcBefore.removeNode(nodeId);
     } catch (err) {
-      return res.status(400).json({ ok: false, error: `Failed to remove node: ${String(err.message ?? err)}` });
+      return res.status(400).json({
+        ok: false,
+        error: `Failed to remove node: ${String(err.message ?? err)}`
+      });
     }
 
-    // serialize after-change
     const afterSerialized = serializeFlowchart(fcBefore);
 
-    // optional: verify path start->end still exists (hydrateFlowchart earlier checked on create; here we can be defensive)
+    // sanity check
     try {
-      // hasPathStartToEnd expects a Flowchart instance; reuse helper if available or re-hydrate
-      // (we can check by hydrating from afterSerialized to be safe)
-      const fcCheck = hydrateFlowchart(afterSerialized);
-      // if hydrateFlowchart throws, it will be caught below
+      hydrateFlowchart(afterSerialized);
     } catch (err) {
-      // If the removal broke graph (no path) — still persist? better to return error and not save.
-      return res.status(400).json({ ok: false, error: `Graph invalid after removal: ${String(err.message ?? err)}` });
+      return res.status(400).json({
+        ok: false,
+        error: `Graph invalid after removal: ${String(err.message ?? err)}`
+      });
     }
 
-    // compute diffs (same helper used by other endpoints)
     const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
-    // --- Persist changes to DB ---
-    // persist to DB (use number key if possible)
-    const dbKey = Number.isNaN(Number(mapKey)) ? mapKey : Number(mapKey);
+    // =========================
+    // SAVE DB + CACHE
+    // =========================
     await prisma.flowchart.update({
-      where: { flowchartId: dbKey },
+      where: { flowchartId: Number(fcFromDB.flowchartId) },
       data: { content: afterSerialized }
     });
 
-    // update in-memory cache (flowchart content)
     savedFlowcharts.set(mapKey, afterSerialized);
 
-    // --- Remove declared vars from any stored executor states (cache) ---
-    // Update any keys starting with 'executorState_' to remove variables that were declared by deleted node.
+    // =========================
+    // CLEAN EXECUTOR STATES
+    // =========================
     if (uniqueDeclaredNames.length > 0) {
-      for (const [k, v] of Array.from(savedFlowcharts.entries())) {
+      for (const [k, v] of savedFlowcharts.entries()) {
         try {
-          // We care only about executor snapshots saved under keys like executorState_<id>
-          if (String(k).startsWith("executorState_") && v && typeof v === "object" && v.executor) {
+          if (
+            String(k).startsWith("executorState_") &&
+            v &&
+            typeof v === "object" &&
+            v.executor
+          ) {
             const es = v.executor;
 
-            // remove from es.context.variables (array of { name, value, varType } or similar)
             if (es.context && Array.isArray(es.context.variables)) {
-              es.context.variables = es.context.variables.filter(varObj => {
-                if (!varObj || !varObj.name) return true;
-                return !uniqueDeclaredNames.includes(String(varObj.name));
-              });
+              es.context.variables = es.context.variables.filter(
+                v => !uniqueDeclaredNames.includes(String(v.name))
+              );
             }
 
-            // remove from es.context.output? (unlikely, but preserve)
-            // remove from es.lastNode.variables if present
             if (es.lastNode && Array.isArray(es.lastNode.variables)) {
-              es.lastNode.variables = es.lastNode.variables.filter(varObj => {
-                if (!varObj || !varObj.name) return true;
-                return !uniqueDeclaredNames.includes(String(varObj.name));
-              });
+              es.lastNode.variables = es.lastNode.variables.filter(
+                v => !uniqueDeclaredNames.includes(String(v.name))
+              );
             }
 
-            // If flowchartNodeInternal or other internal snapshots hold variable-like keys, we leave them.
-            // Save back modified snapshot
             savedFlowcharts.set(k, v);
           }
         } catch (e) {
-          // don't fail delete because of cache cleanup; just warn (but keep going)
-          console.warn("Failed to clean executor snapshot for deleted variables:", e);
+          console.warn("Failed to clean executor snapshot:", e);
         }
       }
-
-      // Additionally: if the saved flowchart content included any top-level registry of variables (custom),
-      // remove those entries too (defensive)
-      try {
-        const flowSaved = savedFlowcharts.get(mapKey);
-        if (flowSaved && typeof flowSaved === "object") {
-          // common possible places: flowSaved.variables (array of { name,... }) or flowSaved.declaredVariables
-          if (Array.isArray(flowSaved.variables)) {
-            flowSaved.variables = flowSaved.variables.filter(v => {
-              if (!v || !v.name) return true;
-              return !uniqueDeclaredNames.includes(String(v.name));
-            });
-          }
-          if (Array.isArray(flowSaved.declaredVariables)) {
-            flowSaved.declaredVariables = flowSaved.declaredVariables.filter(nm => !uniqueDeclaredNames.includes(String(nm)));
-          }
-          // save back
-          savedFlowcharts.set(mapKey, flowSaved);
-        }
-      } catch (e) {
-        console.warn("Failed to clean top-level declared variables in saved content:", e);
-      }
-    }
-
-    // optional: remove any stored executorState for this flowchart (to avoid inconsistency)
-    const execKey = `executorState_${mapKey}`;
-    if (savedFlowcharts.has(execKey)) {
-      // If you prefer to delete executor snapshot entirely instead of cleaning names, you can:
-      // savedFlowcharts.delete(execKey);
-      // For now we already attempted cleaning above; but keep this delete as a safety fallback:
-      // If snapshot still contains no variables and you want to remove it, uncomment next lines:
-      // const maybe = savedFlowcharts.get(execKey);
-      // if (maybe && maybe.executor && Array.isArray(maybe.executor.context?.variables) && maybe.executor.context.variables.length === 0) savedFlowcharts.delete(execKey);
     }
 
     return res.json({
       ok: true,
       message: `Node ${nodeId} removed`,
-      flowchartId: dbKey,
-      diffs,
+      flowchartId: fcFromDB.flowchartId,
+      diffs
     });
+
   } catch (err) {
     console.error("delete node error:", err);
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+  }
+});
+
+
+router.get("/:flowchartId/shapes/remaining", async (req, res) => {
+  try {
+    const flowchartId = Number(req.params.flowchartId);
+    if (!flowchartId) return res.status(400).json({ ok: false, error: "Missing flowchartId." });
+
+    const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId } });
+    if (!fcFromDB) return res.status(404).json({ ok: false, error: "Flowchart not found." });
+
+    const lab = await prisma.lab.findUnique({ where: { labId: fcFromDB.labId } });
+    if (!lab) return res.status(404).json({ ok: false, error: "Lab config not found." });
+
+    const shapeLimit = {
+      PH: Infinity,
+      DC: lab.declareSymVal,
+      AS: lab.assignSymVal,
+      IF: lab.ifSymVal,
+      FOR: lab.forSymVal,
+      WH: lab.whileSymVal,
+      IN: lab.inSymVal,
+      OU: lab.outSymVal,
+      ST: Infinity,
+      EN: Infinity,
+    };
+
+    const fc = hydrateFlowchart(fcFromDB.content);
+    const fcNodes = Object.values(fc.nodes || {});
+    const usedCount = {};
+    for (const key of Object.keys(shapeLimit)) usedCount[key] = 0;
+    for (const n of fcNodes) {
+      const typ = normalizeType(n.type ?? n.typeShort ?? n.typeFull ?? "PH");
+      if (usedCount[typ] !== undefined) usedCount[typ]++;
+    }
+
+    const shapeRemaining = {};
+    for (const key of Object.keys(shapeLimit)) {
+      shapeRemaining[key] = {
+        limit: shapeLimit[key] === Infinity ? "unlimited" : shapeLimit[key],
+        used: usedCount[key],
+        remaining: shapeLimit[key] === Infinity ? "unlimited" : Math.max(shapeLimit[key] - usedCount[key], 0)
+      };
+    }
+
+    return res.json({ ok: true, flowchartId, shapeRemaining });
+
+  } catch (err) {
+    console.error("get shapeRemaining error:", err);
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+  }
+});
+
+
+
+
+// GET flowchart list for user profile (lightweight)
+// Place BEFORE router.get("/:id", ...)
+router.get("/by-user", async (req, res) => {
+  try {
+    const userId = Number(req.query.userId);
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: "Missing 'userId' query parameter." });
+    }
+
+    // get all flowcharts of user (only metadata)
+    const flowcharts = await prisma.flowchart.findMany({
+      where: { userId },
+      select: {
+        flowchartId: true,
+        labId: true,
+        lab: { select: { labname: true } },
+        createdAt: true
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    // find confirmed submissions for this user
+    const confirmed = await prisma.submission.findMany({
+      where: {
+        userId,
+        status: "CONFIRMED"
+      },
+      select: { labId: true }
+    });
+
+    const confirmedLabIds = new Set(confirmed.map(r => Number(r.labId)));
+
+    const result = flowcharts.map(fc => ({
+      flowchartId: fc.flowchartId,
+      labId: fc.labId,
+      labName: fc.lab?.labname ?? null,
+      submissionLocked: confirmedLabIds.has(Number(fc.labId))
+    }));
+
+    return res.json({
+      ok: true,
+      flowcharts: result
+    });
+
+  } catch (err) {
+    console.error("by-user error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
@@ -606,7 +774,6 @@ router.get("/:id", async (req, res) => {
     const idParam = req.params.id;
     if (!idParam) return res.status(400).json({ ok: false, error: "Missing 'id' in path." });
 
-    // try numeric lookup first, then fallback to string lookup
     const parsed = Number(idParam);
     let fcFromDB = null;
 
@@ -614,33 +781,37 @@ router.get("/:id", async (req, res) => {
       fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: parsed } });
     }
     if (!fcFromDB) {
-      // fallback: try string key (in case flowchartId is stored as string)
       try {
         fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: idParam } });
-      } catch (e) {
-        // some prisma schemas won't accept string for a numeric field; ignore error
-      }
+      } catch (e) {}
     }
 
     if (!fcFromDB) {
       return res.status(404).json({ ok: false, error: `Flowchart '${idParam}' not found.` });
     }
 
-    // get payload from DB
+    // 🔒 check submission lock
+    const confirmedSubmission = await prisma.submission.findFirst({
+      where: {
+        userId: fcFromDB.userId,
+        labId: fcFromDB.labId,
+        status: "CONFIRMED"
+      }
+    });
+    const submissionLocked = Boolean(confirmedSubmission);
+
     const saved = fcFromDB.content;
 
-    // normalize memory key: prefer Number if possible
     const mapKey = Number(fcFromDB.flowchartId);
     savedFlowcharts.set(Number.isNaN(mapKey) ? String(fcFromDB.flowchartId) : mapKey, saved);
 
-    // hydrate + serialize for consumer-friendly representation
     const fc = hydrateFlowchart(saved);
     const serialized = serializeFlowchart(fc);
 
     return res.json({
       ok: true,
       flowchartId: fcFromDB.flowchartId,
-      // include both serialized (hydrated) representation and raw content from DB
+      submissionLocked,        // ✅ เพิ่ม
       flowchart: serialized,
       raw: saved
     });
@@ -649,6 +820,7 @@ router.get("/:id", async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
 
 router.get("/:id/edges", async (req, res) => {
   try {
@@ -671,7 +843,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
   try {
     let raw = req.body;
     if (typeof raw === "string") {
-      try { raw = JSON.parse(raw); } catch (e) { /* keep raw */ }
+      try { raw = JSON.parse(raw); } catch (e) {}
     }
     const body = raw || {};
 
@@ -683,11 +855,33 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
 
     // โหลดจาก memory หรือ DB
     let saved = savedFlowcharts.get(flowchartId);
+    let fcFromDB = null;
+
     if (!saved) {
-      const fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId } });
+      fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId } });
       if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
       saved = fcFromDB.content;
       savedFlowcharts.set(flowchartId, saved);
+    } else {
+      // ถ้ามีใน memory ยังต้องโหลด DB เพื่อรู้ userId / labId
+      fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
+    }
+
+    // 🔒 SUBMISSION LOCK (CONFIRMED = แก้ไม่ได้)
+    const confirmedSubmission = await prisma.submission.findFirst({
+      where: {
+        userId: fcFromDB.userId,
+        labId: fcFromDB.labId,
+        status: "CONFIRMED"
+      }
+    });
+
+    if (confirmedSubmission) {
+      return res.status(403).json({
+        ok: false,
+        error: "This lab has already been confirmed by instructor. Flowchart is read-only."
+      });
     }
 
     // hydrate
@@ -727,13 +921,11 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
     }
 
     // -------------------------
-    // Conflict detection: ถ้าเป็น Declare node ให้ตรวจสอบชื่อที่ประกาศว่า "มีการใช้แล้ว" หรือไม่
-    // รองรับการส่งตัวเลือก force: true เพื่อบังคับข้ามการตรวจสอบ
+    // Conflict detection: Declare node
     // -------------------------
     const force = Boolean(body.force);
 
     if (node.type === "DC") {
-      // helper: ดึงชื่อที่ประกาศออกมาจาก newData (รองรับ name, varName, names[])
       const declaredNames = [];
       const d = newData || {};
       if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
@@ -744,7 +936,6 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
       const uniqueNames = [...new Set(declaredNames)];
 
       if (uniqueNames.length > 0 && !force) {
-        // escape regex special chars
         const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const conflicts = [];
         const nodesArr = saved.nodes || [];
@@ -753,21 +944,17 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
           const wordRe = new RegExp(`\\b${escapeRegExp(varName)}\\b`, "i");
           for (const n of nodesArr) {
             if (!n || !n.id) continue;
-            if (n.id === nodeId) continue; // อย่าตรวจสอบกับ node ที่กำลังแก้เอง
-            // check label
+            if (n.id === nodeId) continue;
             if (n.label && typeof n.label === "string" && wordRe.test(n.label)) {
               conflicts.push({ varName, nodeId: n.id, label: n.label, foundIn: "label" });
               continue;
             }
-            // check data (stringify defensive)
             try {
               const dataStr = JSON.stringify(n.data || {});
               if (wordRe.test(dataStr)) {
                 conflicts.push({ varName, nodeId: n.id, label: n.label ?? null, foundIn: "data" });
               }
-            } catch (e) {
-              // ignore stringify errors
-            }
+            } catch (e) {}
           }
         }
 
@@ -781,7 +968,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
       }
     }
 
-    // update - ใช้ method เดิมของ Node
+    // update
     try {
       node.updateData(newData);
     } catch (err) {
@@ -791,7 +978,6 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
     const afterSerialized = serializeFlowchart(fc);
     const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
-    // save memory + db
     savedFlowcharts.set(flowchartId, afterSerialized);
     await prisma.flowchart.update({
       where: { flowchartId },
@@ -809,6 +995,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
+
 
 
 // (วางทับฟังก์ชัน router.post("/execute", ...) ใน controller ของคุณ)

@@ -1,11 +1,9 @@
 // src/service/flowchart/classcontext.js
 export default class Context {
     constructor(variables = []) {
-        // scope stack: each scope is a map name -> { value, varType }
         this._scopeStack = [ {} ];
         this.output = [];
 
-        // initialize from variables array (compatibility)
         for (const v of variables) {
             const name = v.name;
             const value = v.value;
@@ -13,12 +11,10 @@ export default class Context {
             this._scopeStack[0][name] = { value, varType };
         }
 
-        // public array-like view for backward compatibility
         this.variables = [];
         this._syncVariables();
     }
 
-    /* ================== helpers ================== */
 
     static _inferVarType(value) {
         if (value === null || value === undefined) return "int";
@@ -31,7 +27,6 @@ export default class Context {
         return "int";
     }
 
-    // merge scopes into variables[] (bottom->top, top overrides)
     _syncVariables() {
         const merged = {};
         for (const scope of this._scopeStack) {
@@ -56,7 +51,6 @@ export default class Context {
         });
     }
 
-    /* ================== scope ops ================== */
 
     pushScope(bindings = {}) {
         const scope = {};
@@ -85,7 +79,6 @@ export default class Context {
         }
     }
 
-    /* ================== variable ops ================== */
 
     get(name) {
         for (let i = this._scopeStack.length - 1; i >= 0; i--) {
@@ -123,16 +116,6 @@ export default class Context {
             .join(", ");
     }
 
-    /* ================== SNAPSHOT (สำคัญ) ================== */
-    /**
-     * รูปแบบที่ controller / executor ใช้:
-     * {
-     *   variables: [{ name, value, varType }],
-     *   output: [...],
-     *   scopeStack: [ { varName: { value, varType } } ]
-     * }
-     */
-
     serialize() {
         try {
             return {
@@ -154,19 +137,16 @@ export default class Context {
         if (!snapshot || typeof snapshot !== "object") return;
 
         try {
-            // restore scope stack (authoritative)
             if (Array.isArray(snapshot.scopeStack) && snapshot.scopeStack.length > 0) {
                 this._scopeStack = JSON.parse(JSON.stringify(snapshot.scopeStack));
             } else {
                 this._scopeStack = [ {} ];
             }
 
-            // restore output
             this.output = Array.isArray(snapshot.output)
                 ? JSON.parse(JSON.stringify(snapshot.output))
                 : [];
 
-            // rebuild variables view from scopeStack
             this._syncVariables();
         } catch (e) {
             console.warn("Context.restore failed:", e);
