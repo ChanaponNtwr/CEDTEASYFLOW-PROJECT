@@ -2,18 +2,29 @@
 import labRepo from "./lab.repository.js";
 import validator from "./lab.validator.js";
 
+/**
+ * Normalize testcase value
+ * - string -> keep
+ * - array/object -> JSON.stringify
+ */
+function normalize(val) {
+  if (val === undefined || val === null) return null;
+  if (typeof val === "object") return JSON.stringify(val);
+  return val;
+}
+
+function normalizeTestcase(tc = {}) {
+  return {
+    ...tc,
+    inputVal: normalize(tc.inputVal),
+    outputVal: normalize(tc.outputVal),
+    inHiddenVal: normalize(tc.inHiddenVal),
+    outHiddenVal: normalize(tc.outHiddenVal),
+    score: Number(tc.score || 0)
+  };
+}
+
 class LabService {
-  /**
-   * Create a lab with optional testcases array in payload.testcases
-   * payload example:
-   * {
-   *   ownerUserId: 1,
-   *   labname: "Lab 1",
-   *   problemSolving: "desc",
-   *   dueDate: "2025-01-10T00:00:00Z",
-   *   testcases: [{ inputVal: "...", outputVal: "...", score: 5 }, ...]
-   * }
-   */
   async createLab(payload = {}, options = {}) {
     const errors = validator.validateCreate(payload, options);
     if (errors.length) {
@@ -22,10 +33,25 @@ class LabService {
       throw e;
     }
 
+    // if caller provided shapeConfig, store it inside problemSolving as JSON
+    // Accept payload.shapeConfig as an object like:
+    // { "PH": { "limit": "unlimited" }, "DC": { "limit": 3 }, "ST": { "limit": 1 } }
+    let problemSolvingValue = payload.problemSolving ?? "";
+    if (payload.shapeConfig) {
+      const narrative = typeof payload.problemSolving === 'string' ? payload.problemSolving : (payload.problemSolving?.narrative ?? "");
+      problemSolvingValue = JSON.stringify({
+        narrative,
+        shapeConfig: payload.shapeConfig
+      });
+    } else if (typeof payload.problemSolving === 'object') {
+      // If caller passed problemSolving as object already, keep as JSON string
+      problemSolvingValue = JSON.stringify(payload.problemSolving);
+    }
+
     const labData = {
       ownerUserId: Number(payload.ownerUserId),
       labname: String(payload.labname).trim(),
-      problemSolving: payload.problemSolving ?? "",
+      problemSolving: problemSolvingValue,
       inSymVal: Number(payload.inSymVal ?? 0),
       outSymVal: Number(payload.outSymVal ?? 0),
       declareSymVal: Number(payload.declareSymVal ?? 0),
@@ -38,7 +64,8 @@ class LabService {
     };
 
     if (Array.isArray(payload.testcases) && payload.testcases.length > 0) {
-      return labRepo.createLabWithTestcases(labData, payload.testcases);
+      const normalized = payload.testcases.map(normalizeTestcase);
+      return labRepo.createLabWithTestcases(labData, normalized);
     }
 
     return labRepo.createLab(labData);
@@ -58,12 +85,7 @@ class LabService {
     return labRepo.findByOwner(ownerUserId, opts);
   }
 
-  /**
-   * Update lab info and optionally replace the whole testcase set.
-   * If payload.testcases provided => we replace (deleteMany + createMany) inside a transaction.
-   * currentUserId optional: if provided, check owner
-   */
-  async updateLab(labId, payload = {}, currentUserId = null) {
+async updateLab(labId, payload = {}, currentUserId = null) {
     const errors = validator.validateUpdate(payload);
     if (errors.length) {
       const e = new Error("Validation failed");
@@ -77,32 +99,69 @@ class LabService {
 
     const data = {};
     if (payload.labname !== undefined) data.labname = String(payload.labname).trim();
-    if (payload.problemSolving !== undefined) data.problemSolving = payload.problemSolving;
+
+    // Accept payload.shapeConfig -> merge into problemSolving JSON
+    if (payload.shapeConfig) {
+      // load existing problemSolving, try to preserve existing narrative if any
+      const prisma = await import("../../lib/prisma.js").then(m => m.default);
+      const existing = await prisma.lab.findUnique({ where: { labId: Number(labId) } });
+      let existingPS = {};
+      try {
+        existingPS = existing && existing.problemSolving ? JSON.parse(existing.problemSolving) : {};
+      } catch (e) {
+        existingPS = { narrative: String(existing?.problemSolving ?? "") };
+      }
+      existingPS.shapeConfig = payload.shapeConfig;
+      data.problemSolving = JSON.stringify(existingPS);
+    } else if (payload.problemSolving !== undefined) {
+      // if provided as object or string, normalize to string
+      if (typeof payload.problemSolving === 'object') data.problemSolving = JSON.stringify(payload.problemSolving);
+      else data.problemSolving = payload.problemSolving;
+    }
+
+    if (payload.problemSolving !== undefined && data.problemSolving === undefined) {
+      // already handled above
+    }
+
+    if (payload.problemSolving !== undefined && data.problemSolving === undefined) {
+      data.problemSolving = payload.problemSolving;
+    }
+
+    if (payload.problemSolving === undefined && payload.shapeConfig === undefined) {
+      // no change
+    }
+
+    if (payload.problemSolving !== undefined && typeof payload.problemSolving === 'string') {
+      data.problemSolving = payload.problemSolving;
+    }
+
+    if (payload.problemSolving !== undefined && typeof payload.problemSolving === 'object') {
+      data.problemSolving = JSON.stringify(payload.problemSolving);
+    }
+
     if (payload.dueDate !== undefined) data.dueDate = payload.dueDate ? new Date(payload.dueDate) : null;
     if (payload.status !== undefined) data.status = payload.status;
 
-    const numericFields = ["inSymVal", "outSymVal", "declareSymVal", "assignSymVal", "ifSymVal", "forSymVal", "whileSymVal"];
+    const numericFields = [
+      "inSymVal", "outSymVal", "declareSymVal",
+      "assignSymVal", "ifSymVal", "forSymVal", "whileSymVal"
+    ];
     for (const f of numericFields) {
       if (payload[f] !== undefined) data[f] = Number(payload[f]);
     }
 
-    // If testcases provided -> replace them atomically
     if (Array.isArray(payload.testcases)) {
-      // do update lab fields + replace testcases inside repo.replaceTestcasesAtomic
-      // Some DBs prefer a single transaction. Here repo.replaceTestcasesAtomic returns lab after replace.
-      // We still update lab fields first (if any):
       if (Object.keys(data).length > 0) {
         await labRepo.updateLab(labId, data);
       }
-      return labRepo.replaceTestcasesAtomic(labId, payload.testcases);
+      const normalized = payload.testcases.map(normalizeTestcase);
+      return labRepo.replaceTestcasesAtomic(labId, normalized);
     }
 
-    // no testcases swap, just update lab fields
     if (Object.keys(data).length > 0) {
       return labRepo.updateLab(labId, data);
     }
 
-    // nothing changed
     return this.getLab(labId);
   }
 
@@ -112,16 +171,17 @@ class LabService {
   }
 
   async addTestcase(labId, testcasePayload) {
-    // small helper to add single testcase (not used when replacing)
     const prisma = await import("../../lib/prisma.js").then(m => m.default);
+    const tc = normalizeTestcase(testcasePayload);
+
     return prisma.testcase.create({
       data: {
         labId: Number(labId),
-        inputVal: testcasePayload.inputVal,
-        outputVal: testcasePayload.outputVal,
-        inHiddenVal: testcasePayload.inHiddenVal ?? null,
-        outHiddenVal: testcasePayload.outHiddenVal ?? null,
-        score: Number(testcasePayload.score || 0)
+        inputVal: tc.inputVal,
+        outputVal: tc.outputVal,
+        inHiddenVal: tc.inHiddenVal,
+        outHiddenVal: tc.outHiddenVal,
+        score: tc.score
       }
     });
   }
@@ -129,19 +189,20 @@ class LabService {
   async addTestcasesBulk(labId, testcasesArray = []) {
     if (!Array.isArray(testcasesArray)) throw new Error("testcases must be an array");
     const prisma = await import("../../lib/prisma.js").then(m => m.default);
-    const data = testcasesArray.map((tc) => ({
+
+    const data = testcasesArray.map(tc => ({
       labId: Number(labId),
-      inputVal: tc.inputVal,
-      outputVal: tc.outputVal,
-      inHiddenVal: tc.inHiddenVal ?? null,
-      outHiddenVal: tc.outHiddenVal ?? null,
-      score: Number(tc.score || 0)
+      ...normalizeTestcase(tc)
     }));
+
     return prisma.testcase.createMany({ data });
   }
 
   async incrementSymVals(labId, deltas = {}) {
-    const allowed = new Set(["inSymVal", "outSymVal", "declareSymVal", "assignSymVal", "ifSymVal", "forSymVal", "whileSymVal"]);
+    const allowed = new Set([
+      "inSymVal", "outSymVal", "declareSymVal",
+      "assignSymVal", "ifSymVal", "forSymVal", "whileSymVal"
+    ]);
     const clean = {};
     for (const k of Object.keys(deltas)) {
       if (allowed.has(k)) clean[k] = Number(deltas[k]);

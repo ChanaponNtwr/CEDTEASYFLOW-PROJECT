@@ -7,6 +7,7 @@ import flowchartController from "./controller/flowchart.controller.js";
 import testcaseRouter from "./controller/testcase.controller.js";
 import labController from "./controller/lab.controller.js";
 import classController from "./controller/class.controller.js";
+import submissionController from "./controller/submission.controller.js";
 
 
 dotenv.config();
@@ -26,6 +27,8 @@ app.use("/flowchart", flowchartController);
 app.use(testcaseRouter);
 app.use("/labs", labController);
 app.use("/classes", classController);
+app.use(submissionController);
+
 
 // start
 const PORT = process.env.PORT || 8080;
