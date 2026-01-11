@@ -100,12 +100,13 @@ router.get("/", async (req, res) => {
 router.post("/:classId/labs", async (req, res) => {
   try {
     const actorUserId = getActorUserId(req);
-    const { labId } = req.body;
+    const { labId, dueDate } = req.body; // <-- ต้องรับค่า dueDate
 
     const r = await classService.addLabToClass(
       req.params.classId,
       labId,
-      actorUserId
+      actorUserId,
+      dueDate  // <-- ส่งเข้าไปด้วย
     );
 
     return res.status(201).json({ ok: true, result: r });
@@ -118,23 +119,52 @@ router.post("/:classId/labs", async (req, res) => {
     return res.status(status).json({ ok: false, message: err.message });
   }
 });
+/**
+ * GET /classes/:classId/labs
+ */
+// src/controller/class.controller.js
 
 /**
  * GET /classes/:classId/labs
  */
 router.get("/:classId/labs", async (req, res) => {
   try {
-    const list = await classService.listLabsInClass(req.params.classId);
-    return res.json({ ok: true, labs: list });
+    const classId = req.params.classId;
+    const labs = await classService.listLabsInClass(classId);
+    
+    // map ให้ frontend ใช้ง่าย: lab + dueDate
+    const result = labs.map(cl => ({
+      labId: cl.labId,
+      dueDate: cl.dueDate,
+      lab: cl.lab
+    }));
+
+    return res.json({ ok: true, labs: result });
   } catch (err) {
     console.error("LIST LABS ERROR:", err);
     return res.status(500).json({ ok: false, message: err.message });
   }
 });
 
+
 /* =========================================================
  * USER RELATION
  * ======================================================= */
+// src/controller/class.controller.js
+router.get("/users/search", async (req, res) => {
+  try {
+    const query = String(req.query.q || "").trim().toLowerCase();
+    if (!query) return res.json({ ok: true, users: [] });
+
+    const users = await classService.searchUsers(query);
+    // users = [{ userId, name, email }, ...]
+
+    return res.json({ ok: true, users });
+  } catch (err) {
+    console.error("SEARCH USERS ERROR:", err);
+    return res.status(500).json({ ok: false, message: err.message });
+  }
+});
 
 /**
  * POST /classes/:classId/users
@@ -185,6 +215,33 @@ router.delete("/:classId/users/:userId", async (req, res) => {
       err.code === "FORBIDDEN" ? 403 :
       err.code === "NOT_FOUND" ? 404 : 400;
 
+    return res.status(status).json({ ok: false, message: err.message });
+  }
+});
+
+/**
+ * PATCH /classes/:classId/labs/:labId
+ * body: { dueDate }
+ * header: x-user-id (owner | teacher)
+ */
+router.patch("/:classId/labs/:labId", async (req, res) => {
+  try {
+    const actorUserId = getActorUserId(req);
+    const { dueDate } = req.body;
+
+    const updated = await classService.updateLabDueDate(
+      req.params.classId,
+      req.params.labId,
+      actorUserId,
+      dueDate
+    );
+
+    return res.json({ ok: true, result: updated });
+  } catch (err) {
+    console.error("UPDATE LAB DUE DATE ERROR:", err);
+    const status =
+      err.code === "FORBIDDEN" ? 403 :
+      err.code === "NOT_FOUND" ? 404 : 400;
     return res.status(status).json({ ok: false, message: err.message });
   }
 });
