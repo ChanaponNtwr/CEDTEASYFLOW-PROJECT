@@ -27,6 +27,14 @@ interface RemoteLab {
   testCases?: any[];
   problemSolving?: string;
   problem?: string;
+  // เพิ่ม Type สำหรับ Symbol ให้ชัดเจน
+  inSymVal?: number;
+  outSymVal?: number;
+  declareSymVal?: number;
+  assignSymVal?: number;
+  ifSymVal?: number;
+  forSymVal?: number;
+  whileSymVal?: number;
   [k: string]: any;
 }
 
@@ -86,7 +94,8 @@ export default function Labviewscore() {
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [symbols, setSymbols] = useState({ input: 0, output: 0, declare: 0, assign: 0, if: 0 });
+  
+  // --- ลบ State symbols และ updateSymbolCount ออก ---
 
   // parsing helpers (robust)
   const parseVal = (val: any): any => {
@@ -119,9 +128,6 @@ export default function Labviewscore() {
 
   const flattenDeep = (arr: any[]): any[] =>
     arr.reduce((acc, v) => (Array.isArray(v) ? acc.concat(flattenDeep(v)) : acc.concat(v)), []);
-
-  const updateSymbolCount = (newSymbols: { input: number; output: number; declare: number; assign: number; if: number }) =>
-    setSymbols(newSymbols);
 
   useEffect(() => {
     if (!labIdResolved) return;
@@ -218,6 +224,19 @@ export default function Labviewscore() {
   const labProblem = lab?.problemSolving ?? lab?.problem ?? "";
   const dueText = lab?.dueDate ?? lab?.dateline ?? null;
 
+  // แปลงข้อมูล Lab เป็น format ที่ SymbolSection ต้องการ
+  const symbolLabData = lab
+    ? {
+        inSymVal: lab.inSymVal ?? 0,
+        outSymVal: lab.outSymVal ?? 0,
+        declareSymVal: lab.declareSymVal ?? 0,
+        assignSymVal: lab.assignSymVal ?? 0,
+        ifSymVal: lab.ifSymVal ?? 0,
+        forSymVal: lab.forSymVal ?? 0,
+        whileSymVal: lab.whileSymVal ?? 0,
+      }
+    : undefined;
+
   return (
     <div className="min-h-screen w-full bg-gray-100">
       <div className="pt-20 pl-52">
@@ -301,7 +320,8 @@ export default function Labviewscore() {
 
                 <div className="pt-5">
                   <h1 className="text-2xl font-bold text-gray-700 mb-2">Symbols</h1>
-                  <SymbolSection onChange={updateSymbolCount}  />
+                  {/* แก้ไขให้ส่ง labData แทน onChange */}
+                  <SymbolSection labData={symbolLabData} />
                 </div>
               </div>
             </div>

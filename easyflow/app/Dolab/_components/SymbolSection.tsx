@@ -3,7 +3,7 @@
 import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
-import { insertNode, deleteNode, editNode } from "@/app/service/FlowchartService";
+import { insertNode, deleteNode, editNode, apiGetShapeRemaining } from "@/app/service/FlowchartService";
 
 
 interface SymbolItem {
@@ -29,7 +29,6 @@ interface SymbolSectionProps {
   onDeleteNode?: (id: string) => void;
   onCloseModal?: () => void;
   onRefresh?: () => Promise<void>;
-  // NEW: ให้ parent สามารถโฟกัส/เลือก node ใด ๆ ได้ (optional)
   onFocusNode?: (nodeId: string) => void;
 }
 
@@ -38,18 +37,16 @@ const validateConditionalExpression = (exp: string): string => {
   const trimmed = exp.trim();
   if (trimmed === "") return "กรุณาใส่เงื่อนไข (Condition)";
 
-  // จับกลุ่ม: left, operator, right
   const match = trimmed.match(/^\s*(.+?)\s*(==|!=|>=|<=|>|<|=)\s*(.+)\s*$/);
   if (!match) {
     return "เงื่อนไขไม่ถูกต้อง (ต้องมีตัวเปรียบเทียบ เช่น >, <, ==)";
   }
 
-  const [, left, operator, right] = match;
+  const [, left, , right] = match;
   if (left.trim() === "" || right.trim() === "") {
     return "เงื่อนไขไม่สมบูรณ์ (เช่น 'a >' หรือ '< 10')";
   }
 
-  // ถ้าต้องการ ตรวจความถูกต้องเพิ่มเติม เช่น ให้ RHS เป็นตัวเลขหรือเป็น '...' ก็ทำได้ที่นี่
   return "";
 };
 
@@ -140,15 +137,18 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // shape remaining state
+  const [shapeRemaining, setShapeRemaining] = useState<Record<string, any> | null>(null);
+  const [srLoading, setSrLoading] = useState(false);
+  const [srError, setSrError] = useState<string | null>(null);
+
   // fields
   const [inputValue, setInputValue] = useState("");
   const [outputValue, setOutputValue] = useState("");
   const [ifExpression, setIfExpression] = useState("");
   const [whileExpression, setWhileExpression] = useState("");
   const [declareVariable, setDeclareVariable] = useState("");
-  // single legacy state (kept for label building/backwards compat)
   const [declareDataType, setDeclareDataType] = useState("Integer");
-  // NEW: allow multiple checkboxes for declare data types
   const [declareDataTypes, setDeclareDataTypes] = useState<Record<string, boolean>>({
     Integer: true,
     Real: false,
@@ -164,12 +164,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [forStep, setForStep] = useState("");
   const [doExpression, setDoExpression] = useState("");
 
-  // conflicts state (from backend when variable name already used)
   const [conflicts, setConflicts] = useState<
     { varName: string; nodeId: string; label: string; foundIn?: string }[]
   >([]);
 
-  // helper to reset fields (for creating new node)
   const resetFields = () => {
     setInputValue("");
     setOutputValue("");
@@ -189,8 +187,70 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     setConflicts([]);
   };
 
-  // แก้ไขฟังก์ชัน callUpdateOrAdd ใน SymbolSection.tsx
+  /* --- Shape remaining helpers --- */
 
+  // convert backend remaining value into number or Infinity
+  const parseRemaining = (v: any): number | typeof Infinity | null => {
+    if (v === null || v === undefined) return null;
+    if (typeof v === "number") return v;
+    if (typeof v === "string") {
+      if (v.toLowerCase() === "unlimited" || v === "∞" || v === "infinite") return Infinity;
+      const n = Number(v);
+      return isNaN(n) ? null : n;
+    }
+    return null;
+  };
+
+  // map UI symbol key to one or more backend shape codes (try multiple if backend uses FOR vs FR etc.)
+  const uiKeyToShapeCodes = (uiKey: string): string[] => {
+    switch (uiKey) {
+      case "input": return ["IN"];
+      case "output": return ["OU"];
+      case "declare": return ["DC"];
+      case "assign": return ["AS"];
+      case "if": return ["IF"];
+      case "while": return ["WH"];
+      case "for": return ["FOR", "FR"];
+      case "do": return ["DO"];
+      default: return [uiKey.toUpperCase()];
+    }
+  };
+
+  // get remaining (number|Infinity|null) for an uiKey from current shapeRemaining
+  const getRemainingForUIKey = (uiKey: string): number | typeof Infinity | null => {
+    if (!shapeRemaining) return null;
+    const codes = uiKeyToShapeCodes(uiKey);
+    for (const c of codes) {
+      const entry = shapeRemaining[c];
+      if (entry) {
+        const r = parseRemaining(entry.remaining ?? entry.remain ?? null);
+        if (r !== null) return r;
+      }
+    }
+    return null;
+  };
+
+  const fetchShapeRemaining = async () => {
+    if (!flowchartId) return;
+    try {
+      setSrError(null);
+      setSrLoading(true);
+      const res = await apiGetShapeRemaining(flowchartId);
+      setShapeRemaining(res?.shapeRemaining ?? null);
+    } catch (err: any) {
+      console.error("apiGetShapeRemaining failed:", err);
+      setSrError(err?.message ?? "ไม่สามารถโหลดข้อมูลจำนวน shape ที่เหลือได้");
+    } finally {
+      setSrLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // initial load + when flowchartId changes
+    fetchShapeRemaining();
+  }, [flowchartId]);
+
+  /* --- callUpdateOrAdd (แก้ไขให้เรียก fetchShapeRemaining หลังสำเร็จ) --- */
   const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
     setError("");
     setConflicts([]);
@@ -205,25 +265,22 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     try {
       setLoading(true);
       if (nodeId) {
-        // --- EDIT existing node (PUT) ---
+        // EDIT
         console.info("Call editNode with:", { flowchartId, nodeId, payload: payloadNode });
         const res = await editNode(flowchartId, nodeId, payloadNode);
         console.info("editNode result:", res);
 
         if (onRefresh) {
-          console.log("🔄 Calling onRefresh after edit...");
           try {
             await onRefresh();
-            console.log("✅ onRefresh completed successfully");
           } catch (refreshErr) {
-            console.error("❌ onRefresh failed after edit:", refreshErr);
+            console.warn("onRefresh failed after edit:", refreshErr);
           }
         } else {
-          console.warn("⚠️ No onRefresh provided");
           onUpdateNode?.(nodeId, backendType, label);
         }
       } else {
-        // --- INSERT new node (POST) ---
+        // INSERT
         if (!selectedEdgeId) {
           setError("กรุณาเลือกเส้น (edge) ที่ต้องการแทรก node ก่อน");
           return;
@@ -233,32 +290,30 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         console.info("insertNode result:", res);
 
         if (onRefresh) {
-          console.log("🔄 Calling onRefresh after insert...");
           try {
             await onRefresh();
-            console.log("✅ onRefresh completed successfully");
           } catch (refreshErr) {
-            console.error("❌ onRefresh failed after insert:", refreshErr);
+            console.warn("onRefresh failed after insert:", refreshErr);
           }
         } else {
-          console.warn("⚠️ No onRefresh provided");
-        }
-
-        if (nodeToEdit && onUpdateNode) {
-          onUpdateNode(nodeId ?? "", backendType, label);
+          // nothing to do; parent might handle updates
         }
       }
 
-      // close modal & reset
+      // success -> close modal, reset and refresh shapeRemaining
       setActiveModal(null);
       onCloseModal?.();
-      // do not resetFields here to preserve user input on errors — but on success we can reset
       resetFields();
+
+      // refresh the shape counts (always try to keep UI in sync)
+      try {
+        await fetchShapeRemaining();
+      } catch (e) {
+        // already handled in fetchShapeRemaining
+      }
     } catch (err: any) {
       console.error("Error in callUpdateOrAdd:", err);
-      // try to parse backend conflict format
       const resp = err?.response?.data ?? err?.response ?? null;
-      // backend sample in your message included: { ok:false, error: "...", conflicts: [ { varName, nodeId, label, foundIn } ] }
       if (resp && Array.isArray(resp.conflicts) && resp.conflicts.length > 0) {
         const cs = resp.conflicts.map((c: any) => ({
           varName: String(c.varName ?? c.variable ?? c.name ?? "").trim(),
@@ -269,16 +324,15 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         const names = Array.from(new Set(cs.map((c: any) => c.varName))).join(", ");
         const msg = `ชื่อตัวแปร '${names}' ถูกใช้งานแล้วใน flowchart นี้ กรุณาเลือกชื่ออื่นหรือไปที่ node ที่ประกาศตัวแปรก่อนหน้านี้.`;
         setError(msg);
+        setConflicts(cs);
       } else {
         const msg = err?.response?.data?.message ?? err?.message ?? "เกิดข้อผิดพลาดในการเรียก API";
         setError(String(msg));
       }
     } finally {
       setLoading(false);
-      // note: don't resetFields() ที่นี่ เพราะเรต้องการให้ผู้ใช้เห็นข้อมูลที่พิมพ์ไว้ — แต่ล้างเฉพาะเมื่อปิด modal / สำเร็จเท่านั้น
     }
   };
-
 
   const handleDeleteClick = async () => {
     if (!nodeToEdit) return;
@@ -305,38 +359,24 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       const res = await deleteNode(flowchartId, nodeId);
       console.info("deleteNode response:", res);
 
-      // --- NEW: ถ้า node ที่ถูกลบคือ IF ให้ลองลบ breakpoint ที่เกี่ยวข้องด้วย ---
+      // พยายามลบ breakpoint ที่เกี่ยวข้อง (graceful)
       try {
         const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase();
         if (rawType.includes("IF")) {
-          // หา bp id จากหลายแหล่งที่เป็นไปได้ (backend อาจเก็บไว้ใน data)
           const candidates: string[] = [];
-
-          // 1) properties ที่อาจมีชื่อ common
           if (nodeToEdit.data?.breakpointId) candidates.push(String(nodeToEdit.data.breakpointId));
           if (nodeToEdit.data?.bpId) candidates.push(String(nodeToEdit.data.bpId));
           if (nodeToEdit.data?.bp_node_id) candidates.push(String(nodeToEdit.data.bp_node_id));
-
-          // 2) ถ้าไม่มี ให้ลองคาดเดาตามรูปแบบที่เห็นบ่อย: bp_<nodeId>
           candidates.push(`bp_${nodeId}`);
-          // ถ้า nodeId แบบมี prefix เช่น n1 หรือ n_start ให้ลองลบ prefix 'n_' หรือ 'n' (ปลอดภัย)
           candidates.push(`bp_${nodeId.replace(/^n_?/i, "")}`);
-
-          // กรองค่าซ้ำ และเอาเฉพาะ non-empty
           const uniqCandidates = Array.from(new Set(candidates.filter(Boolean)));
-
           for (const bpId of uniqCandidates) {
             try {
-              // เรียกลบ breakpoint แต่ไม่โยน error ให้ขาดทั้ง flow ถ้าไม่พบ/ล้มเหลว
-              console.info("Attempting to delete associated BP node:", bpId);
               const bpRes = await deleteNode(flowchartId, bpId);
               console.info("Deleted BP node:", bpId, bpRes);
-              // ถ้ลบสำเร็จ ออกจาก loop (ไม่ต้องพยายามลบ id อื่นๆ ซ้ำ)
               break;
             } catch (bpErr: any) {
-              // บันทึกแล้วลอง id ถัดไป — ไม่ต้องแสดง error ให้ user มากนัก
               console.warn(`Failed to delete BP candidate ${bpId}:`, bpErr?.message ?? bpErr);
-              // ถ้า response แจ้งว่าไม่มี node จริง อาจจะเป็นปกติ ดังนั้นไม่ต้อง setError
             }
           }
         }
@@ -344,7 +384,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         console.warn("Error while attempting to delete associated breakpoint:", innerErr);
       }
 
-      // ถ้ามี onRefresh ให้ใช้เพื่อโหลดข้อมูลใหม่ทั้งหมดจาก backend (recommended)
       if (onRefresh) {
         try {
           await onRefresh();
@@ -352,23 +391,26 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           console.warn("onRefresh failed after delete:", refreshErr);
         }
       } else {
-        // ถ้าไม่มี onRefresh ให้ notify parent เพื่อให้เค้าลบ node ทันทีจาก local state
         onDeleteNode?.(nodeId);
       }
 
-      // ปิด modal
       setActiveModal(null);
       onCloseModal?.();
+
+      // update shapeRemaining after delete
+      try {
+        await fetchShapeRemaining();
+      } catch (e) {
+        // ignore, already handled
+      }
     } catch (err: any) {
       console.error("Failed to delete node:", err);
-      // ถ้า backend ส่ง object { message: ... } ให้เอา message มาแสดง
       const msg = err?.message ?? (err?.response?.data?.message ?? "เกิดข้อผิดพลาดในการลบ node");
       setError(String(msg));
     } finally {
       setLoading(false);
     }
   };
-
 
   useEffect(() => {
     resetFields();
@@ -412,7 +454,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       if (nodeToEdit.data?.name) {
         setDeclareVariable(String(nodeToEdit.data.name ?? ""));
         const vtRaw = nodeToEdit.data?.varType ?? nodeToEdit.data?.type ?? "integer";
-        // ถ้า backend ส่ง "integer,real" ให้เอาแค่ค่าแรก
         const first = String(vtRaw).split(/[,|;\/\s]+/)[0] ?? "integer";
         setDeclareDataType(first.charAt(0).toUpperCase() + first.slice(1));
       } else {
@@ -427,7 +468,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       setActiveModal("declare");
       return;
     }
-
 
     if (rawType === "AS" || rawType === "ASSIGN") {
       if (nodeToEdit.data?.variable) setAssignVariable(String(nodeToEdit.data.variable ?? ""));
@@ -457,7 +497,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       return;
     }
 
-    if (rawType === "FR" || rawType === "FOR") {
+    if (rawType === "FR" || rawType === "FOR" || rawType === "FOR_LOOP") {
       const init = String(nodeToEdit.data?.init ?? "");
       const condition = String(nodeToEdit.data?.condition ?? "");
       const increment = String(nodeToEdit.data?.increment ?? "");
@@ -556,7 +596,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       title: "Declare Properties",
       description: "A Declare Statement is used to create variables and arrays.",
       icon: "/images/shape_Declare.png",
-      // NOTE: we include a dummy dataType field so UI renderer recognizes it and uses the special checkbox block
       fields: [
         { kind: "simple", key: "variable", placeholder: "variable", value: declareVariable, setValue: setDeclareVariable },
         { kind: "simple", key: "dataType", placeholder: "", value: declareDataType, setValue: setDeclareDataType },
@@ -564,8 +603,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         if (!declareVariable.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
-        const varTypePayload = declareDataType.toLowerCase(); // e.g., "integer"
-        const labelPrefix = declareDataType; // e.g., "Integer"
+        const varTypePayload = declareDataType.toLowerCase();
+        const labelPrefix = declareDataType;
         callUpdateOrAdd(nodeToEdit?.id, "declare", `${labelPrefix} ${declareVariable}`, {
           name: declareVariable,
           value: 0,
@@ -683,12 +722,39 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     { key: "do", label: "Do", imageSrc: "/images/do.png" },
   ];
 
-  const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
-    <div className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => { setError(""); resetFields(); setActiveModal(item.key); }}>
-      <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
-      <span className="text-sm text-gray-700">{item.label}</span>
-    </div>
-  );
+  const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => {
+    const remaining = getRemainingForUIKey(item.key);
+    const isUnlimited = remaining === Infinity;
+    const isZero = typeof remaining === "number" && remaining <= 0;
+    const disabled = isZero;
+
+    return (
+      <div
+        className={`relative flex flex-col items-center gap-1 ${disabled ? "opacity-40 pointer-events-none" : "cursor-pointer"}`}
+        onClick={() => {
+          setError("");
+          resetFields();
+          if (disabled) {
+            setError("รูปแบบนี้ไม่สามารถเพิ่มได้อีก (จำนวนเต็ม)"); // friendly message
+            return;
+          }
+          setActiveModal(item.key);
+        }}
+        title={disabled ? "หมดจำนวนสำหรับ shape นี้แล้ว" : (isUnlimited ? "เหลือ: ไม่จำกัด" : `เหลือ: ${remaining}`)}
+        role="button"
+        aria-disabled={disabled}
+      >
+        <div className="relative">
+          <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
+          {/* badge */}
+          <div className="absolute -top-2 -right-2 bg-white border rounded-full px-2 py-0.5 text-xs shadow-sm">
+            {srLoading ? "..." : isUnlimited ? "∞" : (remaining === null ? "-" : String(remaining))}
+          </div>
+        </div>
+        <span className="text-sm text-gray-700">{item.label}</span>
+      </div>
+    );
+  };
 
   /* --- Render active modal if any --- */
   if (activeModal) {
@@ -724,29 +790,28 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                   ))}
                 </div>
               );
-                } else if (f.kind === "simple" && f.key === "dataType") {
-                  return (
-                    <div key={f.key} className="ml-6 mb-4">
-                      <div className="text-gray-700 mb-2">Data Type</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {["Integer", "Float", "String", "Boolean"].map((dt) => (
-                          <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
-                            <input
-                              type="radio"
-                              name="dataType"
-                              value={dt}
-                              checked={declareDataType === dt}
-                              onChange={(e) => setDeclareDataType(e.target.value)}
-                              className="w-4 h-4"
-                            />
-                            {dt}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }
-
+            } else if (f.kind === "simple" && f.key === "dataType") {
+              return (
+                <div key={f.key} className="ml-6 mb-4">
+                  <div className="text-gray-700 mb-2">Data Type</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["Integer", "Float", "String", "Boolean"].map((dt) => (
+                      <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
+                        <input
+                          type="radio"
+                          name="dataType"
+                          value={dt}
+                          checked={declareDataType === dt}
+                          onChange={(e) => setDeclareDataType(e.target.value)}
+                          className="w-4 h-4"
+                        />
+                        {dt}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <input
@@ -762,7 +827,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
           {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
 
-          {/* รายการ node ที่ชนกัน (ถ้ามี) */}
+          {/* conflicts */}
           {conflicts.length > 0 && (
             <div className="ml-6 mb-2">
               <div className="text-sm text-gray-700 mb-1">พบตัวแปรซ้ำใน node ต่อไปนี้:</div>
@@ -782,7 +847,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                           if (onFocusNode) {
                             onFocusNode(c.nodeId);
                           } else {
-                            // ถ้า parent ไม่ส่ง onFocusNode: คัดลอก nodeId และ log แทน (fallback)
                             try {
                               navigator.clipboard?.writeText(c.nodeId);
                               alert(`Copied node id: ${c.nodeId} — ให้ parent implement onFocusNode เพื่อโฟกัส node โดยตรง`);
@@ -822,8 +886,11 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   /* --- Palette --- */
   return (
     <div className="w-full bg-white p-4 flex flex-col gap-4 rounded-lg shadow-lg border-1">
-      <div>
+      <div className="flex items-center justify-between">
         <h3 className="text-lg font-bold text-gray-700 mb-2">Input / Output</h3>
+        <div className="text-xs text-gray-500">{srLoading ? "Loading shapes..." : (srError ? srError : "Shape counts loaded")}</div>
+      </div>
+      <div>
         <div className="flex gap-4">
           <SymbolItemComponent item={symbols.find((s) => s.key === "input")!} />
           <SymbolItemComponent item={symbols.find((s) => s.key === "output")!} />
