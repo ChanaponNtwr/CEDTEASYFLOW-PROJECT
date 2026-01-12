@@ -448,3 +448,28 @@ export const apiGetShapeRemaining = async (flowchartId) => {
   }
 };
 
+export const apiGetClassUsers = async (classId) => {
+  if (!classId) {
+    throw new Error("apiGetClassUsers: missing classId");
+  }
+
+  try {
+    const resp = await axios.get(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/users`,
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+
+    if (resp.status !== 200) {
+      console.warn(`apiGetClassUsers: expected status 200 but got ${resp.status}`);
+    }
+
+    // Expected response: { ok: true, users: [...] }
+    return resp.data;
+  } catch (err) {
+    console.error("apiGetClassUsers error:", err?.response ?? err);
+    throw err;
+  }
+};
+
