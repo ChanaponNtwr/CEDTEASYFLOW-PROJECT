@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 
+// 1. Define the shape of the Lab Data from your API
 // ตัด callSymVal และ doSymVal ออกตาม requirement
 interface LabData {
   inSymVal: number;
@@ -39,7 +40,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
     for: { label: "For", bgColor: "bg-teal-200", textColor: "text-teal-800", count: 0, isUnlimited: false, imageSrc: "/images/for.png" },
   });
 
-  // Sync State with API Data
+  // 3. Sync State with API Data
   useEffect(() => {
     if (labData) {
       // Logic: ถ้าค่าเป็น -1 ให้ถือว่าเป็น Unlimited
@@ -59,9 +60,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
     }
   }, [labData]);
 
+  // Component สำหรับแสดงผลแต่ละแถว (ตัดปุ่ม + - ออก)
   const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
     <div className="flex items-center justify-between w-92 p-2 border-b border-gray-200 ">
-      {/* ซ้าย: รูป + label (คง UI เดิม) */}
+      {/* ฝั่งซ้าย: รูป + Label */}
       <div className="flex flex-col items-start">
         <Image
           src={item.imageSrc}
@@ -72,7 +74,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
         />
       </div>
 
-      {/* ขวา: แสดงจำนวน หรือ Unlimited เท่านั้น (เอาปุ่มและ checkbox ออก แต่คง class จัดตำแหน่งเดิมไว้) */}
+      {/* ฝั่งขวา: แสดงจำนวน หรือ Unlimited (ไม่มีปุ่มกด) */}
       <div className="flex items-center gap-3 ml-4">
         <span className={`text-sm font-medium ${item.isUnlimited ? 'text-gray-500' : 'text-gray-800'}`}>
            {item.isUnlimited ? "Unlimited" : item.count}
@@ -98,7 +100,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
         </div>
       </div>
 
-      {/* Control (ตัด call, do ออก) */}
+      {/* Control (เหลือแค่ If, While, For) */}
       <div className="flex flex-col gap-2">
         <h3 className="text-lg font-medium text-gray-700 mb-2">Control</h3>
         <SymbolItemComponent item={symbols.if} />

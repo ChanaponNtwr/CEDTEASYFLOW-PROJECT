@@ -44,7 +44,7 @@ interface TopBarControlsProps {
 }
 
 export default function TopBarControls({
-  flowchartId = 9,
+  flowchartId = 15,
   initialVariables = null,
   forceAdvanceBP = true,
   onHighlightNode,
@@ -755,7 +755,7 @@ export default function TopBarControls({
     const loadTestcases = async () => {
       try {
         // Mockup labId = 2 as requested by user
-        const labId = 2;
+        const labId = 19;
 
         if (labId) {
           const resp = await apiGetTestcases(labId);

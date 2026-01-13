@@ -62,7 +62,7 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
         disabled={!onCreateClick}
       >
         <FaPenSquare className="w-5 h-5 mr-2" />
-        Create
+        Import
       </button>
     </div>
   );

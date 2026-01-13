@@ -3,11 +3,12 @@
 import { useRouter } from "next/navigation";
 
 interface TabsProps {
+  classId: string;              // ✅ เพิ่ม
   activeTab?: string;
   onTabChange: (tab: string) => void;
 }
 
-function Tabs({ activeTab = "People", onTabChange }: TabsProps) {
+function Tabs({ classId, activeTab = "Classwork", onTabChange }: TabsProps) {
   const router = useRouter();
 
   return (
@@ -15,13 +16,13 @@ function Tabs({ activeTab = "People", onTabChange }: TabsProps) {
       {/* Classwork */}
       <button
         className={`px-4 py-2 rounded-full hover:scale-105 transition-all cursor-pointer ${
-          activeTab === "People"
+          activeTab === "Classwork"
             ? "bg-blue-600 text-white"
             : "bg-gray-200 text-gray-700 hover:bg-gray-300"
         }`}
         onClick={() => {
           onTabChange("Classwork");
-          router.push("/Classwork");
+          router.push(`/classes/${classId}`); // ✅ ใช้ classId เดิม
         }}
       >
         Classwork
@@ -30,13 +31,13 @@ function Tabs({ activeTab = "People", onTabChange }: TabsProps) {
       {/* People */}
       <button
         className={`px-4 py-2 rounded-full hover:scale-105 transition-all cursor-pointer ${
-          activeTab === "Classwork"
+          activeTab === "People"
             ? "bg-blue-600 text-white"
             : "bg-gray-200 text-gray-700 hover:bg-gray-300"
         }`}
         onClick={() => {
           onTabChange("People");
-          router.push("/Addpeople");
+          router.push(`/classes/${classId}/people`); // ✅ class เดียวกัน
         }}
       >
         People
