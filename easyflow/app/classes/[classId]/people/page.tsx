@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import Tabs from "../../../Addpeople/_components/Tabs";
@@ -9,33 +9,11 @@ import PeopleList from "../../../Addpeople/_components/PeopleList";
 import { useSearchParams, usePathname } from "next/navigation";
 import { apiGetClassUsers } from "@/app/service/FlowchartService";
 
-// --- ปรับ Interface ให้ตรงกับ JSON ที่ได้จาก Backend ---
-interface ApiUserDetail {
-  id: number;
-  fname: string;
-  lname: string;
-  name: string;
-  email: string;
-  image?: string;
-}
-
-interface ApiRole {
-  roleId: number;
-  roleName: string;
-}
-
-interface ApiUserClassItem {
-  userId: number;
-  classId: number;
-  roleId: number;
-  user: ApiUserDetail; // ข้อมูลคนอยู่ที่นี่
-  role: ApiRole;       // ข้อมูลบทบาทอยู่ที่นี่
-}
-
 interface UIUser {
   name: string;
   email: string;
   position?: string;
+  id?: number;
 }
 
 function Addpeople() {
@@ -69,78 +47,64 @@ function Addpeople() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRole, setModalRole] = useState<"Teacher" | "TA" | "Students">("Teacher");
 
-  useEffect(() => {
+  // แยก fetchData ออกมาเป็น useCallback เพื่อให้เรียกซ้ำได้เมื่อเพิ่มคนเสร็จ
+  const fetchData = useCallback(async () => {
     if (!classId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await apiGetClassUsers(classId);
 
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await apiGetClassUsers(classId);
+      if (response && Array.isArray(response.users)) {
+        const allData: any[] = response.users;
+        const newTeachers: UIUser[] = [];
+        const newTAs: UIUser[] = [];
+        const newStudents: UIUser[] = [];
 
-        // response.users คือ Array ของ ApiUserClassItem
-        if (response && Array.isArray(response.users)) {
-          const allData: ApiUserClassItem[] = response.users;
+        allData.forEach((item) => {
+          const uData = item.user;
+          const rData = item.role;
 
-          const newTeachers: UIUser[] = [];
-          const newTAs: UIUser[] = [];
-          const newStudents: UIUser[] = [];
+          const userForUI: UIUser = {
+            id: uData.id,
+            name: uData.name || `${uData.fname} ${uData.lname}` || "Unknown",
+            email: uData.email || "-",
+            position: rData?.roleName || "",
+          };
 
-          allData.forEach((item) => {
-            // 1. ดึงข้อมูล User จาก item.user
-            const uData = item.user; 
-            // 2. ดึงข้อมูล Role Name จาก item.role.roleName
-            const rData = item.role;
+          const roleName = rData?.roleName ? String(rData.roleName).toLowerCase() : "";
 
-            const userForUI: UIUser = {
-              name: uData.name || `${uData.fname} ${uData.lname}` || "Unknown",
-              email: uData.email || "-",
-              position: rData?.roleName || "",
-            };
+          if (roleName === "owner" || roleName === "teacher") {
+            newTeachers.push(userForUI);
+          } else if (roleName === "ta") {
+            newTAs.push(userForUI);
+          } else if (roleName === "student") {
+            newStudents.push(userForUI);
+          }
+        });
 
-            // 3. แปลง Role Name เป็นตัวพิมพ์เล็กเพื่อเช็คเงื่อนไข
-            // ใช้ Optional Chaining (?.) และ String() เพื่อความปลอดภัย
-            const roleName = rData?.roleName ? String(rData.roleName).toLowerCase() : "";
-
-            if (roleName === "owner" || roleName === "teacher") {
-              newTeachers.push(userForUI);
-            } else if (roleName === "ta") {
-              newTAs.push(userForUI);
-            } else if (roleName === "student") {
-              newStudents.push(userForUI);
-            } else {
-                // กรณีไม่เข้าเงื่อนไข (อาจจะใส่เป็น Student ไปก่อน หรือ log ดู)
-                // newStudents.push(userForUI);
-                console.warn("Unknown role:", roleName);
-            }
-          });
-
-          setTeachers(newTeachers);
-          setTAs(newTAs);
-          setStudents(newStudents);
-        }
-      } catch (err: any) {
-        console.error("Error fetching class users:", err);
-        setError("Failed to load users.");
-      } finally {
-        setLoading(false);
+        setTeachers(newTeachers);
+        setTAs(newTAs);
+        setStudents(newStudents);
       }
-    };
-
-    fetchData();
+    } catch (err: any) {
+      console.error("Error fetching class users:", err);
+      setError("Failed to load users.");
+    } finally {
+      setLoading(false);
+    }
   }, [classId]);
 
-  // ... (ส่วน Modal และ Render เหมือนเดิม) ...
+  // เรียก fetchData เมื่อ classId เปลี่ยน
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const openModal = (role: "Teacher" | "TA" | "Students") => {
     setModalRole(role);
     setModalOpen(true);
   };
   const closeModal = () => setModalOpen(false);
-  const getPeople = (role: "Teacher" | "TA" | "Students") =>
-    role === "Teacher" ? teachers : role === "TA" ? tas : students;
-  const getSetter = (role: "Teacher" | "TA" | "Students") =>
-    role === "Teacher" ? setTeachers : role === "TA" ? setTAs : setStudents;
 
   if (!classId) return <div className="pt-20 text-center">Missing Class ID</div>;
 
@@ -166,12 +130,13 @@ function Addpeople() {
               </>
             )}
 
+            {/* Modal */}
             <AddPersonModal
               visible={modalOpen}
               onClose={closeModal}
               role={modalRole}
-              addedPeople={getPeople(modalRole)}
-              setAddedPeople={getSetter(modalRole) as any}
+              classId={classId}     // ✅ ส่ง classId
+              onUserAdded={fetchData} // ✅ ส่งฟังก์ชัน refresh เมื่อเพิ่มสำเร็จ
             />
           </div>
         </div>

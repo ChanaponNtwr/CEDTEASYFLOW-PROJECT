@@ -473,3 +473,50 @@ export const apiGetClassUsers = async (classId) => {
   }
 };
 
+export const apiSearchUsers = async (query) => {
+  try {
+    // ใช้ params เพื่อให้ axios จัดการ ?q=... ให้ (รวมถึง encode ตัวอักษรพิเศษ)
+    const resp = await axios.get(`${BASE_URL}/classes/users/search`, {
+      params: { q: query }, 
+      headers: { "Content-Type": "application/json" },
+    });
+
+    // คาดหวัง return shape: { ok: true, users: [...] } หรือตามที่ backend ส่งมา
+    return resp.data;
+  } catch (err) {
+    console.error("apiSearchUsers error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+export const apiAddUserToClass = async (classId, targetUserId, roleId, actorId) => {
+  // actorId = คนที่กดปุ่มเพิ่ม (ส่งไปใน Header x-user-id)
+  // targetUserId = คนที่จะถูกเพิ่ม (Body)
+  // roleId = บทบาท (Body)
+
+  if (!classId || !targetUserId || !roleId || !actorId) {
+    throw new Error("apiAddUserToClass: Missing required parameters");
+  }
+
+  try {
+    const response = await axios.post(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/users`,
+      { 
+        userId: Number(targetUserId), // แปลงเป็น int
+        roleId: Number(roleId)        // แปลงเป็น int
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": String(actorId), // ✅ Header: x-user-id
+        },
+      }
+    );
+
+    // Expected Response: { ok: true, result: { userId: 8, classId: 17, roleId: 2 } }
+    return response.data; 
+  } catch (error) {
+    console.error("apiAddUserToClass error:", error?.response ?? error);
+    throw error;
+  }
+};
