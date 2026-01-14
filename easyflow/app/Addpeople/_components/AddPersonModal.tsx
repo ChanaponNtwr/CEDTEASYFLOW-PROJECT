@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Search, Plus, Check, Loader2 } from "lucide-react";
 import { apiSearchUsers, apiAddUserToClass } from "@/app/service/FlowchartService";
-import { motion, AnimatePresence } from "framer-motion"; // ✅ 1. Import Framer Motion
+import { motion, AnimatePresence } from "framer-motion";
 
 interface AddPersonModalProps {
   visible: boolean;
@@ -64,22 +64,32 @@ export default function AddPersonModal({
     }
   }, [visible]);
 
-  // --- Logic การ Add ---
+  // --- Add User Logic ---
   const handleAddUser = async () => {
     if (!selectedUser || !classId) return;
 
-    // 1. ดึง ID ของคนกด (Actor) จาก LocalStorage
-    let currentActorId = 3; // Default
-
+    // 1. ดึง ID คนกดจาก LocalStorage
+    let currentActorId = 0;
     try {
-        const storedUser = localStorage.getItem("user");
-        if (storedUser) {
-            const parsed = JSON.parse(storedUser);
-            if (parsed.id) currentActorId = Number(parsed.id);
-            else if (parsed.userId) currentActorId = Number(parsed.userId);
+        // ลองดึงจาก sessionStorage ก่อน (ตามไฟล์ Classwork) หรือ localStorage
+        const uid = sessionStorage.getItem("userId") || localStorage.getItem("userId");
+        if (uid) {
+            currentActorId = Number(uid);
+        } else {
+            // Fallback: ลอง Parse object
+            const storedUser = localStorage.getItem("user");
+            if (storedUser) {
+                const parsed = JSON.parse(storedUser);
+                currentActorId = parsed.id || parsed.userId || 0;
+            }
         }
     } catch (e) { 
-        console.error("Error parsing user from localStorage", e);
+        console.error("Error parsing user ID", e);
+    }
+
+    if (!currentActorId) {
+        alert("Authentication error: User ID not found.");
+        return;
     }
 
     // 2. Map Role Name -> Role ID
@@ -87,13 +97,6 @@ export default function AddPersonModal({
     if (role === "Teacher") roleIdToSend = 1;
     else if (role === "TA") roleIdToSend = 3;
     else if (role === "Students") roleIdToSend = 2;
-
-    console.log("Sending Payload:", {
-        classId,
-        targetUserId: selectedUser.id,
-        roleId: roleIdToSend,
-        actorId: currentActorId
-    });
 
     setIsAdding(true);
     try {
@@ -111,45 +114,41 @@ export default function AddPersonModal({
     } catch (err: any) {
       console.error("Failed to add user:", err);
       if (err.response?.status === 403) {
-          alert(`Permission Denied: User ID ${currentActorId} is not the owner.`);
+          alert(`Permission Denied: Only the owner can add users.`);
       } else {
-          alert("Failed to add user. Please try again.");
+          alert("Failed to add user. They might already be in the class.");
       }
     } finally {
       setIsAdding(false);
     }
   };
 
-  // ❌ ลบ if (!visible) return null; ออก เพราะเราจะใช้ AnimatePresence คุมแทน
-
   return (
     <AnimatePresence>
       {visible && (
-        // ✅ 2. เปลี่ยน Outer Div เป็น motion.div สำหรับ Background Overlay
         <motion.div 
-          className="fixed inset-0 bg-gray-900/20 backdrop-blur-md flex items-center justify-center z-[1000]"
+          className="fixed inset-0 bg-gray-900/20 backdrop-blur-sm flex items-center justify-center z-[1000]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          {/* ✅ 3. เปลี่ยน Inner Div เป็น motion.div สำหรับตัว Modal box */}
           <motion.div 
             className="bg-white rounded-xl shadow-2xl w-[500px] overflow-hidden flex flex-col max-h-[90vh]"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ duration: 0.3 }}
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
           >
             {/* Header */}
             <div className="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
               <h2 className="text-xl font-bold text-gray-800">Add {role}</h2>
-              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
-                <X size={24} />
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition p-1 hover:bg-gray-200 rounded-full">
+                <X size={20} />
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-6 flex-1 overflow-y-auto">
+            <div className="p-6 flex-1 overflow-y-auto min-h-[300px]">
               <div className="relative mb-4">
                 <input
                   type="text"
@@ -160,13 +159,16 @@ export default function AddPersonModal({
                   autoFocus
                 />
                 <div className="absolute left-3 top-3 text-gray-400">
-                  {isSearching ? <Loader2 size={20} className="animate-spin"/> : <Search size={20} />}
+                  {isSearching ? <Loader2 size={20} className="animate-spin text-blue-500"/> : <Search size={20} />}
                 </div>
               </div>
 
               <div className="min-h-[200px]">
                 {searchTerm.length < 2 ? (
-                  <div className="text-center text-gray-400 mt-10">Type at least 2 characters to search</div>
+                  <div className="flex flex-col items-center justify-center text-gray-400 mt-10 space-y-2">
+                    <Search size={40} className="opacity-20" />
+                    <span>Type at least 2 characters to search</span>
+                  </div>
                 ) : searchResults.length === 0 && !isSearching ? (
                   <div className="text-center text-gray-400 mt-10">No users found.</div>
                 ) : (
@@ -181,11 +183,11 @@ export default function AddPersonModal({
                             : "bg-white border-gray-100 hover:bg-gray-50 hover:border-gray-300"
                         }`}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 w-full overflow-hidden">
                           <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold shrink-0">
                             {user.fname ? user.fname[0].toUpperCase() : "?"}
                           </div>
-                          <div className="overflow-hidden">
+                          <div className="flex-1 min-w-0">
                             <div className="font-semibold text-gray-800 truncate">
                               {user.name || `${user.fname} ${user.lname}`}
                             </div>
@@ -193,7 +195,7 @@ export default function AddPersonModal({
                           </div>
                         </div>
                         {selectedUser?.id === user.id && (
-                          <Check size={20} className="text-blue-600" />
+                          <Check size={20} className="text-blue-600 shrink-0 ml-2" />
                         )}
                       </li>
                     ))}
