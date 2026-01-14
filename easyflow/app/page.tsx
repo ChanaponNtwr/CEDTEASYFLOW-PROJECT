@@ -243,7 +243,7 @@ export default function Home() {
              - เปลี่ยน motion.button เป็น motion.div หรือ motion.span เพื่อความถูกต้องของ HTML 
                (ปุ่ม button อยู่ใน Link a ไม่ถูกต้องตามหลัก semantic แต่ div ใน a ทำได้)
           */}
-          <Link href="/labinfotrial">
+          <Link href="/trial">
             <motion.div 
               className="inline-block text-2xl mt-6 px-6 py-3 bg-yellow-500 text-white font-bold rounded-full cursor-pointer shadow-lg"
               initial={{ opacity: 0, scale: 0.8 }}

@@ -527,3 +527,180 @@ export const apiAddUserToClass = async (classId, targetUserId, roleId, actorId) 
     throw error;
   }
 };
+
+
+
+
+
+
+
+
+
+
+
+export const apiStartTrial = async (labId) => {
+  if (!labId) {
+    throw new Error("apiStartTrial: missing labId");
+  }
+
+  try {
+    const resp = await axios.post(
+      `${BASE_URL}/trial/start`,
+      { labId: Number(labId) }, // ส่ง body เป็น JSON { "labId": ... }
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+
+    // ตรวจสอบ status code (ปกติ axios จะ throw ถ้าไม่ใช่ 2xx แต่เช็คเผื่อไว้ตามสไตล์ไฟล์เดิม)
+    if (resp.status !== 200 && resp.status !== 201) {
+      console.warn(`apiStartTrial: unexpected status ${resp.status}`);
+    }
+
+    // Return response data (คาดหวัง { ok: true, trialId: "...", flowchart: {...}, ... })
+    return resp.data;
+  } catch (err) {
+    console.error("apiStartTrial error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+
+export const apiGetTrialFlowchart = async (trialId) => {
+  // รับ trialId เป็น string (UUID)
+  if (!trialId) {
+    throw new Error("apiGetFlowchart: missing trialId");
+  }
+
+  try {
+    // ยิง GET ไปที่ /trial/{trialId}/flowchart
+    const response = await axios.get(`${BASE_URL}/trial/${trialId}/flowchart`);
+    
+    // คาดหวัง return เป็น { ok: true, flowchart: { nodes: [], edges: [] }, ... }
+    return response.data; 
+  } catch (err) {
+    console.error("apiGetFlowchart error:", err);
+    throw err;
+  }
+};
+
+export const insertTrialNode = async (trialId, edgeId, node) => {
+  if (!trialId) {
+    throw new Error("insertTrialNode: missing trialId");
+  }
+
+  try {
+    const response = await axios.post(`${BASE_URL}/trial/${trialId}/flowchart/node`, {
+      edgeId,
+      node,
+    });
+    return response.data;
+  } catch (err) {
+    console.error("insertTrialNode error:", err);
+    throw err;
+  }
+};
+
+// ---------------------------------------------------------
+// 2. Edit/Update Node (PUT)
+// Path: /trial/{trialId}/flowchart/node/{nodeId}
+// ---------------------------------------------------------
+export const editTrialNode = async (trialId, nodeId, updateData) => {
+  if (!trialId || !nodeId) {
+    throw new Error("editTrialNode: missing trialId or nodeId");
+  }
+
+  try {
+    const resp = await axios.put(
+      `${BASE_URL}/trial/${trialId}/flowchart/node/${nodeId}`,
+      updateData
+    );
+    return resp.data;
+  } catch (error) {
+    console.error("editTrialNode error:", error);
+    throw error;
+  }
+};
+
+// ---------------------------------------------------------
+// 3. Delete Node (DELETE)
+// Path: /trial/{trialId}/flowchart/node/{nodeId}
+// ---------------------------------------------------------
+export const deleteTrialNode = async (trialId, nodeId) => {
+  if (!trialId || !nodeId) {
+    throw new Error("deleteTrialNode: missing trialId or nodeId");
+  }
+
+  try {
+    const resp = await axios.delete(
+      `${BASE_URL}/trial/${trialId}/flowchart/node/${nodeId}`
+    );
+    return resp.data;
+  } catch (error) {
+    console.error("deleteTrialNode error:", error);
+    throw error;
+  }
+};
+
+
+export const apiGetTrialTestcases = async (trialId) => {
+  if (!trialId) throw new Error("apiGetTrialTestcases: missing trialId");
+
+  try {
+    const resp = await axios.get(`${BASE_URL}/trial/${trialId}/testcases`);
+    return resp.data; // { ok: true, testcases: [...] }
+  } catch (err) {
+    console.error("apiGetTrialTestcases error:", err);
+    throw err;
+  }
+};
+
+// ---------------------------------------------------------
+// 5. Run Trial Testcases
+// POST /trial/{trialId}/testcases/run
+// ---------------------------------------------------------
+export const apiRunTrialTestcases = async (trialId, body = {}) => {
+  if (!trialId) throw new Error("apiRunTrialTestcases: missing trialId");
+
+  try {
+    const resp = await axios.post(`${BASE_URL}/trial/${trialId}/testcases/run`, body);
+    return resp.data; // { ok: true, results: [...], totalScore, maxScore }
+  } catch (err) {
+    console.error("apiRunTrialTestcases error:", err);
+    throw err;
+  }
+};
+
+// ---------------------------------------------------------
+// 6. Execute Trial (Run / Step / Reset)
+// POST /trial/{trialId}/execute
+// ---------------------------------------------------------
+export const apiExecuteTrial = async (trialId, payload) => {
+  // payload: { action: "step" | "runAll" | "reset", variables?: [], forceAdvanceBP?: boolean }
+  if (!trialId) throw new Error("apiExecuteTrial: missing trialId");
+
+  try {
+    const resp = await axios.post(`${BASE_URL}/trial/${trialId}/execute`, payload);
+    return resp.data; 
+  } catch (err) {
+    console.error("apiExecuteTrial error:", err);
+    throw err;
+  }
+};
+
+// --- Helper Wrappers (เรียกใช้ง่ายขึ้น) ---
+
+// สั่ง Run All (รวดเดียวจบ)
+export const apiTrialRunAll = (trialId) => {
+  return apiExecuteTrial(trialId, { action: "runAll" });
+};
+
+// สั่ง Step (ทีละก้าว)
+export const apiTrialStep = (trialId, variables = []) => {
+  return apiExecuteTrial(trialId, { action: "step", variables });
+};
+
+// สั่ง Reset
+export const apiTrialReset = (trialId) => {
+  return apiExecuteTrial(trialId, { action: "reset" });
+};
