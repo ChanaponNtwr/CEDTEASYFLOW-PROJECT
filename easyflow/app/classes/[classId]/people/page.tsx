@@ -9,6 +9,9 @@ import PeopleList from "../../../Addpeople/_components/PeopleList";
 import { useSearchParams, usePathname } from "next/navigation";
 import { apiGetClassUsers } from "@/app/service/FlowchartService";
 
+// ✅ 1. Import NextAuth Hook
+import { useSession } from "next-auth/react";
+
 interface UIUser {
   name: string;
   email: string;
@@ -20,7 +23,9 @@ function Addpeople() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  // Resolve Class ID logic
+  // ✅ 2. เรียกใช้ Session Hook
+  const { data: session, status } = useSession();
+
   const resolveClassId = (): string | null => {
     const qCandidates = ["classId", "id", "class"];
     for (const k of qCandidates) {
@@ -44,10 +49,12 @@ function Addpeople() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // State เก็บ Role
+  const [canManage, setCanManage] = useState<boolean>(false);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRole, setModalRole] = useState<"Teacher" | "TA" | "Students">("Teacher");
 
-  // แยก fetchData ออกมาเป็น useCallback เพื่อให้เรียกซ้ำได้เมื่อเพิ่มคนเสร็จ
   const fetchData = useCallback(async () => {
     if (!classId) return;
     setLoading(true);
@@ -60,10 +67,22 @@ function Addpeople() {
         const newTeachers: UIUser[] = [];
         const newTAs: UIUser[] = [];
         const newStudents: UIUser[] = [];
+        
+        // ✅ 3. ดึง Current User ID จาก Session
+        const currentUid = session?.user ? ((session.user as any).id || (session.user as any).userId) : null;
+        let myRole = "";
+
+        console.log("📍 [AddPeople] Current User ID from Session:", currentUid);
 
         allData.forEach((item) => {
           const uData = item.user;
           const rData = item.role;
+
+          // เช็คว่าคนนี้คือเราไหม? (แปลงเป็น String ทั้งคู่เพื่อความชัวร์)
+          if (currentUid && String(uData.id) === String(currentUid)) {
+             myRole = rData?.roleName?.toLowerCase() || "";
+             console.log("📍 [AddPeople] Found Me! Role is:", myRole);
+          }
 
           const userForUI: UIUser = {
             id: uData.id,
@@ -86,6 +105,11 @@ function Addpeople() {
         setTeachers(newTeachers);
         setTAs(newTAs);
         setStudents(newStudents);
+
+        // กำหนดสิทธิ์: Owner หรือ Teacher
+        const hasPermission = myRole === "owner" || myRole === "teacher";
+        console.log("📍 [AddPeople] Can Manage?:", hasPermission);
+        setCanManage(hasPermission);
       }
     } catch (err: any) {
       console.error("Error fetching class users:", err);
@@ -93,12 +117,13 @@ function Addpeople() {
     } finally {
       setLoading(false);
     }
-  }, [classId]);
+  }, [classId, session]); // ✅ ใส่ session ลงใน dependency เพื่อให้โหลดใหม่เมื่อ Login เสร็จ
 
-  // เรียก fetchData เมื่อ classId เปลี่ยน
   useEffect(() => {
+    // ถ้า session ยังโหลดไม่เสร็จ ให้รอก่อนได้ (หรือจะโหลดเลยก็ได้ แต่ currentUid จะเป็น null ชั่วคราว)
+    if (status === "loading") return;
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, status]);
 
   const openModal = (role: "Teacher" | "TA" | "Students") => {
     setModalRole(role);
@@ -124,20 +149,34 @@ function Addpeople() {
 
             {!loading && !error && (
               <>
-                <PeopleList title="Teacher" people={teachers} onAdd={() => openModal("Teacher")} />
-                <PeopleList title="TA" people={tas} onAdd={() => openModal("TA")} />
-                <PeopleList title="Students" people={students} onAdd={() => openModal("Students")} />
+                <PeopleList 
+                    title="Teacher" 
+                    people={teachers} 
+                    onAdd={canManage ? () => openModal("Teacher") : undefined} 
+                />
+                <PeopleList 
+                    title="TA" 
+                    people={tas} 
+                    onAdd={canManage ? () => openModal("TA") : undefined} 
+                />
+                <PeopleList 
+                    title="Students" 
+                    people={students} 
+                    onAdd={canManage ? () => openModal("Students") : undefined} 
+                />
               </>
             )}
 
             {/* Modal */}
-            <AddPersonModal
-              visible={modalOpen}
-              onClose={closeModal}
-              role={modalRole}
-              classId={classId}     // ✅ ส่ง classId
-              onUserAdded={fetchData} // ✅ ส่งฟังก์ชัน refresh เมื่อเพิ่มสำเร็จ
-            />
+            {canManage && (
+                <AddPersonModal
+                visible={modalOpen}
+                onClose={closeModal}
+                role={modalRole}
+                classId={classId}     
+                onUserAdded={fetchData}
+                />
+            )}
           </div>
         </div>
       </div>

@@ -20,7 +20,7 @@ interface ImportLabModalProps {
   formData: ImportForm;
   setFormData: React.Dispatch<React.SetStateAction<ImportForm>>;
   classId?: string;
-  userId?: string;
+  userId?: string; // ตรวจสอบว่า Parent ส่งค่านี้มาถูกต้อง
 }
 
 function ImportLabModal({
@@ -111,6 +111,12 @@ function ImportLabModal({
   const handleImport = async () => {
     setError(null);
 
+    // 1. เพิ่มการเช็ค userId เพื่อความชัวร์
+    if (!userId) {
+      alert("ไม่พบข้อมูลผู้ใช้ (User ID missing). กรุณาล็อกอินใหม่อีกครั้ง");
+      return;
+    }
+
     if (!classId) {
       setError("Missing classId (cannot import to unknown class).");
       return;
@@ -147,7 +153,9 @@ function ImportLabModal({
 
     setLoading(true);
     try {
+      // เรียก Service: ส่ง userId ไปเป็น argument ตัวที่ 3
       const promises = labIds.map((lid) => apiAddLabToClass(classId, lid, userId));
+      
       const results = await Promise.allSettled(promises);
       const failures = results.filter((r) => r.status === "rejected");
 

@@ -377,15 +377,20 @@ export const apiGetClass = async (classId) => {
 export const apiAddLabToClass = async (classId, labId, userId) => {
   if (!classId) throw new Error("apiAddLabToClass: missing classId");
   if (!labId) throw new Error("apiAddLabToClass: missing labId");
+  
+  // เพิ่มการเช็ค userId ก่อนส่ง
+  if (!userId) throw new Error("apiAddLabToClass: missing userId (actorUserId)");
 
   try {
     const resp = await axios.post(
       `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`,
-      { labId },
+      { 
+        labId: labId,
+        actorUserId: String(userId) // ✅ แก้ไขตรงนี้: ส่ง actorUserId ไปใน Body
+      },
       {
         headers: {
           "Content-Type": "application/json",
-          ...(userId ? { "x-user-id": String(userId) } : {}),
         },
         // allow axios to resolve for 2xx; we'll check status below
         validateStatus: (status) => status >= 200 && status < 300,
@@ -402,12 +407,14 @@ export const apiAddLabToClass = async (classId, labId, userId) => {
   } catch (err) {
     // If backend returns non-2xx, axios throws: err.response may exist
     console.error("apiAddLabToClass error:", err?.response ?? err);
+    
     // Re-throw with helpful message
     const message =
       err?.response?.data?.message ||
       err?.response?.data ||
       err.message ||
       "apiAddLabToClass failed";
+      
     const e = new Error(message);
     // attach response for callers who want more detail
     e.response = err?.response;

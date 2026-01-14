@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from "react";
 import Navbar from '@/components/Navbar';
 import Image from 'next/image';
+import Link from 'next/link'; // 1. นำเข้า Link
 import { motion } from "framer-motion";
 
 // Types
@@ -28,20 +29,21 @@ function rand(a: number, b: number) {
 
 // ParticleCanvas3D: simulates 3D swinging/oscillating particles that follow the mouse
 export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanvasProps) {
+  // ... (Code ส่วนนี้เหมือนเดิม ไม่ต้องแก้) ...
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
-  const pointer = useRef({ x: 0, y: 0 }); // smoothed pointer (screen coords)
-  const pointerTarget = useRef({ x: 0, y: 0 }); // immediate pointer
+  const pointer = useRef({ x: 0, y: 0 }); 
+  const pointerTarget = useRef({ x: 0, y: 0 }); 
   const particlesRef = useRef<Particle[]>([]);
   const timeRef = useRef<number>(0);
 
   useEffect(() => {
     if (!enabled) return;
     const canvas = canvasRef.current;
-    if (!canvas) return; // guard
+    if (!canvas) return; 
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) return; // guard
+    if (!ctx) return; 
 
     let w = 0;
     let h = 0;
@@ -62,10 +64,10 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
     function initParticles() {
       const particles: Particle[] = new Array(amount).fill(0).map(() => {
         const baseAngle = Math.random() * Math.PI * 2;
-        const radius = rand(40, Math.max(w, h) * 0.55); // spread
-        const thetaSpeed = rand(0.00006, 0.00045); // slow
+        const radius = rand(40, Math.max(w, h) * 0.55); 
+        const thetaSpeed = rand(0.00006, 0.00045); 
         const phase = Math.random() * Math.PI * 2;
-        const zAmp = rand(40, 220); // depth amplitude
+        const zAmp = rand(40, 220); 
         const zBase = rand(-200, 200);
         const size = rand(0.6, 2.2);
         const hue = Math.floor(rand(200, 60));
@@ -87,7 +89,6 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
     }
 
     function onPointerMove(e: PointerEvent) {
-      // pointer target relative to center (-1..1 scaled)
       pointerTarget.current.x = (e.clientX - cx) / Math.max(1, Math.min(cx, 600));
       pointerTarget.current.y = (e.clientY - cy) / Math.max(1, Math.min(cy, 600));
     }
@@ -96,32 +97,26 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
       const dt = ts - timeRef.current || 16;
       timeRef.current = ts;
 
-      // smooth pointer (lerp)
       pointer.current.x += (pointerTarget.current.x - pointer.current.x) * 0.05;
       pointer.current.y += (pointerTarget.current.y - pointer.current.y) * 0.05;
 
       ctx.clearRect(0, 0, w, h);
 
-      // tilt based on mouse to create "3D camera rotation"
-      const tiltX = pointer.current.y * 0.45; // tilt up/down (smaller)
-      const tiltY = pointer.current.x * -0.6; // tilt left/right (smaller)
+      const tiltX = pointer.current.y * 0.45; 
+      const tiltY = pointer.current.x * -0.6; 
 
       const perspective = Math.max(400, Math.min(1400, Math.max(w, h)));
 
       for (let i = 0; i < particlesRef.current.length; i++) {
         const p = particlesRef.current[i];
 
-        // advance angular position (slow)
         p.baseAngle += p.thetaSpeed * dt;
 
-        // position in a local plane before rotation
         const localX = Math.cos(p.baseAngle + p.phase) * p.radius;
         const localY = Math.sin(p.baseAngle + p.phase) * (p.radius * 0.35);
 
-        // z oscillation to make 3D wave
         const z = Math.sin((p.baseAngle + p.phase) * 1.5) * p.zAmp + p.zBase;
 
-        // apply rotation from mouse tilt (small rotation around X and Y axes)
         const rotY = tiltY * 0.5;
         const cosY = Math.cos(rotY);
         const sinY = Math.sin(rotY);
@@ -134,28 +129,23 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
         let ry = localY * cosX - rz * sinX;
         let rz2 = localY * sinX + rz * cosX;
 
-        // perspective projection
         const scale = perspective / (perspective + rz2);
         const screenX = cx + (rx + pointer.current.x * 60) * scale;
         const screenY = cy + (ry + pointer.current.y * 60) * scale;
 
-        // smooth trail (inertia)
         p.x += (screenX - p.x) * 0.05;
         p.y += (screenY - p.y) * 0.05;
         p.z = rz2;
 
-        // visual properties based on depth
         const s = Math.max(0.14, scale) * p.size * 1.0;
         const alpha = Math.max(0.045, Math.min(1, (1 - (p.z + 600) / 1200) * 1.0));
 
-        // draw particle
         ctx.beginPath();
         ctx.globalAlpha = alpha;
         ctx.fillStyle = `rgba(255,255,255,${alpha})`;
         ctx.arc(p.x, p.y, s, 0, Math.PI * 2);
         ctx.fill();
 
-        // small bloom glow
         if (alpha > 0.08) {
           ctx.beginPath();
           ctx.globalAlpha = alpha * 0.06;
@@ -169,12 +159,10 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
       rafRef.current = requestAnimationFrame(step);
     }
 
-    // initialize
     resize();
     initParticles();
     timeRef.current = performance.now();
 
-    // start pointer centered
     pointer.current.x = 0;
     pointer.current.y = 0;
     pointerTarget.current.x = 0;
@@ -250,22 +238,28 @@ export default function Home() {
             Our Intuitive Drag-And-Drop Editor
           </motion.p>
 
-          {/* Animated Button */}
-          <motion.button
-            className="text-2xl mt-6 px-6 py-3 bg-yellow-500 text-white font-bold rounded-full cursor-pointer shadow-lg"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.9, duration: 0.5 }}
-            whileHover={{
-              scale: 1.1,
-              boxShadow: "0px 0px 20px rgba(255,255,0,0.6)",
-              y: -3,
-              transition: { type: "spring", stiffness: 300 },
-            }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Get Started
-          </motion.button>
+          {/* 2. แก้ไขตรงนี้: 
+             - ใช้ Link ครอบ
+             - เปลี่ยน motion.button เป็น motion.div หรือ motion.span เพื่อความถูกต้องของ HTML 
+               (ปุ่ม button อยู่ใน Link a ไม่ถูกต้องตามหลัก semantic แต่ div ใน a ทำได้)
+          */}
+          <Link href="/labinfotrial">
+            <motion.div 
+              className="inline-block text-2xl mt-6 px-6 py-3 bg-yellow-500 text-white font-bold rounded-full cursor-pointer shadow-lg"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.9, duration: 0.5 }}
+              whileHover={{
+                scale: 1.1,
+                boxShadow: "0px 0px 20px rgba(255,255,0,0.6)",
+                y: -3,
+                transition: { type: "spring", stiffness: 300 },
+              }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Get Started
+            </motion.div>
+          </Link>
 
           <motion.p
             className="ml-2 mt-2 text-xl"
