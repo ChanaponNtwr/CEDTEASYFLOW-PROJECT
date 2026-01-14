@@ -33,97 +33,58 @@ const FIELD_TYPE_MAP = {
 
 // build shapeConfig from lab row numeric fields OR problemSolving.shapeConfig if present
 function buildShapeConfigFromLab(labRow) {
-  // try problemSolving first
-  if (labRow && labRow.problemSolving) {
-    try {
-      const ps = typeof labRow.problemSolving === "string"
-        ? JSON.parse(labRow.problemSolving)
-        : labRow.problemSolving;
-      if (ps && typeof ps === "object" && ps.shapeConfig && typeof ps.shapeConfig === "object") {
-        // normalize values
-        const out = {};
-        for (const k of Object.keys(ps.shapeConfig)) {
-          const v = ps.shapeConfig[k];
-          if (v === "unlimited" || v === "UNLIMITED") out[k] = "unlimited";
-          else if (typeof v === "number") out[k] = Number(v);
-          else if (v && typeof v === "object" && v.limit !== undefined) {
-            out[k] = (v.limit === "unlimited" || v.limit === "UNLIMITED") ? "unlimited" : Number(v.limit);
-          } else {
-            const maybeNum = Number(v);
-            out[k] = Number.isNaN(maybeNum) ? "unlimited" : maybeNum;
-          }
-        }
-        return out;
-      }
-    } catch (e) {
-      // ignore parse errors, fallback to numeric fields
+  const cfg = {};
+  if (!labRow) return cfg;
+
+  for (const [field, typeKey] of Object.entries(FIELD_TYPE_MAP)) {
+    const raw = labRow[field];
+    if (raw === undefined || raw === null) continue;
+
+    const num = Number(raw);
+
+    // ⭐ 핵심
+    if (num === -1) {
+      cfg[typeKey] = "unlimited";
+    } else if (!Number.isNaN(num)) {
+      cfg[typeKey] = num;
     }
   }
 
-  // fallback: use numeric fields on labRow
-  const cfg = {};
-  if (!labRow) return cfg;
-  for (const [field, typeKey] of Object.entries(FIELD_TYPE_MAP)) {
-    if (labRow[field] !== undefined && labRow[field] !== null) {
-      cfg[typeKey] = Number(labRow[field]);
-    }
-  }
-  // ST/EN/PH are unlimited by default; not necessary to include
   return cfg;
 }
 
 // compute usage + remaining from a serialized flowchart object and a lab row
 function computeUsageAndRemaining(serializedFlowchart, labRow) {
-  const nodes = (serializedFlowchart && serializedFlowchart.nodes) || [];
+  const nodes = serializedFlowchart?.nodes || [];
   const shapeConfig = buildShapeConfigFromLab(labRow);
 
-  // normalize keys to canonical two/three-letter codes
-  const canonicalMap = {
-    "insymval": "IN", "insym": "IN", "in": "IN",
-    "outsymval": "OU", "outsym": "OU", "out": "OU",
-    "declaresymval": "DC", "declaresym": "DC", "declare": "DC",
-    "assignsymval": "AS", "assignsym": "AS", "assign": "AS",
-    "ifsymval": "IF", "ifsym": "IF", "if": "IF",
-    "forsymval": "FOR", "forsym": "FOR", "for": "FOR",
-    "whilesymval": "WH", "whilesym": "WH", "while": "WH", "wh": "WH",
-    "ph": "PH", "dc": "DC", "as": "AS", "if": "IF", "fr": "FOR", "for": "FOR", "wh": "WH", "in": "IN", "ou": "OU", "st": "ST", "en": "EN"
-  };
-
-  // normalize shapeConfig -> normalizedShapeConfig map with limits
-  const normalizedShapeConfig = {};
-  for (const [k, v] of Object.entries(shapeConfig || {})) {
-    const kNorm = String(k).replace(/[^a-z0-9]/gi, "").toLowerCase();
-    const canonical = canonicalMap[kNorm] || (kNorm.length <= 3 ? kNorm.toUpperCase() : null);
-    const typeKey = canonical || String(k).toUpperCase();
-
-    if (v === "unlimited" || v === "UNLIMITED") normalizedShapeConfig[typeKey] = { limit: "unlimited" };
-    else normalizedShapeConfig[typeKey] = { limit: Number(v) };
-  }
-
-  // usage
   const usage = {};
   for (const n of nodes) {
-    if (!n || !n.id) continue;
-    const t = normalizeType(n.type ?? n.typeShort ?? n.typeFull ?? "PH");
+    if (!n?.id) continue;
+    const t = normalizeType(n.type || "PH");
     usage[t] = (usage[t] || 0) + 1;
   }
 
   const ALL_TYPES = ["PH","DC","AS","IF","FOR","WH","IN","OU","ST","EN"];
-  const combined = new Set([...ALL_TYPES, ...Object.keys(normalizedShapeConfig), ...Object.keys(usage)]);
-
   const shapeRemaining = {};
-  for (const t of combined) {
-    const typ = normalizeType(t);
-    const conf = normalizedShapeConfig[typ];
-    // default unlimited unless explicitly limited by config
-    const limit = conf && conf.limit !== undefined ? conf.limit : "unlimited";
-    const used = usage[typ] || 0;
-    const remaining = limit === "unlimited" ? "unlimited" : Math.max(0, Number(limit) - used);
-    shapeRemaining[typ] = { limit, used, remaining };
+
+  for (const t of ALL_TYPES) {
+    const used = usage[t] || 0;
+    const limit = shapeConfig[t] ?? "unlimited";
+
+    shapeRemaining[t] = {
+      limit,
+      used,
+      remaining:
+        limit === "unlimited"
+          ? "unlimited"
+          : Math.max(0, limit - used)
+    };
   }
 
   return shapeRemaining;
 }
+
 
 /* ----------------------
    Trial endpoints
@@ -285,113 +246,99 @@ router.post("/:trialId/flowchart/node", async (req, res) => {
  * PUT /trial/:trialId/flowchart/node/:nodeId
  * update node data (same validation as DB-backed)
  */
-router.put("/:trialId/flowchart/node/:nodeId", async (req, res) => {
-  try {
-    const trialId = req.params.trialId;
-    const nodeId = req.params.nodeId;
-    const state = trialFlowcharts.get(trialId);
-    if (!state) return res.status(404).json({ ok: false, error: "trial not found" });
+router.post("/:trialId/flowchart/node", async (req, res) => {
+  const { trialId } = req.params;
+  const state = trialFlowcharts.get(trialId);
+  if (!state) return res.status(404).json({ ok: false, error: "trial not found" });
 
-    let raw = req.body;
-    if (typeof raw === "string") {
-      try { raw = JSON.parse(raw); } catch (e) {}
-    }
-    const body = raw || {};
-    const rawType = body.type ?? body.typeShort ?? body.typeFull;
-    if (!rawType) return res.status(400).json({ ok: false, error: "Missing 'type' in request body." });
-
-    const providedType = normalizeType(rawType);
-    const fc = hydrateFlowchart(state.flowchart);
-    const node = fc.getNode(nodeId);
-    if (!node) return res.status(404).json({ ok: false, error: `Node '${nodeId}' not found.` });
-
-    if (providedType !== node.type) {
-      return res.status(400).json({ ok: false, error: `Type mismatch: provided '${providedType}' != existing '${node.type}'` });
-    }
-
-    const newData = body.data;
-    if (!newData || typeof newData !== "object") return res.status(400).json({ ok: false, error: "Missing or invalid 'data' object." });
-
-    const force = Boolean(body.force);
-
-    if (node.type === "DC") {
-      const declaredNames = [];
-      const d = newData || {};
-      if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
-      if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
-      if (Array.isArray(d.names)) for (const nm of d.names) if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
-      const uniqueNames = [...new Set(declaredNames)];
-
-      if (uniqueNames.length > 0 && !force) {
-        const nodesArr = state.flowchart.nodes || [];
-        const conflicts = [];
-        for (const varName of uniqueNames) {
-          const wordRe = new RegExp(`\\b${varName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-          for (const n of nodesArr) {
-            if (!n || !n.id) continue;
-            if (n.id === nodeId) continue;
-            if (n.label && typeof n.label === "string" && wordRe.test(n.label)) {
-              conflicts.push({ varName, nodeId: n.id, label: n.label, foundIn: "label" });
-              continue;
-            }
-            try {
-              if (wordRe.test(JSON.stringify(n.data || {}))) {
-                conflicts.push({ varName, nodeId: n.id, label: n.label ?? null, foundIn: "data" });
-              }
-            } catch (e) {}
-          }
-        }
-        if (conflicts.length > 0) return res.status(409).json({ ok: false, error: "Variable name(s) already in use in this flowchart.", conflicts });
-      }
-    }
-
-    try {
-      node.updateData(newData);
-    } catch (err) {
-      return res.status(400).json({ ok: false, error: `Failed to update node: ${String(err.message ?? err)}` });
-    }
-
-    const afterSerialized = serializeFlowchart(fc);
-    state.flowchart = afterSerialized;
-    trialFlowcharts.set(trialId, state);
-
-    const shapeRemaining = computeUsageAndRemaining(afterSerialized, state.labRow);
-
-    return res.json({ ok: true, message: `Node ${nodeId} updated`, nodeId, flowchart: afterSerialized, shapeRemaining });
-  } catch (err) {
-    console.error("trial update-node error:", err);
-    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+  const { edgeId, node } = req.body;
+  if (!edgeId || !node) {
+    return res.status(400).json({ ok: false, error: "edgeId & node required" });
   }
+
+  const before = computeUsageAndRemaining(state.flowchart, state.labRow);
+  const nodeType = normalizeType(node.type || "PH");
+
+  const info = before[nodeType];
+
+  // ⭐ จุดนี้ unlimited จะไม่โดน block
+  if (info.limit !== "unlimited" && info.remaining <= 0) {
+    return res.status(409).json({
+      ok: false,
+      error: `Limit reached for ${nodeType}`,
+      shapeRemaining: before
+    });
+  }
+
+  const fc = hydrateFlowchart(state.flowchart);
+
+  const newNode = new Node(
+    node.id || fc.genId(),
+    nodeType,
+    node.label || "",
+    node.data || {},
+    node.position || { x: 0, y: 0 },
+    [],
+    []
+  );
+
+  fc.insertNodeAtEdge(edgeId, newNode);
+
+  state.flowchart = serializeFlowchart(fc);
+
+  return res.json({
+    ok: true,
+    nodeId: newNode.id,
+    flowchart: state.flowchart,
+    shapeRemaining: computeUsageAndRemaining(state.flowchart, state.labRow)
+  });
 });
+
 
 /**
  * DELETE /trial/:trialId/flowchart/node/:nodeId
  */
 router.delete("/:trialId/flowchart/node/:nodeId", async (req, res) => {
   try {
-    const trialId = req.params.trialId;
-    const nodeId = req.params.nodeId;
+    const { trialId, nodeId } = req.params;
+
     const state = trialFlowcharts.get(trialId);
-    if (!state) return res.status(404).json({ ok: false, error: "trial not found" });
+    if (!state) {
+      return res.status(404).json({
+        ok: false,
+        error: "trial not found"
+      });
+    }
 
     const fc = hydrateFlowchart(state.flowchart);
-    try {
-      fc.removeNode(nodeId);
-    } catch (err) {
-      return res.status(400).json({ ok: false, error: `Failed to remove node: ${String(err.message ?? err)}` });
-    }
-    const afterSerialized = serializeFlowchart(fc);
-    state.flowchart = afterSerialized;
+
+    // ❌ ไม่ต้องเช็ค limit
+    // ❌ ไม่สน unlimited
+    // ✅ ลบได้เสมอ
+    fc.removeNode(nodeId);
+
+    state.flowchart = serializeFlowchart(fc);
     trialFlowcharts.set(trialId, state);
 
-    const shapeRemaining = computeUsageAndRemaining(afterSerialized, state.labRow);
+    return res.json({
+      ok: true,
+      message: `Node ${nodeId} removed`,
+      flowchart: state.flowchart,
+      shapeRemaining: computeUsageAndRemaining(
+        state.flowchart,
+        state.labRow
+      )
+    });
 
-    return res.json({ ok: true, message: `Node ${nodeId} removed`, flowchart: afterSerialized, shapeRemaining });
   } catch (err) {
-    console.error("trial delete-node error:", err);
-    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
+    console.error("delete node error:", err);
+    return res.status(400).json({
+      ok: false,
+      error: String(err.message ?? err)
+    });
   }
 });
+
 
 /**
  * GET /trial/:trialId/testcases
