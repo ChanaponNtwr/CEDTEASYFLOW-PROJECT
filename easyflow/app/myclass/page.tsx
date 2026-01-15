@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import ClassCard from './_components/ClassCard';
@@ -7,6 +7,7 @@ import ClassCard_Other from './_components/ClassCard_Other';
 import CreateClassModal from "./_components/CreateClassModal";
 import Link from "next/link";
 import { apiCreateClass, apiGetClasses } from "@/app/service/FlowchartService";
+import { useSession } from "next-auth/react"; // ✅ Import useSession
 
 export type ClassItem = {
   id: number | string;
@@ -20,14 +21,29 @@ function Myclass() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   
-  // 1. แยก State สำหรับ Class ที่เราสร้าง (Owner) และ Class ที่เราเรียน (Student)
   const [myClasses, setMyClasses] = useState<ClassItem[]>([]);
   const [joinedClasses, setJoinedClasses] = useState<ClassItem[]>([]);
 
-  // สมมติว่า userId ปัจจุบันคือ 3 (ควรดึงจาก Auth Context หรือ Token ของจริง)
-  const currentUserId = 3; 
+  // ✅ 1. ดึงข้อมูล User จาก Session
+  const { data: session, status } = useSession();
+  
+  // แปลง ID เป็น Number (หรือใช้ String ตาม Database คุณ)
+  const currentUserId = session?.user 
+    ? Number((session.user as any).id || (session.user as any).userId) 
+    : null;
 
-  React.useEffect(() => {
+  // Form states
+  const [formData, setFormData] = useState({
+    className: '',
+    section: '',
+    room: '',
+  });
+
+  // ✅ 2. โหลดข้อมูลเมื่อได้ User ID แล้ว
+  useEffect(() => {
+    // ถ้ายังโหลด Session ไม่เสร็จ หรือไม่มี User ให้หยุดรอ
+    if (status === "loading" || !currentUserId) return;
+
     apiGetClasses().then((res: any) => {
       if (res.ok && Array.isArray(res.classes)) {
         
@@ -35,30 +51,54 @@ function Myclass() {
         const joinedList: ClassItem[] = [];
 
         res.classes.forEach((c: any) => {
-          // หาข้อมูลเจ้าของห้อง (Owner) เพื่อนำมาแสดงชื่อ Teacher
-          const ownerEntry = c.userClasses?.find((uc: any) => uc.role?.roleName === 'owner');
-          const teacherName = ownerEntry?.user?.name ?? 'Unknown Teacher';
+          // -----------------------------------------------------
+          // 🔍 Logic หาชื่อ Teacher (แบบละเอียด)
+          // -----------------------------------------------------
           
-          // สร้าง Object ข้อมูล Class
+          // 1. หา User ที่มี Role เป็น Owner/Teacher/Creator
+          let ownerEntry = c.userClasses?.find((uc: any) => {
+            const r = uc.role?.roleName?.toLowerCase() || '';
+            return r === 'owner' || r === 'teacher' || r === 'creator';
+          });
+
+          let teacherName = 'Unknown Teacher';
+
+          // กรณี A: API ส่งข้อมูล User มาครบ
+          if (ownerEntry?.user) {
+            const u = ownerEntry.user;
+            teacherName = u.name || (u.fname ? `${u.fname} ${u.lname || ''}`.trim() : 'Unknown Name');
+          }
+          // กรณี B: ข้อมูล User ไม่มา แต่ userId ตรงกับเรา -> ใช้ชื่อจาก Session เราเลย
+          else if (ownerEntry && Number(ownerEntry.userId) === currentUserId) {
+            teacherName = session?.user?.name || 'Me';
+          }
+          // กรณี C: ไม่เจอ Owner ใน List แต่เราคือคนสร้าง (เช็คจาก myEntry)
+          else {
+             const myEntry = c.userClasses?.find((uc: any) => Number(uc.userId) === currentUserId);
+             if (myEntry?.role?.roleName?.toLowerCase() === 'owner') {
+                teacherName = session?.user?.name || 'Me';
+             }
+          }
+
+          // -----------------------------------------------------
+
           const createdDate = c.createAt ? new Date(c.createAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+          
           const classObj: ClassItem = {
             id: c.classId ?? c.id ?? Math.random().toString(36).slice(2,9),
             code: c.classname ?? c.name ?? 'Unnamed',
-            teacher: teacherName,
+            teacher: teacherName, 
             due: `Created ${createdDate}`,
             problem: c.classname ?? '',
           };
 
-          // 2. ตรวจสอบ Role ของ User ปัจจุบันใน Class นั้นๆ เพื่อแยก List
-          // ค้นหา userClass ของ "เรา" (currentUserId)
-          const myUserClassEntry = c.userClasses?.find((uc: any) => uc.userId === currentUserId);
+          // แยก Class ของเรา vs Class ที่ไป Join
+          const myUserClassEntry = c.userClasses?.find((uc: any) => Number(uc.userId) === currentUserId);
+          const myRole = myUserClassEntry?.role?.roleName?.toLowerCase();
           
-          // ถ้าไม่มีข้อมูลเราใน userClasses ให้ลองเช็คว่าเป็นคนสร้างหรือไม่ (Fallback logic)
-          // หรือถ้า roleName เป็น owner ให้เข้า My Class
-          if (myUserClassEntry?.role?.roleName === 'owner') {
+          if (myRole === 'owner' || myRole === 'teacher' || myRole === 'creator') {
             ownedList.push(classObj);
           } else {
-            // กรณีอื่นๆ (student, member) หรือหาไม่เจอแต่มัน return มาใน list ให้ถือว่าเป็น joined
             joinedList.push(classObj);
           }
         });
@@ -71,14 +111,7 @@ function Myclass() {
         setJoinedClasses([]);
       }
     }).catch(err => console.error("Failed to fetch classes:", err));
-  }, []);
-
-  // Form states
-  const [formData, setFormData] = useState({
-    className: '',
-    section: '',
-    room: '',
-  });
+  }, [currentUserId, status, session]); // ✅ ใส่ dependencies ให้ครบ
 
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => {
@@ -93,11 +126,16 @@ function Myclass() {
       return;
     }
 
+    if (!currentUserId) {
+      alert("ไม่พบข้อมูลผู้ใช้ กรุณา Login ใหม่");
+      return;
+    }
+
     const labname = `${className} ${section}`;
     const payload = {
       classname: labname,
       testcases: [],
-      currentUserId: currentUserId, // ใช้ตัวแปรเดียวกัน
+      currentUserId: currentUserId,
       meta: { room },
     };
 
@@ -105,17 +143,17 @@ function Myclass() {
     try {
       const result = await apiCreateClass(payload);
       if (result?.ok) {
+        // ✅ Optimistic Update: แสดงผลทันทีโดยใช้ชื่อจาก Session
         const newClass: ClassItem = {
-          id: result.class.classId ?? result.class.id ?? Math.random().toString(36).slice(2,9),
+          id: result.class?.classId ?? result.class?.id ?? Math.random().toString(36).slice(2,9),
           code: `${className}-${section}`,
-          teacher: 'You',
-          due: 'Due Today',
+          teacher: session?.user?.name || 'You', 
+          due: 'Just now',
           problem: `ปัญหา: ${labname}`,
         };
-        // อัปเดต list ของ My Class
+        
         setMyClasses((prev) => [...prev, newClass]);
         closeModal();
-        alert("Create class successful");
       } else {
         console.error("apiCreateClass returned not ok:", result);
         alert("Create failed");
@@ -128,6 +166,11 @@ function Myclass() {
     }
   };
 
+  // แสดง Loading ระหว่างรอ Session
+  if (status === "loading") {
+    return <div className="min-h-screen flex items-center justify-center text-gray-500">Loading user session...</div>;
+  }
+
   return (
     <div className="pt-20 min-h-screen ">
       <div className="pl-60">
@@ -136,9 +179,8 @@ function Myclass() {
           <Sidebar />
           <div className="flex-1 flex flex-col p-20">
             
-            {/* Create Button Section */}
             <div className="flex justify-end mb-6">
-              <button onClick={openModal} className="bg-[#0D3ACE] text-white px-4 py-2 rounded-lg flex items-center hover:bg-[#0B2EA6] hover:shadow-lg transition-all duration-200">
+              <button onClick={openModal} className="bg-[#0D3ACE] text-white px-4 py-2 rounded-lg flex items-center hover:bg-[#0B2EA6] hover:shadow-lg transition-all duration-200 cursor-pointer">
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path>
                 </svg>
@@ -167,9 +209,7 @@ function Myclass() {
                 <p className="text-gray-500">No joined classes available.</p>
               ) : (
                 joinedClasses.map((classItem, index) => (
-                   // ลิงก์ไปยังหน้าของนักเรียน (ปรับ path ตามจริง)
                   <Link href={`/classes/${encodeURIComponent(String(classItem.id))}`} key={index}>
-                    {/* ใช้ ClassCard_Other ตามที่ต้องการ */}
                     <ClassCard_Other {...classItem} />
                   </Link>
                 ))
@@ -185,7 +225,6 @@ function Myclass() {
           onCreate={handleCreateClass}
           formData={formData}
           setFormData={setFormData}
-          isCreating={isCreating}
         />
       </div>
     </div>
