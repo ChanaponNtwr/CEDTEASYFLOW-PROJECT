@@ -23,8 +23,12 @@ function Addpeople() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  // ✅ 2. เรียกใช้ Session Hook
   const { data: session, status } = useSession();
+
+  // ✅ 1. ดึง User ID ออกมาจาก Session เตรียมไว้ที่ component level
+  const currentUserId = session?.user 
+    ? Number((session.user as any).id || (session.user as any).userId) 
+    : 0;
 
   const resolveClassId = (): string | null => {
     const qCandidates = ["classId", "id", "class"];
@@ -175,6 +179,7 @@ function Addpeople() {
                 role={modalRole}
                 classId={classId}     
                 onUserAdded={fetchData}
+                currentUserId={currentUserId}
                 />
             )}
           </div>
