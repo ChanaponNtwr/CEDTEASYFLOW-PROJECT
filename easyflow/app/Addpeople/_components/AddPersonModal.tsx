@@ -11,6 +11,7 @@ interface AddPersonModalProps {
   role: "Teacher" | "TA" | "Students";
   classId: string;
   onUserAdded: () => void;
+  currentUserId: number; // ✅ รับค่า ID จาก Parent ตามที่แก้ไปข้อก่อนหน้า
 }
 
 export default function AddPersonModal({
@@ -19,12 +20,15 @@ export default function AddPersonModal({
   role,
   classId,
   onUserAdded,
+  currentUserId,
 }: AddPersonModalProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  
+  // ✅ 1. เปลี่ยนจากเก็บคนเดียว เป็นเก็บ Array
+  const [selectedUsers, setSelectedUsers] = useState<any[]>([]);
 
   // --- Search Logic ---
   useEffect(() => {
@@ -59,40 +63,34 @@ export default function AddPersonModal({
     if (!visible) {
       setSearchTerm("");
       setSearchResults([]);
-      setSelectedUser(null);
+      setSelectedUsers([]); // ✅ รีเซ็ต Array
       setIsAdding(false);
     }
   }, [visible]);
 
+  // ✅ 2. ฟังก์ชันเลือก/ยกเลิกเลือก User
+  const toggleUser = (user: any) => {
+    setSelectedUsers((prev) => {
+      const exists = prev.find((u) => u.id === user.id);
+      if (exists) {
+        // ถ้ามีแล้ว ให้เอาออก
+        return prev.filter((u) => u.id !== user.id);
+      } else {
+        // ถ้ายังไม่มี ให้เพิ่มเข้าไป
+        return [...prev, user];
+      }
+    });
+  };
+
   // --- Add User Logic ---
   const handleAddUser = async () => {
-    if (!selectedUser || !classId) return;
+    if (selectedUsers.length === 0 || !classId) return;
 
-    // 1. ดึง ID คนกดจาก LocalStorage
-    let currentActorId = 0;
-    try {
-        // ลองดึงจาก sessionStorage ก่อน (ตามไฟล์ Classwork) หรือ localStorage
-        const uid = sessionStorage.getItem("userId") || localStorage.getItem("userId");
-        if (uid) {
-            currentActorId = Number(uid);
-        } else {
-            // Fallback: ลอง Parse object
-            const storedUser = localStorage.getItem("user");
-            if (storedUser) {
-                const parsed = JSON.parse(storedUser);
-                currentActorId = parsed.id || parsed.userId || 0;
-            }
-        }
-    } catch (e) { 
-        console.error("Error parsing user ID", e);
-    }
-
-    if (!currentActorId) {
+    if (!currentUserId) {
         alert("Authentication error: User ID not found.");
         return;
     }
 
-    // 2. Map Role Name -> Role ID
     let roleIdToSend = 2; // Default Student
     if (role === "Teacher") roleIdToSend = 1;
     else if (role === "TA") roleIdToSend = 3;
@@ -100,24 +98,23 @@ export default function AddPersonModal({
 
     setIsAdding(true);
     try {
-      await apiAddUserToClass(
-        classId, 
-        selectedUser.id, 
-        roleIdToSend, 
-        currentActorId
+      // ✅ 3. วนลูปยิง API ทีละคน (ใช้ Promise.all เพื่อความเร็ว)
+      const promises = selectedUsers.map((user) => 
+        apiAddUserToClass(classId, user.id, roleIdToSend, currentUserId)
       );
+
+      await Promise.all(promises);
       
       if (onUserAdded) {
         onUserAdded(); 
       }
       onClose();
     } catch (err: any) {
-      console.error("Failed to add user:", err);
-      if (err.response?.status === 403) {
-          alert(`Permission Denied: Only the owner can add users.`);
-      } else {
-          alert("Failed to add user. They might already be in the class.");
-      }
+      console.error("Failed to add users:", err);
+      alert("Some users might not have been added (already in class or permission issue).");
+      // ถึงจะ Error บางคน ก็ให้รีเฟรชหน้าจอ
+      if (onUserAdded) onUserAdded(); 
+      onClose();
     } finally {
       setIsAdding(false);
     }
@@ -162,6 +159,13 @@ export default function AddPersonModal({
                   {isSearching ? <Loader2 size={20} className="animate-spin text-blue-500"/> : <Search size={20} />}
                 </div>
               </div>
+              
+              {/* แสดงจำนวนคนที่เลือก */}
+              {selectedUsers.length > 0 && (
+                <div className="mb-2 text-sm text-blue-600 font-medium">
+                  Selected: {selectedUsers.length} people
+                </div>
+              )}
 
               <div className="min-h-[200px]">
                 {searchTerm.length < 2 ? (
@@ -173,32 +177,37 @@ export default function AddPersonModal({
                   <div className="text-center text-gray-400 mt-10">No users found.</div>
                 ) : (
                   <ul className="space-y-2">
-                    {searchResults.map((user) => (
-                      <li
-                        key={user.id}
-                        onClick={() => setSelectedUser(user)}
-                        className={`flex items-center justify-between p-3 rounded-lg cursor-pointer border transition-all ${
-                          selectedUser?.id === user.id
-                            ? "bg-blue-50 border-blue-500 shadow-sm"
-                            : "bg-white border-gray-100 hover:bg-gray-50 hover:border-gray-300"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 w-full overflow-hidden">
-                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold shrink-0">
-                            {user.fname ? user.fname[0].toUpperCase() : "?"}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-gray-800 truncate">
-                              {user.name || `${user.fname} ${user.lname}`}
+                    {searchResults.map((user) => {
+                      // เช็คว่าคนนี้ถูกเลือกไปหรือยัง
+                      const isSelected = selectedUsers.some((u) => u.id === user.id);
+
+                      return (
+                        <li
+                          key={user.id}
+                          onClick={() => toggleUser(user)}
+                          className={`flex items-center justify-between p-3 rounded-lg cursor-pointer border transition-all ${
+                            isSelected
+                              ? "bg-blue-50 border-blue-500 shadow-sm"
+                              : "bg-white border-gray-100 hover:bg-gray-50 hover:border-gray-300"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 w-full overflow-hidden">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 ${isSelected ? "bg-blue-600 text-white" : "bg-blue-100 text-blue-600"}`}>
+                              {user.fname ? user.fname[0].toUpperCase() : "?"}
                             </div>
-                            <div className="text-sm text-gray-500 truncate">{user.email}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-gray-800 truncate">
+                                {user.name || `${user.fname} ${user.lname}`}
+                              </div>
+                              <div className="text-sm text-gray-500 truncate">{user.email}</div>
+                            </div>
                           </div>
-                        </div>
-                        {selectedUser?.id === user.id && (
-                          <Check size={20} className="text-blue-600 shrink-0 ml-2" />
-                        )}
-                      </li>
-                    ))}
+                          {isSelected && (
+                            <Check size={20} className="text-blue-600 shrink-0 ml-2" />
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -214,15 +223,15 @@ export default function AddPersonModal({
               </button>
               <button
                 onClick={handleAddUser}
-                disabled={!selectedUser || isAdding}
+                disabled={selectedUsers.length === 0 || isAdding}
                 className={`px-5 py-2 rounded-lg flex items-center gap-2 font-medium text-white transition shadow-md ${
-                  selectedUser && !isAdding
+                  selectedUsers.length > 0 && !isAdding
                     ? "bg-blue-600 hover:bg-blue-700 hover:shadow-lg"
                     : "bg-gray-300 cursor-not-allowed"
                 }`}
               >
                 {isAdding ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-                Add {role}
+                Add {selectedUsers.length > 0 ? `(${selectedUsers.length})` : ""} {role}
               </button>
             </div>
           </motion.div>

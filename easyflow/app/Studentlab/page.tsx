@@ -54,7 +54,7 @@ function Studentlab() {
 
     // TODO: เปลี่ยนค่า userId / labId ให้เป็นของจริง (จาก user session, props, หรือ router query)
     const userId = 2;
-    const labId = 19;
+    const labId = 4;
 
     // สร้าง payload ที่จะส่ง (ใส่ฟิลด์อื่นๆ ได้ตามต้องการ)
     const payload = {
