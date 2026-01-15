@@ -634,5 +634,41 @@ router.post("/:trialId/testcases/run", async (req, res) => {
   }
 });
 
+/**
+ 
+GET /trial/:trialId/shapes/remaining
+-> return remaining shape limits for this trial*/
+router.get("/:trialId/shapes/remaining", async (req, res) => {
+  try {
+    const { trialId } = req.params;
+
+    const state = trialFlowcharts.get(trialId);
+    if (!state) {
+      return res.status(404).json({
+        ok: false,
+        error: "trial not found"
+      });
+    }
+
+    const shapeRemaining = computeUsageAndRemaining(
+      state.flowchart,
+      state.labRow
+    );
+
+    return res.json({
+      ok: true,
+      trialId,
+      shapeRemaining
+    });
+
+  } catch (err) {
+    console.error("get shape remaining error:", err);
+    return res.status(500).json({
+      ok: false,
+      error: String(err.message ?? err)
+    });
+  }
+});
+
 /* Expose router */
 export default router;
