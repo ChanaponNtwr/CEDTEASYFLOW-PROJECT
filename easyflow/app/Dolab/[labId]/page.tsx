@@ -205,10 +205,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
           onNodeClick={onNodeClick}
           onEdgeClick={onEdgeClick}
           nodeTypes={nodeTypes}
-          fitView={true}
-          minZoom={0.1}
-          maxZoom={2}
-          defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+          fitView={false}
+          defaultViewport={{ x: 600, y: 150, zoom: 1 }}
         >
           <Background color="#aaa" gap={16} />
           <MiniMap style={{ height: 120 }} zoomable pannable />
