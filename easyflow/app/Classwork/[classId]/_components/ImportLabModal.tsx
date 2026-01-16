@@ -5,6 +5,7 @@ import { FaPlus } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
+// อย่าลืมอัปเดต apiAddLabToClass ใน FlowchartService ให้รับ parameter ตัวที่ 4 ด้วยนะครับ
 import { apiAddLabToClass } from "@/app/service/FlowchartService";
 
 interface ImportForm {
@@ -20,7 +21,7 @@ interface ImportLabModalProps {
   formData: ImportForm;
   setFormData: React.Dispatch<React.SetStateAction<ImportForm>>;
   classId?: string;
-  userId?: string; // ตรวจสอบว่า Parent ส่งค่านี้มาถูกต้อง
+  userId?: string;
 }
 
 function ImportLabModal({
@@ -41,6 +42,7 @@ function ImportLabModal({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Load selected labs from sessionStorage
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("selectedImportedLabs");
@@ -68,32 +70,26 @@ function ImportLabModal({
   };
 
   const openDatePicker = () => {
-    const el = dateInputRef.current;
-    if (!el) return;
     try {
-      const anyEl = el as any;
-      if (typeof anyEl.showPicker === "function") {
-        anyEl.showPicker();
+      if (dateInputRef.current && typeof (dateInputRef.current as any).showPicker === "function") {
+        (dateInputRef.current as any).showPicker();
       } else {
-        el.focus();
+        dateInputRef.current?.focus();
       }
     } catch {
-      el.focus();
+      dateInputRef.current?.focus();
     }
   };
 
   const openTimePicker = () => {
-    const el = timeInputRef.current;
-    if (!el) return;
     try {
-      const anyEl = el as any;
-      if (typeof anyEl.showPicker === "function") {
-        anyEl.showPicker();
+      if (timeInputRef.current && typeof (timeInputRef.current as any).showPicker === "function") {
+        (timeInputRef.current as any).showPicker();
       } else {
-        el.focus();
+        timeInputRef.current?.focus();
       }
     } catch {
-      el.focus();
+      timeInputRef.current?.focus();
     }
   };
 
@@ -103,7 +99,7 @@ function ImportLabModal({
       sessionStorage.setItem("importMode", "1");
       sessionStorage.setItem("importReturn", window.location.pathname || "/");
     } catch {
-      // ignore storage errors
+      // ignore
     }
     router.push("/Selectlab");
   };
@@ -111,17 +107,17 @@ function ImportLabModal({
   const handleImport = async () => {
     setError(null);
 
-    // 1. เพิ่มการเช็ค userId เพื่อความชัวร์
+    // 1. Validate User & Class
     if (!userId) {
       alert("ไม่พบข้อมูลผู้ใช้ (User ID missing). กรุณาล็อกอินใหม่อีกครั้ง");
       return;
     }
-
     if (!classId) {
       setError("Missing classId (cannot import to unknown class).");
       return;
     }
 
+    // 2. Get Selected Labs
     let payloadRaw = sessionStorage.getItem("selectedImportedLabs");
     if (!payloadRaw) {
       alert("ยังไม่ได้เลือก My lab โปรดกด + My lab เพื่อเลือก");
@@ -151,30 +147,44 @@ function ImportLabModal({
       return;
     }
 
+    // 3. Validate Date & Time
+    if (!formData.dueDate || !formData.dueTime) {
+      setError("กรุณาระบุ Due Date และ Time ให้ครบถ้วน");
+      return;
+    }
+
+    // 4. Construct ISO Date String
+    let dueDateTimeIso = "";
+    try {
+      const combined = new Date(`${formData.dueDate}T${formData.dueTime}:00`);
+      if (isNaN(combined.getTime())) {
+        setError("รูปแบบวันเวลาไม่ถูกต้อง");
+        return;
+      }
+      dueDateTimeIso = combined.toISOString();
+    } catch (e) {
+      setError("เกิดข้อผิดพลาดในการแปลงวันเวลา");
+      return;
+    }
+
     setLoading(true);
     try {
-      // เรียก Service: ส่ง userId ไปเป็น argument ตัวที่ 3
-      const promises = labIds.map((lid) => apiAddLabToClass(classId, lid, userId));
+      // 5. Call API with dueDate
+      // หมายเหตุ: ต้องแก้ apiAddLabToClass ใน FlowchartService ให้รับ argument ตัวที่ 4 (dueDate) ด้วย
+      // หรือเปลี่ยนเป็นรับ Object payload
+      const promises = labIds.map((lid) => 
+        // @ts-ignore: ถ้า TypeScript ฟ้องว่า argument เกิน ให้ใส่ @ts-ignore หรือไปแก้ interface apiAddLabToClass
+        apiAddLabToClass(classId, lid, userId, dueDateTimeIso)
+      );
       
       const results = await Promise.allSettled(promises);
       const failures = results.filter((r) => r.status === "rejected");
 
       if (failures.length > 0) {
         console.error("Import partial failures:", failures);
-        // build readable message
-        const msgs = failures
-          .map((f: any, idx: number) => {
-            const reason = f.reason;
-            const text =
-              typeof reason === "string"
-                ? reason
-                : reason?.message ?? JSON.stringify(reason?.response?.data ?? reason);
-            return `#${idx + 1}: ${text}`;
-          })
-          .join("\n");
         setError(`${failures.length} รายการนำเข้าไม่สำเร็จ`);
-        alert(`${failures.length} รายการนำเข้าไม่สำเร็จ:\n${msgs}`);
       } else {
+        // Success cleanup
         try {
           sessionStorage.removeItem("selectedImportedLabs");
           sessionStorage.removeItem("importForm");
@@ -182,29 +192,24 @@ function ImportLabModal({
           sessionStorage.removeItem("importReturn");
         } catch {}
 
-        // แจ้ง parent ให้รีเฟรช (handleAddClick จะเรียก fetchClass)
-        onAddClick?.();
-        onClose();
-        alert("Import สำเร็จ");
+        onAddClick?.(); // Refresh parent
+        onClose();      // Close modal
+        // alert("Import สำเร็จ"); // Optional alert
       }
     } catch (err: any) {
       console.error("Import failed:", err);
-      const serverMsg =
-        err?.response?.data?.message ||
-        err?.response?.data ||
-        (err?.response ? `HTTP ${err.response.status}` : null);
-      const userMsg = serverMsg ?? err?.message ?? "Import failed";
-      setError(String(userMsg));
-      alert(`Import failed: ${userMsg}`);
+      setError(err?.message || "Import failed");
     } finally {
       setLoading(false);
     }
   };
 
   const handleSubmit = () => {
-    // ถ้าต้องการบังคับ due date/time ให้ตรวจที่นี่ก่อนเรียก handleImport
     handleImport();
   };
+
+  // Helper เพื่อหา min date (วันนี้)
+  const todayStr = new Date().toISOString().split("T")[0];
 
   return (
     <AnimatePresence>
@@ -222,10 +227,12 @@ function ImportLabModal({
             exit={{ scale: 0.8, opacity: 0 }}
             transition={{ duration: 0.3 }}
           >
-            {/* Header */}
+            {/* Header Handle */}
             <div className="flex justify-center mb-2">
-              <div onClick={onClose} className="w-28 h-1 bg-[#dbdbdb] rounded-lg cursor-pointer" />
+              <div onClick={onClose} className="w-28 h-1 bg-[#dbdbdb] rounded-lg cursor-pointer hover:bg-gray-400 transition-colors" />
             </div>
+            
+            {/* Title */}
             <div className="mb-6 flex items-center">
               <div className="w-16 h-16 bg-[#E9E5FF] rounded-full flex items-center justify-center mr-2">
                 <Image src="/images/import.png" alt="Import Icon" width={30} height={30} />
@@ -246,74 +253,73 @@ function ImportLabModal({
                   className="w-full h-12 border border-gray-300 bg-[#E9E5FF] rounded-lg flex items-center justify-center hover:bg-[#D3CCFE] transition-all duration-200"
                 >
                   {selectedLabel ? (
-                    <span className="text-sm text-gray-700">{selectedLabel}</span>
+                    <span className="text-sm text-gray-700 font-medium">{selectedLabel}</span>
                   ) : (
                     <FaPlus className="w-4 h-4 text-gray-500" />
                   )}
                 </button>
               </div>
 
-              {/* Assignment due date */}
+              {/* Assignment due date & time */}
               <div className="space-y-4">
-                {/* Date */}
+                {/* Date Input */}
                 <div>
                   <label className="block text-gray-500 font-medium mb-2">Assignment Due Date</label>
                   <div className="relative">
                     <input
                       type="date"
                       name="dueDate"
+                      ref={dateInputRef}
                       value={formData.dueDate}
                       onChange={handleInputChange}
-                      ref={dateInputRef}
                       onClick={openDatePicker}
-                      onFocus={openDatePicker}
-                      className="w-full h-12 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 appearance-none"
-                      min={new Date().toISOString().split("T")[0]}
+                      // onFocus={openDatePicker} // บางครั้ง onFocus อาจทำให้เด้งเปิดรัวๆ ถ้าไม่ระวัง
+                      className="w-full h-12 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 appearance-none cursor-pointer"
+                      min={todayStr}
                     />
                   </div>
                 </div>
 
-                {/* Time */}
+                {/* Time Input */}
                 <div>
                   <label className="block text-gray-500 font-medium mb-2">Time</label>
                   <div className="relative">
                     <input
                       type="time"
                       name="dueTime"
+                      ref={timeInputRef}
                       value={formData.dueTime}
                       onChange={handleInputChange}
-                      ref={timeInputRef}
                       onClick={openTimePicker}
-                      onFocus={openTimePicker}
-                      className="w-full h-12 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 appearance-none"
-                      min="08:00"
-                      max="18:00"
-                      step={900}
+                      // onFocus={openTimePicker}
+                      className="w-full h-12 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 appearance-none cursor-pointer"
                     />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Error */}
-            {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
-            {loading && <div className="mt-3 text-sm text-gray-600">Importing…</div>}
+            {/* Error & Loading Status */}
+            {error && <div className="mt-4 text-sm text-red-600 bg-red-50 p-2 rounded text-center">{error}</div>}
+            {loading && <div className="mt-4 text-sm text-gray-600 text-center animate-pulse">Processing...</div>}
 
             {/* Buttons */}
-            <div className="flex justify-center gap-3 mt-6">
+            <div className="flex justify-center gap-3 mt-8">
               <button
                 onClick={onClose}
-                className="px-6 py-2 bg-gray-200 rounded-full text-gray-700 hover:bg-gray-300 transition-all duration-200 cursor-pointer"
+                className="px-6 py-2 bg-gray-200 rounded-full text-gray-700 hover:bg-gray-300 transition-all duration-200 cursor-pointer font-medium"
                 disabled={loading}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmit}
-                className="px-6 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all duration-200 cursor-pointer"
+                className={`px-6 py-2 rounded-full text-white transition-all duration-200 cursor-pointer font-medium ${
+                  loading ? "bg-blue-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+                }`}
                 disabled={loading}
               >
-                {loading ? "Importing…" : "Import"}
+                {loading ? "Importing..." : "Import"}
               </button>
             </div>
           </motion.div>

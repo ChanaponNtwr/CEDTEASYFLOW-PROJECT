@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 
 interface SymbolItem {
@@ -92,30 +92,19 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
     },
   });
 
-  // ส่งค่าเริ่มต้นให้ parent ตอน mount
-  useEffect(() => {
-    onChange?.({
-      input: symbols.input.count,
-      output: symbols.output.count,
-      declare: symbols.declare.count,
-      assign: symbols.assign.count,
-      if: symbols.if.count,
-      while: symbols.while.count,
-      for: symbols.for.count,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // ฟังก์ชันช่วยส่งค่ากลับ Parent (ใช้แทน useEffect เพื่อแก้ error)
   const emitChange = (s: typeof symbols) => {
-    onChange?.({
-      input: s.input.count,
-      output: s.output.count,
-      declare: s.declare.count,
-      assign: s.assign.count,
-      if: s.if.count,
-      while: s.while.count,
-      for: s.for.count,
-    });
+    if (onChange) {
+      onChange({
+        input: s.input.isUnlimited ? -1 : s.input.count,
+        output: s.output.isUnlimited ? -1 : s.output.count,
+        declare: s.declare.isUnlimited ? -1 : s.declare.count,
+        assign: s.assign.isUnlimited ? -1 : s.assign.count,
+        if: s.if.isUnlimited ? -1 : s.if.count,
+        while: s.while.isUnlimited ? -1 : s.while.count,
+        for: s.for.isUnlimited ? -1 : s.for.count,
+      });
+    }
   };
 
   const handleCountChange = (
@@ -123,6 +112,9 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
     increment: boolean
   ) => {
     setSymbols((prev) => {
+      // ถ้า Unlimited อยู่ ห้ามเปลี่ยนเลข
+      if (prev[key].isUnlimited) return prev;
+
       const next = { ...prev };
       next[key] = {
         ...next[key],
@@ -130,7 +122,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
           ? next[key].count + 1
           : Math.max(0, next[key].count - 1),
       };
-      emitChange(next);
+      
+      emitChange(next); // ส่งค่าทันทีเมื่อกดปุ่ม
       return next;
     });
   };
@@ -142,7 +135,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
     setSymbols((prev) => {
       const next = { ...prev };
       next[key] = { ...next[key], isUnlimited: checked };
-      emitChange(next);
+      
+      emitChange(next); // ส่งค่าทันทีเมื่อติ๊ก
       return next;
     });
   };
@@ -162,17 +156,23 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
 
       <div className="flex items-center gap-4">
         <button
-          className="w-8 h-8 bg-gray-200 rounded"
+          type="button" // เพิ่ม type="button" ป้องกัน submit form
+          className={`w-8 h-8 rounded ${item.isUnlimited ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-gray-200"}`}
           onClick={() => handleCountChange(symbolKey, false)}
+          disabled={item.isUnlimited}
         >
           -
         </button>
 
-        <span className="w-10 text-center">{item.count}</span>
+        <span className="w-10 text-center font-medium">
+            {item.isUnlimited ? "∞" : item.count}
+        </span>
 
         <button
-          className="w-8 h-8 bg-gray-200 rounded"
+          type="button" // เพิ่ม type="button" ป้องกัน submit form
+          className={`w-8 h-8 rounded ${item.isUnlimited ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-gray-200"}`}
           onClick={() => handleCountChange(symbolKey, true)}
+          disabled={item.isUnlimited}
         >
           +
         </button>
@@ -183,8 +183,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
           onChange={(e) =>
             handleUnlimitedChange(symbolKey, e.target.checked)
           }
+          className="cursor-pointer"
         />
-        <span className="text-sm text-gray-600">Unlimited</span>
+        <span 
+            className="text-sm text-gray-600 cursor-pointer"
+            onClick={() => handleUnlimitedChange(symbolKey, !item.isUnlimited)}
+        >
+            Unlimited
+        </span>
       </div>
     </div>
   );
