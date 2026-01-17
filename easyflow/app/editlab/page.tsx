@@ -29,15 +29,28 @@ function Editlab() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const labIdParam = searchParams?.get("labId");
-  const LAB_ID = labIdParam ? Number(labIdParam) : null; // now derived from query string
+  const LAB_ID = labIdParam ? Number(labIdParam) : null;
 
   const [labName, setLabName] = useState<string>("");
   const [dateline, setDateline] = useState<string>("");
   const [problemSolving, setProblemSolving] = useState<string>("");
-  const [currentUserId] = useState<number>(1); // adjust if you obtain the real user id
+  const [currentUserId] = useState<number>(1); 
 
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [deleteTargetIndex, setDeleteTargetIndex] = useState<number | null>(null);
+
+  // --- เพิ่ม State สำหรับ Symbols ---
+  const [symbols, setSymbols] = useState({
+    input: 0,
+    output: 0,
+    declare: 0,
+    assign: 0,
+    if: 0,
+    while: 0,
+    for: 0,
+  });
+  // State สำหรับส่งค่าเริ่มต้นไปให้ SymbolSection แสดงผล
+  const [initialSymbolData, setInitialSymbolData] = useState<any>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -48,34 +61,28 @@ function Editlab() {
       }
 
       try {
-        // Fetch lab metadata + testcases in parallel
         const [labResp, tcResp] = await Promise.allSettled([
           apiGetLab(LAB_ID),
           apiGetTestcases(LAB_ID)
         ]);
 
-        // --- handle lab data (if available) ---
+        // --- handle lab data ---
         if (labResp.status === "fulfilled") {
           const labData = labResp.value;
-          // backend might return { lab: {...} } or directly the lab object
           const labObj = labData?.lab ?? labData ?? null;
 
           if (labObj) {
-            // try several common field names as fallback
             const nameVal = labObj.labname ?? labObj.name ?? labObj.title ?? "";
             setLabName(String(nameVal ?? ""));
 
-            // try dateline/dueDate/deadline - convert to yyyy-mm-dd for date input
             const rawDate = labObj.dateline ?? labObj.dueDate ?? labObj.deadline ?? labObj.date ?? "";
             if (rawDate) {
-              // If rawDate is timestamp/ISO, convert; if already yyyy-mm-dd, keep it
               let isoDate = "";
               try {
                 const d = new Date(rawDate);
                 if (!isNaN(d.getTime())) {
-                  isoDate = d.toISOString().slice(0, 10); // yyyy-mm-dd
+                  isoDate = d.toISOString().slice(0, 10);
                 } else {
-                  // fallback: if it's already a string like '2024-12-31', use it
                   isoDate = String(rawDate).slice(0, 10);
                 }
               } catch {
@@ -84,15 +91,27 @@ function Editlab() {
               setDateline(isoDate);
             }
 
-            // problem solving / description / detail
             const problemVal = labObj.problemSolving ?? labObj.description ?? labObj.detail ?? labObj.note ?? "";
             setProblemSolving(String(problemVal ?? ""));
+
+            // --- ดึงข้อมูล Symbol มาใส่ State ---
+            const loadedSymbols = {
+                input: labObj.inSymVal ?? 0,
+                output: labObj.outSymVal ?? 0,
+                declare: labObj.declareSymVal ?? 0,
+                assign: labObj.assignSymVal ?? 0,
+                if: labObj.ifSymVal ?? 0,
+                while: labObj.whileSymVal ?? 0,
+                for: labObj.forSymVal ?? 0,
+            };
+            setSymbols(loadedSymbols); // เก็บค่าปัจจุบัน
+            setInitialSymbolData(loadedSymbols); // ส่งไปแสดงผลที่ component
           }
         } else {
           console.warn("apiGetLab failed:", labResp.reason);
         }
 
-        // --- handle testcases (if available) ---
+        // --- handle testcases ---
         let list: any[] = [];
         if (tcResp.status === "fulfilled") {
           const tcData = tcResp.value;
@@ -101,7 +120,6 @@ function Editlab() {
           console.warn("apiGetTestcases failed:", tcResp.reason);
         }
 
-        // parse helpers (same logic as before)
         const parseVal = (val: any): any => {
           if (typeof val === "string") {
             const trimmed = val.trim();
@@ -215,22 +233,16 @@ function Editlab() {
     setTestCases(updated);
   };
 
-  const handleSymbolChange = (symbols: {
-    input: number;
-    output: number;
-    declare: number;
-    assign: number;
-    if: number;
-    call: number;
-  }) => {
-    console.log("Symbol counts updated:", symbols);
+  // --- Logic การเปลี่ยนค่า Symbol ---
+  const handleSymbolChange = (newSymbols: any) => {
+    // อัปเดต state เมื่อ user แก้ไขใน component
+    setSymbols(newSymbols);
   };
 
   const handleCancel = () => {
     router.push("/mylab");
   };
 
-  // <-- UPDATED handleSave: send stringified values so Prisma (String fields) won't choke
   const handleSave = async () => {
     if (!LAB_ID) {
       alert("Missing labId, cannot save");
@@ -238,14 +250,12 @@ function Editlab() {
     }
 
     try {
-      // helper: turn comma-separated UI string into array of trimmed values
       const toArray = (str: string) =>
         String(str ?? "")
           .split(",")
           .map(s => s.trim())
           .filter(s => s !== "");
 
-      // Prepare payload: stringify arrays so backend receives a String
       const testcasesPayload = testCases.map(tc => {
         const inArr = toArray(tc.input);
         const outArr = toArray(tc.output);
@@ -253,7 +263,6 @@ function Editlab() {
         const outHiddenArr = toArray(tc.hiddenOutput);
 
         return {
-          // send JSON string for each field (backend expects String)
           inputVal: JSON.stringify(inArr),
           outputVal: JSON.stringify(outArr),
           inHiddenVal: JSON.stringify(inHiddenArr),
@@ -265,28 +274,32 @@ function Editlab() {
       const payload: any = {
         labname: labName || "Untitled Lab",
         testcases: testcasesPayload,
-        currentUserId: currentUserId
+        currentUserId: currentUserId,
+        // --- ส่งค่า Symbol กลับไป Update ---
+        inSymVal: symbols.input,
+        outSymVal: symbols.output,
+        declareSymVal: symbols.declare,
+        assignSymVal: symbols.assign,
+        ifSymVal: symbols.if,
+        whileSymVal: symbols.while,
+        forSymVal: symbols.for,
       };
 
-      // include dateline/problemSolving if present
       if (dateline) payload.dateline = dateline;
       if (problemSolving) payload.problemSolving = problemSolving;
 
       const resp = await apiUpdateLab(LAB_ID, payload);
 
-      // map returned testcases (if backend returned parsed arrays or JSON strings)
       const returnedTestcases = resp?.lab?.testcases ?? resp?.testcases ?? resp?.data ?? null;
 
       if (returnedTestcases && Array.isArray(returnedTestcases)) {
         const mapped = returnedTestcases.map((tc: any) => {
-          // tc.inputVal might be an array (if backend parsed it) or a JSON string.
           const parseField = (v: any) => {
             if (Array.isArray(v)) return v.join(",");
             try {
               const p = JSON.parse(v);
               return Array.isArray(p) ? p.join(",") : String(p ?? "");
             } catch {
-              // fallback: treat as plain comma-separated string
               return String(v ?? "");
             }
           };
@@ -343,7 +356,6 @@ function Editlab() {
                 Cancel
               </Link>
 
-              {/* Use a button for Save so we can finish save then navigate */}
               <button
                 onClick={handleSave}
                 className="bg-[#2E8B57] text-white px-4 py-2 rounded-full flex items-center hover:bg-[#267347]"
@@ -375,7 +387,7 @@ function Editlab() {
             <div className="flex flex-col md:flex-row gap-6">
               {/* ส่วนซ้าย */}
               <div className="flex-1 space-y-6">
-                {/* Name และ Dateline (controlled) */}
+                {/* Name และ Dateline */}
                 <div className="flex flex-col md:flex-row gap-4">
                   <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-700">
@@ -400,7 +412,7 @@ function Editlab() {
                   </div>
                 </div>
 
-                {/* Problem Solving (controlled) */}
+                {/* Problem Solving */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     Problem solving
@@ -413,7 +425,7 @@ function Editlab() {
                   />
                 </div>
 
-                {/* Testcases (unchanged) */}
+                {/* Testcases */}
                 <div>
                   <h3 className="text-lg font-medium text-gray-700 mb-4 ">
                     Create Testcase
@@ -557,8 +569,11 @@ function Editlab() {
                 </div>
               </div>
 
-              {/* ส่วนขวา */}
-              <SymbolSection onChange={handleSymbolChange} />
+              {/* ส่วนขวา: SymbolSection พร้อมส่ง initialValues */}
+              <SymbolSection 
+                onChange={handleSymbolChange} 
+                initialValues={initialSymbolData} 
+              />
             </div>
           </div>
         </div>

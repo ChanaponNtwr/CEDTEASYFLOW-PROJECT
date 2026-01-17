@@ -1,4 +1,3 @@
-// Selectlab.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -7,6 +6,8 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import ClassCard from "./_components/ClassCard";
 import { apiGetLab } from "@/app/service/FlowchartService";
+// 1. Import useSession
+import { useSession } from "next-auth/react";
 
 /* =======================
    Types
@@ -24,6 +25,9 @@ type LocalLab = {
   testCases?: any[];
   testcases?: any[];
   createdAt?: string;
+  // เพิ่ม field author/teacher เผื่อ API ส่งมา
+  author?: string;
+  teacher?: string;
 };
 
 /* =======================
@@ -53,6 +57,9 @@ function calcTotalScore(testcases?: any[]) {
 }
 
 export default function Selectlab() {
+  // 2. ดึงข้อมูล Session
+  const { data: session } = useSession();
+
   const [labs, setLabs] = useState<LocalLab[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +75,7 @@ export default function Selectlab() {
   const router = useRouter();
 
   /* =======================
-     Load local labs + remote update
+      Load local labs + remote update
   ======================== */
   useEffect(() => {
     // load stored labs
@@ -168,7 +175,7 @@ export default function Selectlab() {
   }, []);
 
   /* =======================
-     Sort newest first
+      Sort newest first
   ======================== */
   const displayLabs = [...labs].sort((a, b) => {
     const da = new Date(a.createdAt ?? (a.id ?? 0)).getTime();
@@ -177,7 +184,7 @@ export default function Selectlab() {
   });
 
   /* =======================
-     Selection handlers
+      Selection handlers
   ======================== */
   const handleToggleSelect = (labId: string, checked: boolean) => {
     setSelectedLabIds((prev) => {
@@ -196,7 +203,7 @@ export default function Selectlab() {
   };
 
   /* =======================
-     Confirm (Select) button
+      Confirm (Select) button
   ======================== */
   const handleConfirmSelect = () => {
     if (selectedLabIds.length === 0) return;
@@ -241,7 +248,7 @@ export default function Selectlab() {
   };
 
   /* =======================
-     Open lab info when card clicked
+      Open lab info when card clicked
   ======================== */
   const handleOpenLab = (labId: string) => {
     router.push(`/labinfo?labId=${encodeURIComponent(labId)}`);
@@ -254,6 +261,7 @@ export default function Selectlab() {
         <div className="flex h-screen">
           <Sidebar />
           <div className="flex-1 flex flex-col p-20">
+            {/* Control Bar (Select Actions) */}
             <div className="flex items-center justify-end gap-4 mb-4">
               <div className="flex items-center gap-3">
                 <button
@@ -301,15 +309,23 @@ export default function Selectlab() {
                   const testcases = lab.testcases ?? lab.testCases ?? [];
                   const totalScore = calcTotalScore(testcases);
 
+                  // 3. กำหนดชื่อผู้สร้าง (Logic เดียวกับ Mylab)
+                  const teacherName = 
+                    lab.author || 
+                    lab.teacher || 
+                    session?.user?.name || 
+                    "Unknown Teacher";
+
                   return (
                     <div key={labId} className="block">
                       <ClassCard
-                        // don't pass code if you don't want it displayed; ClassCard handles optional code
                         title={name}
-                        teacher="You"
+                        // ส่งชื่อ teacher ไปที่ Card
+                        teacher={teacherName} 
                         score={totalScore}
                         due={due}
                         problem={problem || "—"}
+                        // Props สำหรับการเลือก (ยังคงไว้)
                         isChecked={selectedLabIds.includes(labId)}
                         onCheckboxChange={(checked) => handleToggleSelect(labId, checked)}
                         onCardClick={() => handleOpenLab(labId)}

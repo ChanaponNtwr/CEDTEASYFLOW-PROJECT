@@ -9,6 +9,7 @@ import {
   apiTrialReset,
   apiRunTrialTestcases,
   apiGetTrialTestcases,
+  apiGetLab, // <--- 1. เพิ่ม import apiGetLab
 } from "@/app/service/FlowchartService";
 
 type Variable = { name: string; value: any };
@@ -85,6 +86,9 @@ export default function TopBarControls({
   const runAllActiveRef = useRef(false);
   const runAllWaitingForInputRef = useRef<(() => void) | null>(null);
 
+  // --- 2. เพิ่ม State สำหรับเก็บข้อมูล Lab ---
+  const [labInfo, setLabInfo] = useState<{ name?: string; detail?: string } | null>(null);
+
   const togglePopup = () => setShowPopup((v) => !v);
 
   const isEndType = (t?: string | number | null) => {
@@ -93,9 +97,11 @@ export default function TopBarControls({
     return ["EN", "END", "ED", "TERMINATE", "ENDNODE", "EXIT"].includes(s);
   };
 
-  // fetch declared variables from flowchart/trial
+  // fetch declared variables from flowchart/trial AND Lab Info
   useEffect(() => {
     let mounted = true;
+
+    // 1. Fetch Variables AND Lab Info
     const fetchVars = async () => {
       if (initialVariables && initialVariables.length > 0) {
         setFetchedVariables(initialVariables);
@@ -106,6 +112,27 @@ export default function TopBarControls({
       try {
         setFetchingVars(true);
         const resp = await apiGetTrialFlowchart(effectiveId);
+        
+        // --- 3. Logic การดึงข้อมูล Lab (เพิ่มส่วนนี้) ---
+        if (mounted) {
+            // พยายามหา labId จาก response ถ้าไม่มีให้ Default เป็น 19 ตามโจทย์
+            const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 19; 
+            
+            if (foundLabId) {
+                apiGetLab(foundLabId).then((labResp) => {
+                    if (mounted) {
+                        const rawLab = labResp?.lab ?? labResp;
+                        // Map ข้อมูลเข้า State (รองรับ structure หลายแบบ)
+                        setLabInfo({
+                            name: rawLab?.labname ?? rawLab?.name ?? `Lab ${foundLabId}`,
+                            detail: rawLab?.problemSolving ?? rawLab?.problem ?? "No description available."
+                        });
+                    }
+                }).catch(err => console.warn("Fetch Lab Error:", err));
+            }
+        }
+        // ------------------------------------------------
+
         const nodes: any[] = resp?.flowchart?.nodes ?? resp?.nodes ?? [];
 
         const varNodes = nodes.filter((n) => {
@@ -1153,10 +1180,16 @@ export default function TopBarControls({
       {showPopup && (
         <div className="absolute z-50 w-120 h-auto rounded-xl bg-white p-4 shadow-xl border border-gray-200 ml-20 mt-3 transform translate-x-[-10%] animate-fadeIn">
           <div className="relative w-full">
-            <div className="text-gray-800 text-sm font-medium font-['Sarabun'] leading-snug mb-4">
-              จงเขียนโปรแกรม เพื่อคํานวณหาพื้นที่ของสามเหลี่ยม <br />
-              Area = 1⁄2 x ฐาน x สูง โดยมีข้อมูลเข้า (Input) <br />
-              จากคีย์บอร์ด คือ ค่าของฐานของสามเหลี่ยม (b: Base) และค่าความสูงของสามเหลี่ยม (h: Height)
+            {/* 4. แก้ไขส่วนแสดงผลโจทย์ให้ใช้ข้อมูลจาก API (labInfo) */}
+            <div className="text-gray-800 text-sm font-medium font-['Sarabun'] leading-snug mb-4 whitespace-pre-wrap">
+              {labInfo ? (
+                <>
+                  <div className="font-bold mb-1 text-base">{labInfo.name}</div>
+                  <div>{labInfo.detail}</div>
+                </>
+              ) : (
+                "Loading Lab Problem..."
+              )}
             </div>
 
             {/* Non-table testcases layout */}

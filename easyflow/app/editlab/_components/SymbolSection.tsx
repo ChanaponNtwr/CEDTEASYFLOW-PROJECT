@@ -1,177 +1,250 @@
-"use client"; // ระบุว่าเป็น client component
+"use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 
-// กำหนดประเภทสำหรับ SymbolItem
 interface SymbolItem {
   label: string;
   bgColor: string;
   textColor: string;
   count: number;
   isUnlimited: boolean;
-  imageSrc: string; // เพิ่ม field สำหรับ path ของภาพ
+  imageSrc: string;
 }
 
-// Props สำหรับ SymbolSection
 interface SymbolSectionProps {
+  // เพิ่ม prop นี้เพื่อรับค่าเดิมจาก Database
+  initialValues?: {
+    input?: number;
+    output?: number;
+    declare?: number;
+    assign?: number;
+    if?: number;
+    while?: number;
+    for?: number;
+  };
   onChange?: (symbols: {
     input: number;
     output: number;
     declare: number;
     assign: number;
     if: number;
-    call: number;
     while: number;
     for: number;
-    do: number;
-  }) => void; // Callback เพื่อส่งข้อมูลการเปลี่ยนแปลงไปยัง parent
+  }) => void;
 }
 
-const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
-  // State สำหรับจัดการจำนวนและสถานะ Unlimited ของแต่ละ symbol
+const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange, initialValues }) => {
   const [symbols, setSymbols] = useState<{
     input: SymbolItem;
     output: SymbolItem;
     declare: SymbolItem;
     assign: SymbolItem;
     if: SymbolItem;
-    call: SymbolItem;
     while: SymbolItem;
     for: SymbolItem;
-    do: SymbolItem;
   }>({
-    input: { label: "Input", bgColor: "bg-blue-200", textColor: "text-blue-800", count: 0, isUnlimited: true, imageSrc: "/images/input.png" },
-    output: { label: "Output", bgColor: "bg-green-200", textColor: "text-green-800", count: 0, isUnlimited: true, imageSrc: "/images/output.png" },
-    declare: { label: "Declare", bgColor: "bg-yellow-200", textColor: "text-yellow-800", count: 0, isUnlimited: true, imageSrc: "/images/declare.png" },
-    assign: { label: "Assign", bgColor: "bg-yellow-200", textColor: "text-yellow-800", count: 0, isUnlimited: true, imageSrc: "/images/assign.png" },
-    if: { label: "IF", bgColor: "bg-pink-200", textColor: "text-pink-800", count: 5, isUnlimited: false, imageSrc: "/images/if.png" },
-    call: { label: "Call", bgColor: "bg-purple-200", textColor: "text-purple-800", count: 2, isUnlimited: false, imageSrc: "/images/call.png" },
-    while: { label: "While", bgColor: "bg-indigo-200", textColor: "text-indigo-800", count: 3, isUnlimited: false, imageSrc: "/images/while.png" },
-    for: { label: "For", bgColor: "bg-teal-200", textColor: "text-teal-800", count: 3, isUnlimited: false, imageSrc: "/images/for.png" },
-    do: { label: "Do", bgColor: "bg-orange-200", textColor: "text-orange-800", count: 2, isUnlimited: false, imageSrc: "/images/do.png" },
+    input: {
+      label: "Input",
+      bgColor: "bg-blue-200",
+      textColor: "text-blue-800",
+      count: 0,
+      isUnlimited: false,
+      imageSrc: "/images/input.png",
+    },
+    output: {
+      label: "Output",
+      bgColor: "bg-green-200",
+      textColor: "text-green-800",
+      count: 0,
+      isUnlimited: false,
+      imageSrc: "/images/output.png",
+    },
+    declare: {
+      label: "Declare",
+      bgColor: "bg-yellow-200",
+      textColor: "text-yellow-800",
+      count: 0,
+      isUnlimited: false,
+      imageSrc: "/images/declare.png",
+    },
+    assign: {
+      label: "Assign",
+      bgColor: "bg-yellow-200",
+      textColor: "text-yellow-800",
+      count: 0,
+      isUnlimited: false,
+      imageSrc: "/images/assign.png",
+    },
+    if: {
+      label: "IF",
+      bgColor: "bg-pink-200",
+      textColor: "text-pink-800",
+      count: 0,
+      isUnlimited: false,
+      imageSrc: "/images/if.png",
+    },
+    while: {
+      label: "While",
+      bgColor: "bg-indigo-200",
+      textColor: "text-indigo-800",
+      count: 0,
+      isUnlimited: false,
+      imageSrc: "/images/while.png",
+    },
+    for: {
+      label: "For",
+      bgColor: "bg-teal-200",
+      textColor: "text-teal-800",
+      count: 0,
+      isUnlimited: false,
+      imageSrc: "/images/for.png",
+    },
   });
 
-  // Handler สำหรับการเปลี่ยนแปลง count
-  const handleCountChange = (key: keyof typeof symbols, increment: boolean) => {
-    setSymbols((prev) => {
-      const newSymbols = { ...prev };
-      const newCount = increment
-        ? newSymbols[key].count + 1
-        : Math.max(0, newSymbols[key].count - 1);
-      newSymbols[key] = { ...newSymbols[key], count: newCount };
+  // --- เพิ่ม useEffect เพื่อ Set ค่าเริ่มต้นเมื่อ initialValues เปลี่ยนแปลง ---
+  useEffect(() => {
+    if (initialValues) {
+      const mapVal = (val?: number) => {
+        // ถ้าค่าเป็น -1 หรือไม่มีค่า ให้ถือว่าเป็น Unlimited
+        if (val === -1) return { count: 0, isUnlimited: true };
+        // ถ้ามีค่าปกติ
+        return { count: val ?? 0, isUnlimited: false };
+      };
 
-      // ส่งข้อมูลกลับไปยัง parent ถ้ามี onChange
-      onChange?.({
-        input: newSymbols.input.count,
-        output: newSymbols.output.count,
-        declare: newSymbols.declare.count,
-        assign: newSymbols.assign.count,
-        if: newSymbols.if.count,
-        call: newSymbols.call.count,
-        while: newSymbols.while.count,
-        for: newSymbols.for.count,
-        do: newSymbols.do.count,
+      setSymbols((prev) => ({
+        ...prev,
+        input: { ...prev.input, ...mapVal(initialValues.input) },
+        output: { ...prev.output, ...mapVal(initialValues.output) },
+        declare: { ...prev.declare, ...mapVal(initialValues.declare) },
+        assign: { ...prev.assign, ...mapVal(initialValues.assign) },
+        if: { ...prev.if, ...mapVal(initialValues.if) },
+        while: { ...prev.while, ...mapVal(initialValues.while) },
+        for: { ...prev.for, ...mapVal(initialValues.for) },
+      }));
+    }
+  }, [initialValues]);
+
+  // ฟังก์ชันช่วยส่งค่ากลับ Parent
+  const emitChange = (s: typeof symbols) => {
+    if (onChange) {
+      onChange({
+        input: s.input.isUnlimited ? -1 : s.input.count,
+        output: s.output.isUnlimited ? -1 : s.output.count,
+        declare: s.declare.isUnlimited ? -1 : s.declare.count,
+        assign: s.assign.isUnlimited ? -1 : s.assign.count,
+        if: s.if.isUnlimited ? -1 : s.if.count,
+        while: s.while.isUnlimited ? -1 : s.while.count,
+        for: s.for.isUnlimited ? -1 : s.for.count,
       });
+    }
+  };
 
-      return newSymbols;
+  const handleCountChange = (
+    key: keyof typeof symbols,
+    increment: boolean
+  ) => {
+    setSymbols((prev) => {
+      if (prev[key].isUnlimited) return prev;
+      const next = { ...prev };
+      next[key] = {
+        ...next[key],
+        count: increment
+          ? next[key].count + 1
+          : Math.max(0, next[key].count - 1),
+      };
+      
+      emitChange(next); 
+      return next;
     });
   };
 
-  // Handler สำหรับการเปลี่ยนแปลงสถานะ Unlimited
-  const handleUnlimitedChange = (key: keyof typeof symbols, checked: boolean) => {
+  const handleUnlimitedChange = (
+    key: keyof typeof symbols,
+    checked: boolean
+  ) => {
     setSymbols((prev) => {
-      const newSymbols = { ...prev };
-      newSymbols[key] = { ...newSymbols[key], isUnlimited: checked };
-
-      // ส่งข้อมูลกลับไปยัง parent ถ้ามี onChange
-      onChange?.({
-        input: newSymbols.input.count,
-        output: newSymbols.output.count,
-        declare: newSymbols.declare.count,
-        assign: newSymbols.assign.count,
-        if: newSymbols.if.count,
-        call: newSymbols.call.count,
-        while: newSymbols.while.count,
-        for: newSymbols.for.count,
-        do: newSymbols.do.count,
-      });
-
-      return newSymbols;
+      const next = { ...prev };
+      next[key] = { ...next[key], isUnlimited: checked };
+      emitChange(next); 
+      return next;
     });
   };
 
-  // Component สำหรับแสดงแต่ละ Symbol Item
   const SymbolItemComponent: React.FC<{
     item: SymbolItem;
     symbolKey: keyof typeof symbols;
   }> = ({ item, symbolKey }) => (
     <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <Image
-          src={item.imageSrc}
-          alt={item.label}
-          width={120}
-          height={60}
-          className={`${item.bgColor} ${item.textColor}`}
-        />
-      </div>
+      <Image
+        src={item.imageSrc}
+        alt={item.label}
+        width={120}
+        height={60}
+        className={`${item.bgColor} ${item.textColor}`}
+      />
+
       <div className="flex items-center gap-4">
         <button
-          className="w-8 h-8 bg-gray-200 text-lg rounded flex items-center justify-center text-gray-600 hover:bg-gray-300 active:bg-gray-400 transition-colors cursor-pointer"
-          aria-label={`Decrease ${item.label} count`}
+          type="button" 
+          className={`w-8 h-8 rounded ${item.isUnlimited ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-gray-200"}`}
           onClick={() => handleCountChange(symbolKey, false)}
+          disabled={item.isUnlimited}
         >
           -
         </button>
-        <span className="w-12 text-center text-lg">{item.count}</span>
+
+        <span className="w-10 text-center font-medium">
+            {item.isUnlimited ? "∞" : item.count}
+        </span>
+
         <button
-          className="w-8 h-8 bg-gray-200 text-lg rounded flex items-center justify-center text-gray-600 hover:bg-gray-300 active:bg-gray-400 transition-colors cursor-pointer"
-          aria-label={`Increase ${item.label} count`}
+          type="button" 
+          className={`w-8 h-8 rounded ${item.isUnlimited ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-gray-200"}`}
           onClick={() => handleCountChange(symbolKey, true)}
+          disabled={item.isUnlimited}
         >
           +
         </button>
+
         <input
           type="checkbox"
-          className="ml-2 w-5 h-5"
           checked={item.isUnlimited}
-          onChange={(e) => handleUnlimitedChange(symbolKey, e.target.checked)}
+          onChange={(e) =>
+            handleUnlimitedChange(symbolKey, e.target.checked)
+          }
+          className="cursor-pointer"
         />
-        <label className="text-sm text-gray-600">Unlimited</label>
+        <span 
+            className="text-sm text-gray-600 cursor-pointer"
+            onClick={() => handleUnlimitedChange(symbolKey, !item.isUnlimited)}
+        >
+            Unlimited
+        </span>
       </div>
     </div>
   );
 
   return (
     <div className="w-full md:w-1/3 bg-white p-4 rounded-lg shadow-md">
-      <h3 className="text-lg font-medium text-gray-700 mb-4">SYMBOL</h3>
+      <h3 className="text-lg font-medium mb-4">SYMBOL</h3>
 
-      {/* Input/Output */}
       <div className="space-y-4">
         <SymbolItemComponent item={symbols.input} symbolKey="input" />
         <SymbolItemComponent item={symbols.output} symbolKey="output" />
       </div>
 
-      {/* Variables */}
       <div className="mt-6">
-        <h4 className="text-sm font-medium text-gray-700 mb-2">VARIABLES</h4>
-        <div className="space-y-4">
-          <SymbolItemComponent item={symbols.declare} symbolKey="declare" />
-          <SymbolItemComponent item={symbols.assign} symbolKey="assign" />
-        </div>
+        <h4 className="text-sm font-medium mb-2">VARIABLES</h4>
+        <SymbolItemComponent item={symbols.declare} symbolKey="declare" />
+        <SymbolItemComponent item={symbols.assign} symbolKey="assign" />
       </div>
 
-      {/* Control */}
       <div className="mt-6">
-        <h4 className="text-sm font-medium text-gray-700 mb-2">CONTROL</h4>
-        <div className="space-y-4">
-          <SymbolItemComponent item={symbols.if} symbolKey="if" />
-          <SymbolItemComponent item={symbols.call} symbolKey="call" />
-          <SymbolItemComponent item={symbols.while} symbolKey="while" />
-          <SymbolItemComponent item={symbols.for} symbolKey="for" />
-          <SymbolItemComponent item={symbols.do} symbolKey="do" />
-        </div>
+        <h4 className="text-sm font-medium mb-2">CONTROL</h4>
+        <SymbolItemComponent item={symbols.if} symbolKey="if" />
+        <SymbolItemComponent item={symbols.while} symbolKey="while" />
+        <SymbolItemComponent item={symbols.for} symbolKey="for" />
       </div>
     </div>
   );

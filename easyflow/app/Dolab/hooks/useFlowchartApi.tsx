@@ -1,9 +1,5 @@
-// File: app/flowchart/hooks/useFlowchartApi.ts
-
-// Hook นี้รับผิดชอบการดึงข้อมูล Flowchart จาก API และจัดการ State ที่เกี่ยวกับ Loading/Error
-
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { apiGetFlowchart } from "@/app/service/FlowchartService"; 
 import { Node, Edge } from "@xyflow/react";
 import { convertBackendFlowchart } from "../utils/backendConverter";
 
@@ -18,32 +14,48 @@ export const useFlowchartApi = ({ flowchartId, setNodes, setEdges }: UseFlowchar
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const idToFetch = flowchartId ?? 11;
+    // 🟡 DEBUG: เช็คว่า ID เข้ามาใน Hook หรือไม่
+    console.log(`🪝 [useFlowchartApi] Hook triggered with ID: ${flowchartId} (type: ${typeof flowchartId})`);
+
+    if (!flowchartId) {
+      console.warn("⚠️ [useFlowchartApi] No flowchartId provided. Skipping fetch.");
+      return;
+    }
+
     let cancelled = false;
 
     const loadFlowchart = async () => {
       setLoading(true);
       setError(null);
+      
       try {
-        const BASE_URL = "http://localhost:8080";
-        const resp = await axios.get(`${BASE_URL}/flowchart/${idToFetch}`);
-        const payload = resp.data;
+        console.log(`📡 [useFlowchartApi] Calling API for ID: ${flowchartId}`);
+        const payload = await apiGetFlowchart(flowchartId);
 
         if (cancelled) return;
 
-        if (!payload || !payload.flowchart) {
-          setError("No flowchart returned from API");
-          setLoading(false);
-          return;
-        }
-
+        // 🟡 DEBUG: ดูข้อมูลดิบที่ได้จาก API
+        console.log("📦 [useFlowchartApi] API Response:", payload);
+        
+        // ส่งเข้า Converter
         const converted = convertBackendFlowchart(payload);
+        
+        // 🟡 DEBUG: ดูผลลัพธ์หลังแปลงเสร็จ
+        console.log(`✅ [useFlowchartApi] Converted Nodes: ${converted.nodes.length}, Edges: ${converted.edges.length}`);
+        
         setNodes(converted.nodes);
         setEdges(converted.edges);
-        console.log("Loaded flowchart payload:", payload);
+        
       } catch (err: any) {
-        console.error("Error loading flowchart:", err);
-        setError(err?.message ?? "Error fetching flowchart");
+        console.error("❌ [useFlowchartApi] Error:", err);
+        if (!cancelled) {
+          // ถ้า Error ให้สร้าง Default Start/End
+          console.log("⚠️ [useFlowchartApi] Falling back to default nodes due to error.");
+          const defaultFlow = convertBackendFlowchart(null); 
+          setNodes(defaultFlow.nodes);
+          setEdges(defaultFlow.edges);
+          setError(err?.message ?? "Error fetching flowchart");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -54,7 +66,6 @@ export const useFlowchartApi = ({ flowchartId, setNodes, setEdges }: UseFlowchar
     return () => {
       cancelled = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowchartId, setNodes, setEdges]);
 
   return { loading, error };
