@@ -14,10 +14,22 @@ function ClassHeader({
   code = "N/A",
   teacher = "Unknown",
   schedule = "No schedule",
-  backgroundImage = "/default-bg.jpg", // fallback
+  backgroundImage = "/default-bg.jpg",
 }: ClassHeaderProps) {
   return (
-    <div className="relative h-60 rounded-lg border-2 p-6 text-white mb-6 overflow-hidden">
+    <div
+      className="
+        relative
+        h-60              /* 🔒 ล็อกความสูง */
+        shrink-0          /* ❗ กัน flex ยืด */
+        rounded-lg
+        border-2
+        p-6
+        text-white
+        mb-6
+        overflow-hidden
+      "
+    >
       {/* Background image */}
       <Image
         src={backgroundImage}
@@ -28,8 +40,8 @@ function ClassHeader({
         priority
       />
 
-      {/* Overlay */}
-      <div className="absolute inset-0  rounded-lg z-0"></div>
+      {/* Overlay (โปร่งใสเหมือนเดิม ไม่แตะ UI) */}
+      <div className="absolute inset-0 rounded-lg z-0" />
 
       {/* Content */}
       <div className="relative z-10">

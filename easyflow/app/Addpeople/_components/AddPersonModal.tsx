@@ -1,230 +1,242 @@
 "use client";
-import React, { useState } from "react";
-import { FaUserPlus, FaUserCircle, FaCheckCircle } from "react-icons/fa";
-import { motion, AnimatePresence } from "framer-motion";
-import Image from "next/image";
 
-type Person = { name: string; email: string; position?: string };
+import React, { useState, useEffect } from "react";
+import { X, Search, Plus, Check, Loader2 } from "lucide-react";
+import { apiSearchUsers, apiAddUserToClass } from "@/app/service/FlowchartService";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface AddPersonModalProps {
   visible: boolean;
   onClose: () => void;
   role: "Teacher" | "TA" | "Students";
-  addedPeople: Person[];
-  setAddedPeople: React.Dispatch<React.SetStateAction<Person[]>>;
+  classId: string;
+  onUserAdded: () => void;
+  currentUserId: number; // ✅ รับค่า ID จาก Parent ตามที่แก้ไปข้อก่อนหน้า
 }
 
-const AddPersonModal: React.FC<AddPersonModalProps> = ({
+export default function AddPersonModal({
   visible,
   onClose,
   role,
-  addedPeople,
-  setAddedPeople,
-}) => {
-  const [input, setInput] = useState("");
-  const [showSuccess, setShowSuccess] = useState(false);
+  classId,
+  onUserAdded,
+  currentUserId,
+}: AddPersonModalProps) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  
+  // ✅ 1. เปลี่ยนจากเก็บคนเดียว เป็นเก็บ Array
+  const [selectedUsers, setSelectedUsers] = useState<any[]>([]);
 
-  const peopleSuggestions: Person[] = [
-    { name: "นิสิต A", email: "stu01@kmitl.ac.th" },
-    { name: "นิสิต B", email: "stu02@kmitl.ac.th" },
-    { name: "นิสิต C", email: "stu03@kmitl.ac.th" },
-    { name: "อ.ธนา", email: "tana@kmitl.ac.th" },
-    { name: "TA", email: "ta01@kmitl.ac.th" },
-  ];
+  // --- Search Logic ---
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      if (searchTerm.trim().length > 1) {
+        setIsSearching(true);
+        try {
+          const response = await apiSearchUsers(searchTerm);
+          if (response && response.users) {
+            setSearchResults(response.users);
+          } else if (Array.isArray(response)) {
+            setSearchResults(response);
+          } else {
+            setSearchResults([]);
+          }
+        } catch (error) {
+          console.error("Search error:", error);
+          setSearchResults([]);
+        } finally {
+          setIsSearching(false);
+        }
+      } else {
+        setSearchResults([]);
+      }
+    }, 500);
 
-  const togglePerson = (person: Person) => {
-    const exists = addedPeople.some((p) => p.email === person.email);
-    if (exists) {
-      setAddedPeople((prev) => prev.filter((p) => p.email !== person.email));
-    } else {
-      setAddedPeople((prev) => [
-        ...prev,
-        {
-          ...person,
-          position:
-            role === "Teacher"
-              ? "อาจารย์ผู้สอน"
-              : role === "TA"
-              ? "ผู้ช่วยสอน"
-              : "นิสิตในห้อง",
-        },
-      ]);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+
+  // --- Reset Logic ---
+  useEffect(() => {
+    if (!visible) {
+      setSearchTerm("");
+      setSearchResults([]);
+      setSelectedUsers([]); // ✅ รีเซ็ต Array
+      setIsAdding(false);
+    }
+  }, [visible]);
+
+  // ✅ 2. ฟังก์ชันเลือก/ยกเลิกเลือก User
+  const toggleUser = (user: any) => {
+    setSelectedUsers((prev) => {
+      const exists = prev.find((u) => u.id === user.id);
+      if (exists) {
+        // ถ้ามีแล้ว ให้เอาออก
+        return prev.filter((u) => u.id !== user.id);
+      } else {
+        // ถ้ายังไม่มี ให้เพิ่มเข้าไป
+        return [...prev, user];
+      }
+    });
+  };
+
+  // --- Add User Logic ---
+  const handleAddUser = async () => {
+    if (selectedUsers.length === 0 || !classId) return;
+
+    if (!currentUserId) {
+        alert("Authentication error: User ID not found.");
+        return;
+    }
+
+    let roleIdToSend = 2; // Default Student
+    if (role === "Teacher") roleIdToSend = 1;
+    else if (role === "TA") roleIdToSend = 3;
+    else if (role === "Students") roleIdToSend = 2;
+
+    setIsAdding(true);
+    try {
+      // ✅ 3. วนลูปยิง API ทีละคน (ใช้ Promise.all เพื่อความเร็ว)
+      const promises = selectedUsers.map((user) => 
+        apiAddUserToClass(classId, user.id, roleIdToSend, currentUserId)
+      );
+
+      await Promise.all(promises);
+      
+      if (onUserAdded) {
+        onUserAdded(); 
+      }
+      onClose();
+    } catch (err: any) {
+      console.error("Failed to add users:", err);
+      alert("Some users might not have been added (already in class or permission issue).");
+      // ถึงจะ Error บางคน ก็ให้รีเฟรชหน้าจอ
+      if (onUserAdded) onUserAdded(); 
+      onClose();
+    } finally {
+      setIsAdding(false);
     }
   };
 
-  const handleAdd = () => {
-    onClose();
-    setShowSuccess(true);
-
-    // ✅ ปิดอัตโนมัติหลัง 3 วินาที
-    setTimeout(() => {
-      setShowSuccess(false);
-    }, 3000);
-  };
-
   return (
-    <>
-      {/* Main Modal with AnimatePresence */}
-      <AnimatePresence>
-        {visible && (
-          <motion.div
-            className="fixed inset-0 bg-gray-900/30 backdrop-blur-sm flex items-center justify-center z-[1000]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+    <AnimatePresence>
+      {visible && (
+        <motion.div 
+          className="fixed inset-0 bg-gray-900/20 backdrop-blur-sm flex items-center justify-center z-[1000]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <motion.div 
+            className="bg-white rounded-xl shadow-2xl w-[500px] overflow-hidden flex flex-col max-h-[90vh]"
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
           >
-            <motion.div
-              className="bg-white rounded-2xl p-6 w-full max-w-3xl shadow-2xl overflow-hidden max-h-[60vh] flex flex-col"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              {/* Header */}
-              <div className="flex flex-col items-center mb-2">
-                {/* Close bar */}
-                <div className="flex justify-center w-full ">
-                  <div
-                    onClick={onClose}
-                    className="w-28 h-1 bg-[#dbdbdb] rounded-lg cursor-pointer"
-                  />
-                </div>
-              </div>
-              {/* Title with Icon in one line */}
-              <div className="mb-2 flex items-center justify-center">
-                {/* Icon */}
-                <div className="w-16 h-16 bg-[#E9E5FF] rounded-full flex items-center justify-center mr-4">
-                  <Image src="/images/add.png" alt="Icon" width={30} height={30} />
-                </div>
-                
-                {/* Title */}
-                <h2 className="text-4xl font-medium text-center">{`Add a ${role}`}</h2>
-              </div>
-
-              {/* Input */}
-              <div className="relative mb-4 flex-0">
-                <input
-                  type="email"
-                  placeholder="Type a name or email"
-                  className="w-full p-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 pr-12"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                />
-                <FaUserPlus
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-green-600 hover:text-green-800 cursor-pointer"
-                  onClick={() => {
-                    if (!input) return;
-                    togglePerson({ name: input.split("@")[0], email: input });
-                    setInput("");
-                  }}
-                />
-              </div>
-
-              <div className="flex gap-4 flex-1 overflow-hidden">
-                {/* Suggestions */}
-                <div className="flex-1 overflow-y-auto border-r border-gray-200 pr-2">
-                  <h3 className="text-sm font-medium text-gray-500 mb-2">Suggestions</h3>
-                  <div className="space-y-2">
-                    {peopleSuggestions
-                      .filter((p) => p.name.includes(input) || p.email.includes(input))
-                      .map((person, index) => {
-                        const isSelected = addedPeople.some((p) => p.email === person.email);
-                        return (
-                          <div
-                            key={index}
-                            className={`flex items-center justify-between px-3 py-2 rounded-md border cursor-pointer ${
-                              isSelected ? "bg-green-100 border-green-300" : "hover:bg-gray-100"
-                            }`}
-                            onClick={() => togglePerson(person)}
-                          >
-                            <div className="flex items-center space-x-3">
-                              <FaUserCircle className="text-gray-500 text-2xl" />
-                              <div>
-                                <p className="font-medium">{person.name}</p>
-                                <p className="text-sm text-gray-600">{person.email}</p>
-                              </div>
-                            </div>
-                            {isSelected && <FaCheckCircle className="text-green-500 text-lg" />}
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-
-                {/* Added People */}
-                <div className="flex-1 overflow-y-auto pl-2">
-                  <h3 className="text-sm font-medium text-gray-500 mb-2">Added People</h3>
-                  <div className="space-y-2">
-                    {addedPeople.length === 0 ? (
-                      <p className="text-gray-500">No people added yet.</p>
-                    ) : (
-                      addedPeople.map((person, i) => (
-                        <div key={i} className="flex flex-col rounded p-2 border border-gray-200">
-                          <div className="flex items-center space-x-3">
-                            <FaUserCircle className="text-gray-500 text-3xl" />
-                            <div>
-                              <p className="font-semibold">{person.name}</p>
-                              <p className="text-gray-600">{person.email}</p>
-                            </div>
-                          </div>
-                          <p className="text-sm text-gray-400 ml-12">{person.position}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Buttons */}
-              <div className="flex justify-end gap-3 mt-4">
-                <button
-                  onClick={onClose}
-                  className="px-6 py-2 bg-gray-200 rounded-full text-gray-700 hover:bg-gray-300 transition-all duration-200 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAdd}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all duration-200 cursor-pointer"
-                >
-                  Add
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ✅ Success Modal */}
-      <AnimatePresence>
-        {showSuccess && (
-          <motion.div
-            className="fixed inset-0 flex items-center justify-center bg-black/30 z-[1100]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="bg-white px-8 py-6 rounded-xl shadow-xl flex flex-col items-center space-y-4"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <FaCheckCircle className="text-green-500 text-4xl" />
-              <p className="text-xl font-semibold">เพิ่มสำเร็จแล้ว!</p>
-              <button
-                className="px-4 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all"
-                onClick={() => setShowSuccess(false)}
-              >
-                OK
+            {/* Header */}
+            <div className="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
+              <h2 className="text-xl font-bold text-gray-800">Add {role}</h2>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition p-1 hover:bg-gray-200 rounded-full">
+                <X size={20} />
               </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
-  );
-};
+            </div>
 
-export default AddPersonModal;
+            {/* Body */}
+            <div className="p-6 flex-1 overflow-y-auto min-h-[300px]">
+              <div className="relative mb-4">
+                <input
+                  type="text"
+                  placeholder="Search by name or email..."
+                  className="w-full border border-gray-300 rounded-lg py-2.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  autoFocus
+                />
+                <div className="absolute left-3 top-3 text-gray-400">
+                  {isSearching ? <Loader2 size={20} className="animate-spin text-blue-500"/> : <Search size={20} />}
+                </div>
+              </div>
+              
+              {/* แสดงจำนวนคนที่เลือก */}
+              {selectedUsers.length > 0 && (
+                <div className="mb-2 text-sm text-blue-600 font-medium">
+                  Selected: {selectedUsers.length} people
+                </div>
+              )}
+
+              <div className="min-h-[200px]">
+                {searchTerm.length < 2 ? (
+                  <div className="flex flex-col items-center justify-center text-gray-400 mt-10 space-y-2">
+                    <Search size={40} className="opacity-20" />
+                    <span>Type at least 2 characters to search</span>
+                  </div>
+                ) : searchResults.length === 0 && !isSearching ? (
+                  <div className="text-center text-gray-400 mt-10">No users found.</div>
+                ) : (
+                  <ul className="space-y-2">
+                    {searchResults.map((user) => {
+                      // เช็คว่าคนนี้ถูกเลือกไปหรือยัง
+                      const isSelected = selectedUsers.some((u) => u.id === user.id);
+
+                      return (
+                        <li
+                          key={user.id}
+                          onClick={() => toggleUser(user)}
+                          className={`flex items-center justify-between p-3 rounded-lg cursor-pointer border transition-all ${
+                            isSelected
+                              ? "bg-blue-50 border-blue-500 shadow-sm"
+                              : "bg-white border-gray-100 hover:bg-gray-50 hover:border-gray-300"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 w-full overflow-hidden">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 ${isSelected ? "bg-blue-600 text-white" : "bg-blue-100 text-blue-600"}`}>
+                              {user.fname ? user.fname[0].toUpperCase() : "?"}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-gray-800 truncate">
+                                {user.name || `${user.fname} ${user.lname}`}
+                              </div>
+                              <div className="text-sm text-gray-500 truncate">{user.email}</div>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <Check size={20} className="text-blue-600 shrink-0 ml-2" />
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={onClose}
+                className="px-5 py-2 text-gray-600 hover:bg-gray-200 rounded-lg transition font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddUser}
+                disabled={selectedUsers.length === 0 || isAdding}
+                className={`px-5 py-2 rounded-lg flex items-center gap-2 font-medium text-white transition shadow-md ${
+                  selectedUsers.length > 0 && !isAdding
+                    ? "bg-blue-600 hover:bg-blue-700 hover:shadow-lg"
+                    : "bg-gray-300 cursor-not-allowed"
+                }`}
+              >
+                {isAdding ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                Add {selectedUsers.length > 0 ? `(${selectedUsers.length})` : ""} {role}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

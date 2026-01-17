@@ -5,7 +5,15 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import Link from "next/link";
-import { apiGetTestcases, apiCreateTestcase, apiUpdateTestcase, apiDeleteTestcase } from "@/app/service/FlowchartService";
+import { useSearchParams, useRouter } from "next/navigation";
+import {
+  apiGetLab,
+  apiGetTestcases,
+  apiCreateTestcase,
+  apiUpdateTestcase,
+  apiDeleteTestcase,
+  apiUpdateLab,
+} from "@/app/service/FlowchartService";
 
 // ประเภทข้อมูลสำหรับ Testcase
 interface TestCase {
@@ -18,35 +26,93 @@ interface TestCase {
 }
 
 function Editlab() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const labIdParam = searchParams?.get("labId");
+  const LAB_ID = labIdParam ? Number(labIdParam) : null; // now derived from query string
+
+  const [labName, setLabName] = useState<string>("");
+  const [dateline, setDateline] = useState<string>("");
+  const [problemSolving, setProblemSolving] = useState<string>("");
+  const [currentUserId] = useState<number>(1); // adjust if you obtain the real user id
+
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [deleteTargetIndex, setDeleteTargetIndex] = useState<number | null>(null);
-  const LAB_ID = 2; // Fixed as requested
 
   useEffect(() => {
     const loadData = async () => {
-      try {
-        const data = await apiGetTestcases(LAB_ID);
-        // data could be array or { data: [] }
-        const list = Array.isArray(data) ? data : (data?.data ?? data?.testcases ?? []);
+      if (!LAB_ID) {
+        console.warn("Editlab: missing labId in query params");
+        setTestCases([{ input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" }]);
+        return;
+      }
 
+      try {
+        // Fetch lab metadata + testcases in parallel
+        const [labResp, tcResp] = await Promise.allSettled([
+          apiGetLab(LAB_ID),
+          apiGetTestcases(LAB_ID)
+        ]);
+
+        // --- handle lab data (if available) ---
+        if (labResp.status === "fulfilled") {
+          const labData = labResp.value;
+          // backend might return { lab: {...} } or directly the lab object
+          const labObj = labData?.lab ?? labData ?? null;
+
+          if (labObj) {
+            // try several common field names as fallback
+            const nameVal = labObj.labname ?? labObj.name ?? labObj.title ?? "";
+            setLabName(String(nameVal ?? ""));
+
+            // try dateline/dueDate/deadline - convert to yyyy-mm-dd for date input
+            const rawDate = labObj.dateline ?? labObj.dueDate ?? labObj.deadline ?? labObj.date ?? "";
+            if (rawDate) {
+              // If rawDate is timestamp/ISO, convert; if already yyyy-mm-dd, keep it
+              let isoDate = "";
+              try {
+                const d = new Date(rawDate);
+                if (!isNaN(d.getTime())) {
+                  isoDate = d.toISOString().slice(0, 10); // yyyy-mm-dd
+                } else {
+                  // fallback: if it's already a string like '2024-12-31', use it
+                  isoDate = String(rawDate).slice(0, 10);
+                }
+              } catch {
+                isoDate = String(rawDate).slice(0, 10);
+              }
+              setDateline(isoDate);
+            }
+
+            // problem solving / description / detail
+            const problemVal = labObj.problemSolving ?? labObj.description ?? labObj.detail ?? labObj.note ?? "";
+            setProblemSolving(String(problemVal ?? ""));
+          }
+        } else {
+          console.warn("apiGetLab failed:", labResp.reason);
+        }
+
+        // --- handle testcases (if available) ---
+        let list: any[] = [];
+        if (tcResp.status === "fulfilled") {
+          const tcData = tcResp.value;
+          list = Array.isArray(tcData) ? tcData : (tcData?.data ?? tcData?.testcases ?? []);
+        } else {
+          console.warn("apiGetTestcases failed:", tcResp.reason);
+        }
+
+        // parse helpers (same logic as before)
         const parseVal = (val: any): any => {
           if (typeof val === "string") {
             const trimmed = val.trim();
             try {
-              // Try parsing as JSON
               const parsed = JSON.parse(val);
-              // Recursively parse the result
               return parseVal(parsed);
             } catch {
-              // If JSON parse fails but it looks like an array (starts with [), try manual parsing
               if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-                // Strip brackets
                 const content = trimmed.slice(1, -1);
-                // Split by comma (rough split, assumes no commas in values)
-                // And clean up quotes
                 const items = content.split(",").map(part => {
                   const p = part.trim();
-                  // Remove surrounding quotes if present
                   if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
                     return p.slice(1, -1);
                   }
@@ -68,11 +134,10 @@ function Editlab() {
         };
 
         const mapped = list.map((tc: any) => {
-          // Parse and then flatten to ensure we just have a list of values
           const rawInput = parseVal(tc.inputVal);
           const rawOutput = parseVal(tc.outputVal);
-          const rawHiddenInput = parseVal(tc.inHiddenVal);
-          const rawHiddenOutput = parseVal(tc.outHiddenVal);
+          const rawHiddenInput = parseVal(tc.inHiddenVal ?? tc.inHiddenVal);
+          const rawHiddenOutput = parseVal(tc.outHiddenVal ?? tc.outHiddenVal);
 
           const format = (v: any) => {
             if (Array.isArray(v)) {
@@ -93,11 +158,12 @@ function Editlab() {
 
         setTestCases(mapped.length > 0 ? mapped : [{ input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" }]);
       } catch (err) {
-        console.error("Failed to load testcases", err);
+        console.error("Failed to load lab/testcases", err);
+        setTestCases([{ input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" }]);
       }
     };
     loadData();
-  }, []);
+  }, [LAB_ID]);
 
   // เพิ่ม Testcase
   const addTestCase = () => {
@@ -108,12 +174,10 @@ function Editlab() {
   };
 
   // ลบ Testcase
-  // Trigger delete confirmation
   const requestDeleteTestcase = (index: number) => {
     setDeleteTargetIndex(index);
   };
 
-  // Perform actual delete
   const confirmDelete = async () => {
     if (deleteTargetIndex === null) return;
 
@@ -141,7 +205,6 @@ function Editlab() {
     setDeleteTargetIndex(null);
   }
 
-  // อัปเดตข้อมูลใน Testcase
   const handleTestCaseChange = (
     index: number,
     field: keyof TestCase,
@@ -164,43 +227,84 @@ function Editlab() {
   };
 
   const handleCancel = () => {
-    console.log("Cancel button clicked");
+    router.push("/mylab");
   };
 
+  // <-- UPDATED handleSave: send stringified values so Prisma (String fields) won't choke
   const handleSave = async () => {
-    console.log("Save button clicked", { testCases });
-    try {
-      for (const tc of testCases) {
-        // Convert comma separated string to array
-        const toArray = (str: string) => str.split(",").map(s => s.trim()).filter(s => s !== "");
+    if (!LAB_ID) {
+      alert("Missing labId, cannot save");
+      return;
+    }
 
-        const payload = {
-          inputVal: toArray(tc.input),
-          outputVal: toArray(tc.output),
-          inHiddenVal: toArray(tc.hiddenInput),
-          outHiddenVal: toArray(tc.hiddenOutput),
+    try {
+      // helper: turn comma-separated UI string into array of trimmed values
+      const toArray = (str: string) =>
+        String(str ?? "")
+          .split(",")
+          .map(s => s.trim())
+          .filter(s => s !== "");
+
+      // Prepare payload: stringify arrays so backend receives a String
+      const testcasesPayload = testCases.map(tc => {
+        const inArr = toArray(tc.input);
+        const outArr = toArray(tc.output);
+        const inHiddenArr = toArray(tc.hiddenInput);
+        const outHiddenArr = toArray(tc.hiddenOutput);
+
+        return {
+          // send JSON string for each field (backend expects String)
+          inputVal: JSON.stringify(inArr),
+          outputVal: JSON.stringify(outArr),
+          inHiddenVal: JSON.stringify(inHiddenArr),
+          outHiddenVal: JSON.stringify(outHiddenArr),
           score: Number(tc.score) || 0
         };
+      });
 
-        if (tc.id) {
-          await apiUpdateTestcase(tc.id, payload);
-        } else {
-          await apiCreateTestcase(LAB_ID, payload);
-        }
+      const payload: any = {
+        labname: labName || "Untitled Lab",
+        testcases: testcasesPayload,
+        currentUserId: currentUserId
+      };
+
+      // include dateline/problemSolving if present
+      if (dateline) payload.dateline = dateline;
+      if (problemSolving) payload.problemSolving = problemSolving;
+
+      const resp = await apiUpdateLab(LAB_ID, payload);
+
+      // map returned testcases (if backend returned parsed arrays or JSON strings)
+      const returnedTestcases = resp?.lab?.testcases ?? resp?.testcases ?? resp?.data ?? null;
+
+      if (returnedTestcases && Array.isArray(returnedTestcases)) {
+        const mapped = returnedTestcases.map((tc: any) => {
+          // tc.inputVal might be an array (if backend parsed it) or a JSON string.
+          const parseField = (v: any) => {
+            if (Array.isArray(v)) return v.join(",");
+            try {
+              const p = JSON.parse(v);
+              return Array.isArray(p) ? p.join(",") : String(p ?? "");
+            } catch {
+              // fallback: treat as plain comma-separated string
+              return String(v ?? "");
+            }
+          };
+
+          return {
+            id: tc.testcaseId ?? tc.id,
+            input: parseField(tc.inputVal),
+            output: parseField(tc.outputVal),
+            hiddenInput: parseField(tc.inHiddenVal),
+            hiddenOutput: parseField(tc.outHiddenVal),
+            score: String(tc.score ?? 0)
+          };
+        });
+        setTestCases(mapped);
       }
+
       alert("Saved successfully!");
-      // reload to get IDs
-      const data = await apiGetTestcases(LAB_ID);
-      const list = Array.isArray(data) ? data : (data?.data ?? data?.testcases ?? []);
-      const mapped = list.map((tc: any) => ({
-        id: tc.testcaseId ?? tc.id,
-        input: Array.isArray(tc.inputVal) ? tc.inputVal.join(",") : (tc.inputVal ?? ""),
-        output: Array.isArray(tc.outputVal) ? tc.outputVal.join(",") : (tc.outputVal ?? ""),
-        hiddenInput: Array.isArray(tc.inHiddenVal) ? tc.inHiddenVal.join(",") : (tc.inHiddenVal ?? ""),
-        hiddenOutput: Array.isArray(tc.outHiddenVal) ? tc.outHiddenVal.join(",") : (tc.outHiddenVal ?? ""),
-        score: String(tc.score ?? 0)
-      }));
-      setTestCases(mapped);
+      router.push("/mylab");
     } catch (err) {
       console.error("Save failed", err);
       alert("Save failed, check console");
@@ -238,8 +342,9 @@ function Editlab() {
                 </svg>
                 Cancel
               </Link>
-              <Link
-                href="/mylab"
+
+              {/* Use a button for Save so we can finish save then navigate */}
+              <button
                 onClick={handleSave}
                 className="bg-[#2E8B57] text-white px-4 py-2 rounded-full flex items-center hover:bg-[#267347]"
                 aria-label="Save lab changes"
@@ -259,7 +364,7 @@ function Editlab() {
                   />
                 </svg>
                 Save
-              </Link>
+              </button>
             </div>
 
             {/* ชื่อหัวข้อ */}
@@ -270,7 +375,7 @@ function Editlab() {
             <div className="flex flex-col md:flex-row gap-6">
               {/* ส่วนซ้าย */}
               <div className="flex-1 space-y-6">
-                {/* Name และ Score */}
+                {/* Name และ Dateline (controlled) */}
                 <div className="flex flex-col md:flex-row gap-4">
                   <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-700">
@@ -278,6 +383,8 @@ function Editlab() {
                     </label>
                     <input
                       type="text"
+                      value={labName}
+                      onChange={(e) => setLabName(e.target.value)}
                       placeholder="Name..."
                       className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                     />
@@ -286,23 +393,27 @@ function Editlab() {
                     <label className="block text-sm font-medium text-gray-700">Dateline</label>
                     <input
                       type="date"
+                      value={dateline}
+                      onChange={(e) => setDateline(e.target.value)}
                       className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
                 </div>
 
-                {/* Problem Solving */}
+                {/* Problem Solving (controlled) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     Problem solving
                   </label>
                   <textarea
+                    value={problemSolving}
+                    onChange={(e) => setProblemSolving(e.target.value)}
                     placeholder="Detail..."
                     className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 h-32"
                   />
                 </div>
 
-                {/* Testcases */}
+                {/* Testcases (unchanged) */}
                 <div>
                   <h3 className="text-lg font-medium text-gray-700 mb-4 ">
                     Create Testcase
@@ -310,7 +421,7 @@ function Editlab() {
 
                   {testCases.map((testCase, index) => (
                     <div
-                      key={index}
+                      key={testCase.id ?? index}
                       className="relative border rounded-lg p-4 mb-4 shadow-sm bg-gray-50"
                     >
                       {/* ปุ่มลบ */}

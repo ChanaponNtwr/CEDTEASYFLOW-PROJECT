@@ -5,7 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import { useRouter } from "next/navigation";
-import { apiCreateTestcase } from "@/app/service/FlowchartService"; // <-- import API
+import { apiCreateTestcase, apiCreateLab } from "@/app/service/FlowchartService"; // <-- import APIs
 
 interface TestCase {
   input: string;
@@ -22,21 +22,20 @@ export default function Createlab() {
   const [dateline, setDateline] = useState("");
   const [problem, setProblem] = useState("");
 
-  // ใช้ mock labId แบบคงที่ = 2
-  const serverLabId = "2";
-
   const [testCases, setTestCases] = useState<TestCase[]>([
     { input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" },
   ]);
 
-  const [symbols, setSymbols] = useState({
-    input: 0,
-    output: 0,
-    declare: 0,
-    assign: 0,
-    if: 0,
-    call: 0,
-  });
+const [symbols, setSymbols] = useState({
+  input: 0,
+  output: 0,
+  declare: 0,
+  assign: 0,
+  if: 0,
+  for: 0,
+  while: 0,
+  do: 0,
+});
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -72,78 +71,170 @@ export default function Createlab() {
     router.push("/mylab");
   };
 
-  // helper: แปลง string -> string[]
+  // helper: แปลง string -> (number|string)[]
   const parseValues = (raw: string) => {
     if (!raw) return [];
     const hasComma = raw.indexOf(",") !== -1;
     const parts = hasComma ? raw.split(",") : raw.split(/\s+/);
-    return parts.map((s) => s.trim()).filter((s) => s !== "");
+    return parts
+      .map((s) => s.trim())
+      .filter((s) => s !== "")
+      .map((s) => {
+        const n = Number(s);
+        return Number.isNaN(n) ? s : n;
+      });
+  };
+
+  const toISODueDate = (dateOnly: string) => {
+    if (!dateOnly) return null;
+    return new Date(`${dateOnly}T23:59:59Z`).toISOString();
   };
 
   const handleCreate = async () => {
     setSubmitting(true);
 
-    const newLab = {
-      id: Date.now(),
-      name,
-      dateline,
-      problem,
-      testCases,
-      symbols,
-      createdAt: new Date().toISOString(),
-    };
-
     try {
-      // อ่านข้อมูลเก่าจาก localStorage แล้วเซฟ lab ใหม่
-      const stored = localStorage.getItem("labs");
-      const labs = stored ? JSON.parse(stored) : [];
-      labs.push(newLab);
-      localStorage.setItem("labs", JSON.stringify(labs));
+      // 1) build lab payload (รวม symbols + testcases)
+      const dueDateIso = toISODueDate(dateline);
 
-      console.log("[Createlab] saved lab to localStorage:", newLab);
-      console.log("[Createlab] all labs in localStorage:", labs);
+      const labPayload: any = {
+        ownerUserId: 1, // ปรับตาม user จริงถ้ามี
+        labname: name || "Untitled Lab",
+        problemSolving: problem || "",
+        status: "active",
+        // map symbols -> ชื่อ field ที่ backend คาดหวัง
+          inSymVal: Number(symbols.input) || 0,
+          outSymVal: Number(symbols.output) || 0,
+          declareSymVal: Number(symbols.declare) || 0,
+          assignSymVal: Number(symbols.assign) || 0,
+          ifSymVal: Number(symbols.if) || 0,
+          forSymVal: Number(symbols.for) || 0,
+          whileSymVal: Number(symbols.while) || 0,
+      };
 
-      // ส่ง testcases ขึ้น server โดยใช้ serverLabId = 2
-      console.log(`[Createlab] will send ${testCases.length} testcase(s) to server labId=${serverLabId}`);
+      if (dueDateIso) {
+        labPayload.dueDate = dueDateIso;
+      }
 
-      const promises = testCases.map((tc, idx) => {
-        const payload = {
-          inputVal: parseValues(tc.input),
-          outputVal: parseValues(tc.output),
-          inHiddenVal: parseValues(tc.hiddenInput),
-          outHiddenVal: parseValues(tc.hiddenOutput),
-          score: Number(tc.score) || 0,
+      // attach testcases array to lab payload (so backend can create them in one request if supported)
+      labPayload.testcases = testCases.map((tc) => ({
+        inputVal: parseValues(tc.input),
+        outputVal: parseValues(tc.output),
+        score: Number(tc.score) || 0,
+        inHiddenVal:
+          tc.hiddenInput && tc.hiddenInput.trim()
+            ? parseValues(tc.hiddenInput)
+            : null,
+        outHiddenVal:
+          tc.hiddenOutput && tc.hiddenOutput.trim()
+            ? parseValues(tc.hiddenOutput)
+            : null,
+      }));
+
+      console.log("[Createlab] sending apiCreateLab payload:", labPayload);
+
+      const createLabResp = await apiCreateLab(labPayload);
+      console.log("[Createlab] createLabResp ->", createLabResp);
+
+      // extract labId from different possible shapes
+      const labId =
+        createLabResp && createLabResp.lab && createLabResp.lab.labId
+          ? createLabResp.lab.labId
+          : createLabResp?.labId ?? null;
+
+      if (!labId) {
+        console.error("[Createlab] labId not found in createLabResp", createLabResp);
+        throw new Error("ไม่พบ labId ในการตอบกลับจาก server");
+      }
+
+      // Check whether backend actually created testcases for us in the lab response
+      const serverCreatedTestcases =
+        !!(
+          (createLabResp.lab && Array.isArray(createLabResp.lab.testcases) && createLabResp.lab.testcases.length >= labPayload.testcases.length) ||
+          (Array.isArray(createLabResp.testcases) && createLabResp.testcases.length >= labPayload.testcases.length)
+        );
+
+      if (!serverCreatedTestcases && labPayload.testcases.length > 0) {
+        // Fallback: create testcases one-by-one using apiCreateTestcase (existing behavior)
+        console.log("[Createlab] backend did not create testcases; falling back to apiCreateTestcase per item");
+        const promises = labPayload.testcases.map((payload: any, idx: number) =>
+          apiCreateTestcase(String(labId), payload)
+            .then((res) => ({ status: "fulfilled", value: res }))
+            .catch((err) => {
+              console.error(`[Createlab] testcase[${idx}] error ->`, err);
+              return { status: "rejected", reason: err };
+            })
+        );
+
+        const results = await Promise.all(promises);
+        const rejected = results.filter((r: any) => r.status === "rejected");
+
+        if (rejected.length > 0) {
+          // partial failure handling: save local and inform user
+          const newLabLocal = {
+            id: Date.now(),
+            labId,
+            name,
+            dateline,
+            problem,
+            testCases,
+            symbols,
+            createdAt: new Date().toISOString(),
+            remoteCreated: true,
+            testcaseUploadStatus: "partial-failure",
+          };
+
+          const stored = localStorage.getItem("labs");
+          const labs = stored ? JSON.parse(stored) : [];
+          labs.push(newLabLocal);
+          localStorage.setItem("labs", JSON.stringify(labs));
+
+          alert(
+            "สร้าง Lab สำเร็จ แต่มีบาง Testcase ส่งไป server ไม่สำเร็จ ดู console log สำหรับรายละเอียด"
+          );
+        } else {
+          // all ok
+          const newLabLocal = {
+            id: Date.now(),
+            labId,
+            name,
+            dateline,
+            problem,
+            testCases,
+            symbols,
+            createdAt: new Date().toISOString(),
+            remoteCreated: true,
+            testcaseUploadStatus: "all-ok",
+          };
+
+          const stored = localStorage.getItem("labs");
+          const labs = stored ? JSON.parse(stored) : [];
+          labs.push(newLabLocal);
+          localStorage.setItem("labs", JSON.stringify(labs));
+
+          alert("สร้าง Lab และส่ง Testcase ขึ้น server เรียบร้อยแล้ว");
+        }
+      } else {
+        // backend already created testcases (or there were none)
+        const newLabLocal = {
+          id: Date.now(),
+          labId,
+          name,
+          dateline,
+          problem,
+          testCases,
+          symbols,
+          createdAt: new Date().toISOString(),
+          remoteCreated: true,
+          testcaseUploadStatus: "all-ok",
         };
 
-        console.log(`[Createlab] payload for testcase[${idx}] ->`, payload);
+        const stored = localStorage.getItem("labs");
+        const labs = stored ? JSON.parse(stored) : [];
+        labs.push(newLabLocal);
+        localStorage.setItem("labs", JSON.stringify(labs));
 
-        return apiCreateTestcase(serverLabId, {
-          inputVal: payload.inputVal,
-          outputVal: payload.outputVal,
-          score: payload.score,
-          inHiddenVal: payload.inHiddenVal && payload.inHiddenVal.length ? payload.inHiddenVal : null,
-          outHiddenVal: payload.outHiddenVal && payload.outHiddenVal.length ? payload.outHiddenVal : null,
-        })
-          .then((res) => {
-            console.log(`[Createlab] server response for testcase[${idx}] ->`, res);
-            return res;
-          })
-          .catch((err) => {
-            console.error(`[Createlab] server error for testcase[${idx}] ->`, err);
-            throw err;
-          });
-      });
-
-      const results = await Promise.allSettled(promises);
-
-      console.log("[Createlab] all API results ->", results);
-
-      const rejected = results.filter((r) => r.status === "rejected");
-      if (rejected.length > 0) {
-        console.error("Some testcase uploads failed:", rejected);
-        alert("สร้าง Lab สำเร็จ แต่มีบาง Testcase ส่งไป server ไม่สำเร็จ ดู console เพิ่มเติม");
-      } else {
-        alert("สร้าง Lab และส่ง Testcase ขึ้น server เรียบร้อยแล้ว (ดู console log สำหรับรายละเอียด)");
+        alert("สร้าง Lab และ (ถ้ามี) Testcase เรียบร้อยแล้ว");
       }
 
       router.push("/mylab");
@@ -195,6 +286,7 @@ export default function Createlab() {
                     <input
                       type="text"
                       value={name}
+                      placeholder='Name'
                       onChange={(e) => setName(e.target.value)}
                       className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md"
                     />
@@ -215,12 +307,13 @@ export default function Createlab() {
                   <label className="block text-sm font-medium">Problem Solving</label>
                   <textarea
                     value={problem}
+                    placeholder='Problem Solving'
                     onChange={(e) => setProblem(e.target.value)}
                     className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md h-32"
                   ></textarea>
                 </div>
 
-                <div className="text-sm text-gray-600">Sending testcases to server with mock labId = 2</div>
+                <div className="text-sm text-gray-600">Sending testcases to server (will create lab first)</div>
 
                 {/* Testcases */}
                 <div>

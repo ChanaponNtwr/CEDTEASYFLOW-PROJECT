@@ -4,13 +4,13 @@ import React, { useState } from "react";
 import { FaChevronDown, FaPenSquare } from "react-icons/fa";
 
 interface FilterActionsProps {
-  onCreateClick?: () => void; // Optional handler for creating new assignment
-  onFilterChange?: (filter: "all" | "oldest" | "newest" | "todo") => void; // New prop for filter changes
+  onCreateClick?: () => void; // ถ้าเป็น undefined ปุ่มจะไม่แสดง
+  onFilterChange?: (filter: "all" | "oldest" | "newest" | "todo") => void;
 }
 
 function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
-  const [isOpen, setIsOpen] = useState(false); // State for dropdown visibility
-  const [selectedFilter, setSelectedFilter] = useState<"all" | "oldest" | "newest" | "todo">("all"); // Current filter
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<"all" | "oldest" | "newest" | "todo">("all");
 
   const filterOptions = [
     { value: "all", label: "All" },
@@ -21,13 +21,13 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
 
   const handleFilterSelect = (filter: "all" | "oldest" | "newest" | "todo") => {
     setSelectedFilter(filter);
-    onFilterChange?.(filter); // Notify parent component of filter change
-    setIsOpen(false); // Close dropdown after selection
+    onFilterChange?.(filter);
+    setIsOpen(false);
   };
 
   return (
     <div className="flex justify-end space-x-4 mb-6">
-      {/* Dropdown Filter */}
+      {/* --- ส่วน Dropdown Filter (แสดงเสมอสำหรับทุกคน) --- */}
       <div className="relative">
         <button
           onClick={() => setIsOpen(!isOpen)}
@@ -41,12 +41,12 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
           />
         </button>
         {isOpen && (
-          <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg z-10">
+          <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg z-10 border border-gray-100">
             {filterOptions.map((option) => (
               <button
                 key={option.value}
                 onClick={() => handleFilterSelect(option.value as "all" | "oldest" | "newest" | "todo")}
-                className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 transition-all duration-200"
+                className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 transition-all duration-200 first:rounded-t-lg last:rounded-b-lg"
               >
                 {option.label}
               </button>
@@ -55,15 +55,16 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
         )}
       </div>
 
-      {/* Create Button */}
-      <button
-        onClick={onCreateClick}
-        className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-blue-700 transition-all duration-200 disabled:bg-blue-300 disabled:cursor-not-allowed min-w-[120px] h-10"
-        disabled={!onCreateClick}
-      >
-        <FaPenSquare className="w-5 h-5 mr-2" />
-        Create
-      </button>
+      {/* --- ส่วนปุ่ม Import (แสดงเฉพาะถ้ามีฟังก์ชัน onCreateClick ส่งมา) --- */}
+      {onCreateClick && (
+        <button
+          onClick={onCreateClick}
+          className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-blue-700 transition-all duration-200 min-w-[120px] h-10"
+        >
+          <FaPenSquare className="w-5 h-5 mr-2" />
+          Import
+        </button>
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+// flowchart.controller.js
 import express from "express";
 import { Flowchart, Executor, Context, Node, Edge } from "../service/flowchart/index.js";
 import prisma from "../lib/prisma.js";
@@ -220,6 +221,88 @@ function computeDiffs(before = { nodes: [], edges: [] }, after = { nodes: [], ed
   };
 }
 
+/**
+ * Helper: compute shape limits for a lab.
+ * Priority:
+ *  1) If lab.problemSolving contains JSON with shapeConfig and a key for the short type, use that.
+ *     Accept numeric or string "unlimited" (case-insensitive).
+ *  2) Else fallback to lab.<field> (e.g. lab.declareSymVal).
+ *  3) If value is "unlimited" or equals the string 'unlimited', return Infinity.
+ *
+ * Returns an object keyed by shape short-codes -> number | Infinity
+ */
+function computeShapeLimitFromLab(lab) {
+  const mapping = {
+    PH: null,
+    DC: "declareSymVal",
+    AS: "assignSymVal",
+    IF: "ifSymVal",
+    FOR: "forSymVal",
+    WH: "whileSymVal",
+    IN: "inSymVal",
+    OU: "outSymVal",
+    ST: null,
+    EN: null
+  };
+
+  let ps = null;
+  if (lab && lab.problemSolving) {
+    try {
+      ps = typeof lab.problemSolving === 'string' ? JSON.parse(lab.problemSolving) : lab.problemSolving;
+    } catch (e) {
+      ps = null;
+    }
+  }
+
+  const shapeLimit = {};
+  for (const key of Object.keys(mapping)) {
+    let val = undefined;
+
+    if (ps && ps.shapeConfig && Object.prototype.hasOwnProperty.call(ps.shapeConfig, key)) {
+      val = ps.shapeConfig[key];
+    }
+
+    if (typeof val === "undefined" || val === null) {
+      const col = mapping[key];
+      if (col && lab && typeof lab[col] !== "undefined" && lab[col] !== null) {
+        val = lab[col];
+      }
+    }
+
+    // interpret strings "unlimited"
+    if (typeof val === "string") {
+      if (String(val).trim().toLowerCase() === "unlimited") {
+        shapeLimit[key] = Infinity;
+        continue;
+      }
+      const asNum = Number(val);
+      if (!Number.isNaN(asNum)) {
+        val = asNum;
+      }
+    }
+
+    if (typeof val === "number") {
+      if (val === -1) {
+        shapeLimit[key] = Infinity;
+      } else {
+        shapeLimit[key] = val;
+      }
+      continue;
+    }
+
+    // default: PH and start/end unlimited; others default 0
+    if (key === "PH" || key === "ST" || key === "EN") shapeLimit[key] = Infinity;
+    else shapeLimit[key] = 0;
+  }
+
+  return shapeLimit;
+}
+
+/* -------------------------
+   ROUTES (unchanged behavior,
+   but shape-limit logic uses helper)
+   ------------------------- */
+
 router.post("/create", async (req, res) => {
   try {
     let raw = req.body;
@@ -235,21 +318,25 @@ router.post("/create", async (req, res) => {
 
     // 🔒 check submission lock (CONFIRMED only)
     const confirmedSubmission = await prisma.submission.findFirst({
-      where: {
-        userId,
-        labId,
-        status: "CONFIRMED"
-      }
+      where: { userId, labId, status: "CONFIRMED" }
     });
     const submissionLocked = Boolean(confirmedSubmission);
 
-    // check DB
-    const existingFC = await prisma.flowchart.findFirst({ where: { userId, labId } });
+    // =========================
+    // 🔎 CHECK EXISTING FLOWCHART
+    // =========================
+    const existingFC = await prisma.flowchart.findFirst({
+      where: { userId, labId }
+    });
 
-    // ถ้ามีอยู่แล้ว + ไม่ overwrite → return existing
+    /**
+     * ✅ ถ้ามีอยู่แล้ว และไม่ overwrite
+     * → ดึงของเดิมกลับไปใช้
+     */
     if (existingFC && !overwrite) {
-      const fcHydrated = hydrateFlowchart(existingFC.content);
-      const serialized = serializeFlowchart(fcHydrated);
+      const hydrated = hydrateFlowchart(existingFC.content);
+      const serialized = serializeFlowchart(hydrated);
+
       savedFlowcharts.set(existingFC.flowchartId, existingFC.content);
 
       return res.json({
@@ -257,29 +344,54 @@ router.post("/create", async (req, res) => {
         message: `Flowchart already exists for userId='${userId}' labId='${labId}'`,
         flowchartId: existingFC.flowchartId,
         member: { userId, labId },
-        submissionLocked,          // ✅ เพิ่ม
+        submissionLocked,
         flowchart: serialized
       });
     }
 
-    // payload start/end
+    // =========================
+    // 🆕 CREATE / OVERWRITE
+    // =========================
     const fcPayload = {
       nodes: [
-        { id: "n_start", type: "ST", label: "Start", data: { label: "Start" }, position: { x: 0, y: 0 }, incomingEdgeIds: [], outgoingEdgeIds: ["n_start-n_end"] },
-        { id: "n_end", type: "EN", label: "End", data: { label: "End" }, position: { x: 0, y: 0 }, incomingEdgeIds: ["n_start-n_end"], outgoingEdgeIds: [] }
+        {
+          id: "n_start",
+          type: "ST",
+          label: "Start",
+          data: { label: "Start" },
+          position: { x: 0, y: 0 },
+          incomingEdgeIds: [],
+          outgoingEdgeIds: ["n_start-n_end"]
+        },
+        {
+          id: "n_end",
+          type: "EN",
+          label: "End",
+          data: { label: "End" },
+          position: { x: 0, y: 0 },
+          incomingEdgeIds: ["n_start-n_end"],
+          outgoingEdgeIds: []
+        }
       ],
-      edges: [{ id: "n_start-n_end", source: "n_start", target: "n_end", condition: "auto" }],
-      limits: { maxSteps: 100000, maxTimeMs: 5000, maxLoopIterationsPerNode: 20000 }
+      edges: [
+        { id: "n_start-n_end", source: "n_start", target: "n_end", condition: "auto" }
+      ],
+      limits: {
+        maxSteps: 100000,
+        maxTimeMs: 5000,
+        maxLoopIterationsPerNode: 20000
+      }
     };
 
-    // save DB
     let newFC;
     if (existingFC && overwrite) {
+      // 🔁 overwrite ของเดิม
       newFC = await prisma.flowchart.update({
         where: { flowchartId: existingFC.flowchartId },
         data: { content: fcPayload }
       });
     } else {
+      // 🆕 สร้างใหม่
       newFC = await prisma.flowchart.create({
         data: { userId, labId, content: fcPayload }
       });
@@ -287,15 +399,15 @@ router.post("/create", async (req, res) => {
 
     savedFlowcharts.set(newFC.flowchartId, fcPayload);
 
-    const fcHydrated = hydrateFlowchart(fcPayload);
-    const serialized = serializeFlowchart(fcHydrated);
+    const hydrated = hydrateFlowchart(fcPayload);
+    const serialized = serializeFlowchart(hydrated);
 
     return res.json({
       ok: true,
       message: `Flowchart created for userId='${userId}' labId='${labId}'`,
       flowchartId: newFC.flowchartId,
       member: { userId, labId },
-      submissionLocked,          // ✅ เพิ่ม
+      submissionLocked,
       flowchart: serialized
     });
 
@@ -321,6 +433,7 @@ router.post("/insert-node", async (req, res) => {
     if (!edgeId) return res.status(400).json({ ok: false, error: "Missing 'edgeId'." });
     if (!nodeSpec || typeof nodeSpec !== "object") return res.status(400).json({ ok: false, error: "Missing 'node' object." });
 
+    // load cached or DB
     let saved = savedFlowcharts.get(flowchartId);
     let fcFromDB = null;
 
@@ -334,7 +447,7 @@ router.post("/insert-node", async (req, res) => {
       if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
     }
 
-    // 🔒 SUBMISSION LOCK
+    // submission lock
     const confirmedSubmission = await prisma.submission.findFirst({
       where: {
         userId: fcFromDB.userId,
@@ -342,56 +455,44 @@ router.post("/insert-node", async (req, res) => {
         status: "CONFIRMED"
       }
     });
-
     if (confirmedSubmission) {
-      return res.status(403).json({
-        ok: false,
-        error: "This lab has already been confirmed by instructor. Flowchart is read-only."
-      });
+      return res.status(403).json({ ok: false, error: "This lab has already been confirmed by instructor. Flowchart is read-only." });
     }
 
+    // hydrate flowchart
     const fc = hydrateFlowchart(saved);
 
-    // ตรวจสอบ edge
+    // check edge exists
     if (!fc.getEdge(edgeId)) return res.status(400).json({ ok: false, error: `Edge '${edgeId}' not found in flowchart.` });
 
     const typ = normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH");
 
-    // ====== SHAPE LIMIT CHECK ======
+    // load lab config (for shape limits)
     const lab = await prisma.lab.findUnique({ where: { labId: fcFromDB.labId } });
     if (!lab) return res.status(404).json({ ok: false, error: "Lab config not found." });
 
-    const shapeLimit = {
-      PH: Infinity,
-      DC: lab.declareSymVal,
-      AS: lab.assignSymVal,
-      IF: lab.ifSymVal,
-      FOR: lab.forSymVal,
-      WH: lab.whileSymVal,
-      IN: lab.inSymVal,
-      OU: lab.outSymVal,
-      ST: Infinity,
-      EN: Infinity,
-    };
+    const shapeLimit = computeShapeLimitFromLab(lab);
 
-    const fcNodes = Object.values(fc.nodes || {});
-    const usedCount = {};
-    for (const key of Object.keys(shapeLimit)) usedCount[key] = 0;
-    for (const n of fcNodes) {
+    // count used BEFORE insertion
+    const fcNodesBefore = Object.values(fc.nodes || {});
+    const usedCountBefore = {};
+    for (const key of Object.keys(shapeLimit)) usedCountBefore[key] = 0;
+    for (const n of fcNodesBefore) {
       const nodeType = normalizeType(n.type ?? n.typeShort ?? n.typeFull ?? "PH");
-      if (usedCount[nodeType] !== undefined) usedCount[nodeType]++;
+      if (usedCountBefore[nodeType] !== undefined) usedCountBefore[nodeType]++;
     }
 
-    if (shapeLimit[typ] !== Infinity && usedCount[typ] >= shapeLimit[typ]) {
+    // limit check (honor Infinity/unlimited)
+    if (shapeLimit[typ] !== Infinity && usedCountBefore[typ] >= shapeLimit[typ]) {
       return res.status(409).json({
         ok: false,
         error: `Cannot insert node '${typ}': shape limit reached.`,
         limit: shapeLimit[typ],
-        used: usedCount[typ]
+        used: usedCountBefore[typ]
       });
     }
 
-    // ====== DC CONFLICT CHECK ======
+    // DC conflict check (same as before)
     if (typ === "DC") {
       const declaredNames = [];
       const d = nodeSpec.data || {};
@@ -423,17 +524,13 @@ router.post("/insert-node", async (req, res) => {
         }
 
         if (conflicts.length > 0) {
-          return res.status(409).json({
-            ok: false,
-            error: "Variable already declared in this flowchart.",
-            conflicts
-          });
+          return res.status(409).json({ ok: false, error: "Variable already declared in this flowchart.", conflicts });
         }
       }
     }
 
-    // ====== INSERT NODE ======
-    const nodeId = nodeSpec.id || fc.genId();
+    // create new Node instance
+    const nodeId = nodeSpec.id || (typeof fc.genId === "function" ? fc.genId() : `n_${Date.now()}`);
     const newNode = new Node(
       nodeId,
       typ,
@@ -443,12 +540,12 @@ router.post("/insert-node", async (req, res) => {
       nodeSpec.incomingEdgeIds ?? [],
       nodeSpec.outgoingEdgeIds ?? []
     );
-
     if (nodeSpec.loopEdge) newNode.loopEdge = nodeSpec.loopEdge;
     if (nodeSpec.loopExitEdge) newNode.loopExitEdge = nodeSpec.loopExitEdge;
 
     const beforeSerialized = serializeFlowchart(fc);
 
+    // perform insertion
     try {
       fc.insertNodeAtEdge(edgeId, newNode);
     } catch (err) {
@@ -458,17 +555,52 @@ router.post("/insert-node", async (req, res) => {
     const afterSerialized = serializeFlowchart(fc);
     const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
+    // persist new flowchart content
     savedFlowcharts.set(flowchartId, afterSerialized);
-    await prisma.flowchart.update({
-      where: { flowchartId: Number(flowchartId) },
-      data: { content: afterSerialized }
-    });
+    await prisma.flowchart.update({ where: { flowchartId: Number(flowchartId) }, data: { content: afterSerialized } });
+
+    // --- compute shapeRemaining based on fc AFTER insertion ---
+    const fcNodesAfter = Object.values(fc.nodes || {});
+    // compute used counts for keys in shapeLimit
+    const usedCount = {};
+    for (const k of Object.keys(shapeLimit)) usedCount[k] = 0;
+    for (const n of fcNodesAfter) {
+      const t = normalizeType(n.type ?? n.typeShort ?? n.typeFull ?? "PH");
+      if (usedCount[t] !== undefined) usedCount[t]++;
+    }
+
+    // build shapeRemaining with keys: PH, DC, AS, IF, FOR, WHILE, ST, EN
+    const shapeRemaining = {};
+    const keysMap = [
+      { out: "PH", in: "PH" },
+      { out: "DC", in: "DC" },
+      { out: "AS", in: "AS" },
+      { out: "IF", in: "IF" },
+      { out: "FOR", in: "FOR" },
+      // WH in computeShapeLimitFromLab -> map to WHILE in output
+      { out: "WHILE", in: "WH" },
+      { out: "ST", in: "ST" },
+      { out: "EN", in: "EN" }
+    ];
+
+    for (const mapping of keysMap) {
+      const outKey = mapping.out;
+      const inKey = mapping.in;
+      const lim = shapeLimit[inKey];
+      const used = usedCount[inKey] ?? 0;
+      if (lim === Infinity) {
+        shapeRemaining[outKey] = { limit: "unlimited", used, remaining: "unlimited" };
+      } else {
+        shapeRemaining[outKey] = { limit: lim, used, remaining: Math.max(lim - used, 0) };
+      }
+    }
 
     return res.json({
       ok: true,
       message: `Inserted node ${newNode.id} at edge ${edgeId}`,
       flowchartId,
-      diffs
+      diffs,
+      shapeRemaining
     });
 
   } catch (err) {
@@ -664,7 +796,6 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
   }
 });
 
-
 router.get("/:flowchartId/shapes/remaining", async (req, res) => {
   try {
     const flowchartId = Number(req.params.flowchartId);
@@ -676,18 +807,7 @@ router.get("/:flowchartId/shapes/remaining", async (req, res) => {
     const lab = await prisma.lab.findUnique({ where: { labId: fcFromDB.labId } });
     if (!lab) return res.status(404).json({ ok: false, error: "Lab config not found." });
 
-    const shapeLimit = {
-      PH: Infinity,
-      DC: lab.declareSymVal,
-      AS: lab.assignSymVal,
-      IF: lab.ifSymVal,
-      FOR: lab.forSymVal,
-      WH: lab.whileSymVal,
-      IN: lab.inSymVal,
-      OU: lab.outSymVal,
-      ST: Infinity,
-      EN: Infinity,
-    };
+    const shapeLimit = computeShapeLimitFromLab(lab);
 
     const fc = hydrateFlowchart(fcFromDB.content);
     const fcNodes = Object.values(fc.nodes || {});
@@ -700,10 +820,11 @@ router.get("/:flowchartId/shapes/remaining", async (req, res) => {
 
     const shapeRemaining = {};
     for (const key of Object.keys(shapeLimit)) {
+      const limit = shapeLimit[key];
       shapeRemaining[key] = {
-        limit: shapeLimit[key] === Infinity ? "unlimited" : shapeLimit[key],
+        limit: limit === Infinity ? "Unlimited" : limit,
         used: usedCount[key],
-        remaining: shapeLimit[key] === Infinity ? "unlimited" : Math.max(shapeLimit[key] - usedCount[key], 0)
+        remaining: limit === Infinity ? "Unlimited" : Math.max(limit - usedCount[key], 0)
       };
     }
 
@@ -714,8 +835,6 @@ router.get("/:flowchartId/shapes/remaining", async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
-
-
 
 
 // GET flowchart list for user profile (lightweight)
@@ -768,7 +887,6 @@ router.get("/by-user", async (req, res) => {
   }
 });
 
-
 router.get("/:id", async (req, res) => {
   try {
     const idParam = req.params.id;
@@ -811,7 +929,7 @@ router.get("/:id", async (req, res) => {
     return res.json({
       ok: true,
       flowchartId: fcFromDB.flowchartId,
-      submissionLocked,        // ✅ เพิ่ม
+      submissionLocked,
       flowchart: serialized,
       raw: saved
     });
@@ -820,7 +938,6 @@ router.get("/:id", async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
-
 
 router.get("/:id/edges", async (req, res) => {
   try {
@@ -837,7 +954,6 @@ router.get("/:id/edges", async (req, res) => {
   }
 });
 
-// Update node data
 // Update node data (with variable-name conflict check for Declare nodes)
 router.put("/:flowchartId/node/:nodeId", async (req, res) => {
   try {
@@ -996,9 +1112,7 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
   }
 });
 
-
-
-// (วางทับฟังก์ชัน router.post("/execute", ...) ใน controller ของคุณ)
+// (ผมไม่ได้แก้ส่วน execute/step/reset/resume — คงพฤติกรรมเดิม)
 router.post("/execute", async (req, res) => {
   try {
     let raw = req.body;
