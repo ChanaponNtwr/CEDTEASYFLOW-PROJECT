@@ -3,8 +3,13 @@
 import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
-// --- แก้ไข 1: เปลี่ยนชื่อฟังก์ชันที่ import ---
-import { insertTrialNode, deleteTrialNode, editTrialNode, apiGetShapeRemaining } from "@/app/service/FlowchartService";
+// --- แก้ไข 1: เปลี่ยน import เป็น apiGetTrialShapeRemaining ---
+import { 
+  insertTrialNode, 
+  deleteTrialNode, 
+  editTrialNode, 
+  apiGetTrialShapeRemaining 
+} from "@/app/service/FlowchartService";
 
 interface SymbolItem {
   key: string;
@@ -20,7 +25,7 @@ type FlowNode = Node & {
 };
 
 interface SymbolSectionProps {
-  flowchartId: number; // ค่านี้จะถูกส่งเป็น trialId ใน API ใหม่
+  flowchartId: number; // ค่านี้คือ trialId
   selectedEdgeId?: string;
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
@@ -231,10 +236,13 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     try {
       setSrError(null);
       setSrLoading(true);
-      const res = await apiGetShapeRemaining(flowchartId);
+      
+      // --- แก้ไข 2: เรียก apiGetTrialShapeRemaining แทน ---
+      const res = await apiGetTrialShapeRemaining(flowchartId);
+      
       setShapeRemaining(res?.shapeRemaining ?? null);
     } catch (err: any) {
-      console.error("apiGetShapeRemaining failed:", err);
+      console.error("apiGetTrialShapeRemaining failed:", err);
       setSrError(err?.message ?? "ไม่สามารถโหลดข้อมูลจำนวน shape ที่เหลือได้");
     } finally {
       setSrLoading(false);
@@ -260,7 +268,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     try {
       setLoading(true);
       if (nodeId) {
-        // --- แก้ไข 2: ใช้ editTrialNode ---
         console.info("Call editTrialNode with:", { flowchartId, nodeId, payload: payloadNode });
         const res = await editTrialNode(flowchartId, nodeId, payloadNode);
         console.info("editTrialNode result:", res);
@@ -275,7 +282,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           onUpdateNode?.(nodeId, backendType, label);
         }
       } else {
-        // --- แก้ไข 3: ใช้ insertTrialNode ---
         if (!selectedEdgeId) {
           setError("กรุณาเลือกเส้น (edge) ที่ต้องการแทรก node ก่อน");
           return;
@@ -350,7 +356,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       setLoading(true);
       console.info("Deleting node:", nodeId, "from flowchart:", flowchartId);
       
-      // --- แก้ไข 4: ใช้ deleteTrialNode ---
       const res = await deleteTrialNode(flowchartId, nodeId);
       console.info("deleteTrialNode response:", res);
 
@@ -367,7 +372,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           const uniqCandidates = Array.from(new Set(candidates.filter(Boolean)));
           for (const bpId of uniqCandidates) {
             try {
-              // --- แก้ไข 5: ใช้ deleteTrialNode สำหรับ breakpoint ด้วย ---
               const bpRes = await deleteTrialNode(flowchartId, bpId);
               console.info("Deleted BP node:", bpId, bpRes);
               break;

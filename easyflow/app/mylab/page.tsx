@@ -6,6 +6,9 @@ import Navbar from "@/components/Navbar";
 import ClassCard from "./_components/ClassCard";
 import { apiGetLab } from "@/app/service/FlowchartService";
 
+// 1. Import useSession
+import { useSession } from "next-auth/react";
+
 /* =======================
    Types
 ======================= */
@@ -22,6 +25,9 @@ type LocalLab = {
   testCases?: any[];
   testcases?: any[];
   createdAt?: string;
+  // เพิ่ม field author เผื่อ API ส่งกลับมา
+  author?: string; 
+  teacher?: string;
 };
 
 /* =======================
@@ -54,12 +60,15 @@ function calcTotalScore(testcases?: any[]) {
 }
 
 function Mylab() {
+  // 2. ดึงข้อมูล Session
+  const { data: session } = useSession();
+
   const [labs, setLabs] = useState<LocalLab[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   /* =======================
-     Load labs
+      Load labs
   ======================= */
   useEffect(() => {
     const stored = localStorage.getItem("labs");
@@ -127,7 +136,7 @@ function Mylab() {
   }, []);
 
   /* =======================
-     Sort newest first
+      Sort newest first
   ======================= */
   const displayLabs = [...labs].sort((a, b) => {
     const da = new Date(a.createdAt ?? a.id ?? 0).getTime();
@@ -185,6 +194,17 @@ function Mylab() {
                   const testcases = lab.testcases ?? lab.testCases ?? [];
                   const totalScore = calcTotalScore(testcases);
 
+                  // 3. กำหนดชื่อผู้สร้าง
+                  // ลำดับความสำคัญ:
+                  // 1. ชื่อจาก API (ถ้ามี field author/teacher)
+                  // 2. ชื่อจาก Session (คน Login ปัจจุบัน)
+                  // 3. Fallback "Unknown"
+                  const teacherName = 
+                    lab.author || 
+                    lab.teacher || 
+                    session?.user?.name || 
+                    "Unknown Teacher";
+
                   return (
                     <Link
                       key={String(labId)}
@@ -194,7 +214,8 @@ function Mylab() {
                       <ClassCard
                         code={String(labId)}
                         title={name}
-                        teacher="You"
+                        // ส่งชื่อ teacher ไปที่ Card
+                        teacher={teacherName} 
                         score={totalScore}
                         due={due}
                         problem={problem || "—"}

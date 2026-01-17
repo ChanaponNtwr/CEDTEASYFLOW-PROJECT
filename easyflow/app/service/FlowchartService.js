@@ -374,23 +374,33 @@ export const apiGetClass = async (classId) => {
 };
 
 
-export const apiAddLabToClass = async (classId, labId, userId) => {
+// FlowchartService.js
+
+export const apiAddLabToClass = async (classId, labId, userId, dueDate) => { // ✅ รับ dueDate เพิ่ม
   if (!classId) throw new Error("apiAddLabToClass: missing classId");
   if (!labId) throw new Error("apiAddLabToClass: missing labId");
   
-  // เพิ่มการเช็ค userId ก่อนส่ง
-  if (!userId) throw new Error("apiAddLabToClass: missing userId (actorUserId)");
+  // เพิ่มการเช็ค userId
+  if (!userId) throw new Error("apiAddLabToClass: missing userId (x-user-id)");
 
   try {
+    // เตรียม Body Payload
+    const payload = { 
+      labId: labId 
+    };
+
+    // ✅ ถ้ามี dueDate ส่งมา ให้เพิ่มเข้าไปใน Body
+    if (dueDate) {
+      payload.dueDate = dueDate;
+    }
+
     const resp = await axios.post(
       `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`,
-      { 
-        labId: labId,
-        actorUserId: String(userId) // ✅ แก้ไขตรงนี้: ส่ง actorUserId ไปใน Body
-      },
+      payload,
       {
         headers: {
           "Content-Type": "application/json",
+          "x-user-id": String(userId), // ✅ แก้ไข: ส่ง userId ใน Header ตาม Spec
         },
         // allow axios to resolve for 2xx; we'll check status below
         validateStatus: (status) => status >= 200 && status < 300,
@@ -703,4 +713,21 @@ export const apiTrialStep = (trialId, variables = []) => {
 // สั่ง Reset
 export const apiTrialReset = (trialId) => {
   return apiExecuteTrial(trialId, { action: "reset" });
+};
+
+
+export const apiGetTrialShapeRemaining = async (trialId) => {
+  if (!trialId) {
+    throw new Error("apiGetTrialShapeRemaining: missing trialId");
+  }
+
+  try {
+    const resp = await axios.get(`${BASE_URL}/trial/${trialId}/shapes/remaining`);
+    
+    // คาดหวัง response: { ok: true, trialId: "...", shapeRemaining: { ... } }
+    return resp.data;
+  } catch (err) {
+    console.error("apiGetTrialShapeRemaining error:", err);
+    throw err;
+  }
 };

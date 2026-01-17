@@ -70,12 +70,12 @@ function ClassCard({
             </p>
           )}
 
-          <p>
+          {/* <p>
             กำหนดส่ง:{" "}
             <span className="font-medium text-gray-700">
               {due || "ไม่ระบุ"}
             </span>
-          </p>
+          </p> */}
         </div>
       </div>
     </div>
