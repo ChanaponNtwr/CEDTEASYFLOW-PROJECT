@@ -147,22 +147,52 @@ router.get("/:classId/labs", async (req, res) => {
 });
 
 
-/* =========================================================
- * USER RELATION
- * ======================================================= */
-// src/controller/class.controller.js
-router.get("/users/search", async (req, res) => {
+router.get("/:classId/users/search", async (req, res) => {
   try {
-    const query = String(req.query.q || "").trim().toLowerCase();
+    const actorUserId = getActorUserId(req);
+    const query = String(req.query.q || "").trim();
+
     if (!query) return res.json({ ok: true, users: [] });
 
-    const users = await classService.searchUsers(query);
-    // users = [{ userId, name, email }, ...]
+    const users = await classService.searchUsersNotInClass(
+      query,
+      req.params.classId,
+      actorUserId
+    );
 
     return res.json({ ok: true, users });
   } catch (err) {
-    console.error("SEARCH USERS ERROR:", err);
-    return res.status(500).json({ ok: false, message: err.message });
+    console.error("SEARCH USERS NOT IN CLASS ERROR:", err);
+    const status = err.code === "FORBIDDEN" ? 403 : 500;
+    return res.status(status).json({ ok: false, message: err.message });
+  }
+});
+
+/**
+ * PATCH /classes/:classId/users/:userId/role (update role)
+ * body: { roleId }
+ * header: x-user-id (must be owner)
+ */
+router.patch("/:classId/users/:userId/role", async (req, res) => {
+  try {
+    const actorUserId = getActorUserId(req);
+    const { roleId } = req.body;
+
+    const updated = await classService.updateUserRoleInClass(
+      req.params.userId,
+      req.params.classId,
+      roleId,
+      actorUserId
+    );
+
+    return res.json({ ok: true, result: updated });
+  } catch (err) {
+    console.error("UPDATE USER ROLE ERROR:", err);
+    const status =
+      err.code === "FORBIDDEN" ? 403 :
+      err.code === "NOT_FOUND" ? 404 : 400;
+
+    return res.status(status).json({ ok: false, message: err.message });
   }
 });
 

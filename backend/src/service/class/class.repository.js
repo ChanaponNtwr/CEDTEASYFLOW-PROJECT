@@ -73,15 +73,14 @@ class ClassRepository {
   }
 
   async addLabToClass(classId, labId, dueDate = null) {
-  return prisma.classLabs.create({
-    data: {
-      classId: Number(classId),
-      labId: Number(labId),
-      dueDate: dueDate ? new Date(dueDate) : null, // <-- ใช้ argument ที่ส่งมา
-    }
-  });
-}
-
+    return prisma.classLabs.create({
+      data: {
+        classId: Number(classId),
+        labId: Number(labId),
+        dueDate: dueDate ? new Date(dueDate) : null, // <-- ใช้ argument ที่ส่งมา
+      }
+    });
+  }
 
   async removeLabFromClass(classId, labId) {
     return prisma.classLabs.delete({
@@ -94,32 +93,29 @@ class ClassRepository {
     });
   }
 
-  // src/service/class/class.repository.js
-async listLabs(classId) {
-  return prisma.classLabs.findMany({
-    where: { classId: Number(classId) },
-    include: {
-      lab: true // lab info
-    },
-    orderBy: { labId: "asc" } // ถ้าต้องการเรียง
-  });
-}
+  async listLabs(classId) {
+    return prisma.classLabs.findMany({
+      where: { classId: Number(classId) },
+      include: {
+        lab: true // lab info
+      },
+      orderBy: { labId: "asc" } // ถ้าต้องการเรียง
+    });
+  }
 
-// src/service/class/class.repository.js
-async updateLabDueDate(classId, labId, dueDate) {
-  return prisma.classLabs.update({
-    where: {
-      classId_labId: {
-        classId: Number(classId),
-        labId: Number(labId)
+  async updateLabDueDate(classId, labId, dueDate) {
+    return prisma.classLabs.update({
+      where: {
+        classId_labId: {
+          classId: Number(classId),
+          labId: Number(labId)
+        }
+      },
+      data: {
+        dueDate: dueDate ? new Date(dueDate) : null
       }
-    },
-    data: {
-      dueDate: dueDate ? new Date(dueDate) : null
-    }
-  });
-}
-
+    });
+  }
 
   async addUserToClass(userId, classId, roleId) {
     return prisma.userClass.create({
@@ -163,6 +159,22 @@ async updateLabDueDate(classId, labId, dueDate) {
     });
   }
 
+  /**
+   * Update role of a class member and return updated userClass (with user & role)
+   */
+  async updateUserRole(userId, classId, roleId) {
+    const updated = await prisma.userClass.update({
+      where: {
+        userId_classId: {
+          userId: Number(userId),
+          classId: Number(classId)
+        }
+      },
+      data: { roleId: Number(roleId) },
+      include: { user: true, role: true }
+    });
+    return updated;
+  }
 
   async addPackageToClass(
     classId,
@@ -177,13 +189,6 @@ async updateLabDueDate(classId, labId, dueDate) {
         startDate,
         endDate
       }
-    });
-  }
-
-  async listPackagesForClass(classId) {
-    return prisma.packageClass.findMany({
-      where: { classId: Number(classId) },
-      include: { package: true }
     });
   }
 
