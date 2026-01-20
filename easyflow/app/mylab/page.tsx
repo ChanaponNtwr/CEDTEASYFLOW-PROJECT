@@ -5,8 +5,6 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import ClassCard from "./_components/ClassCard";
 import { apiGetLab } from "@/app/service/FlowchartService";
-
-// 1. Import useSession
 import { useSession } from "next-auth/react";
 
 /* =======================
@@ -25,16 +23,15 @@ type LocalLab = {
   testCases?: any[];
   testcases?: any[];
   createdAt?: string;
-  // เพิ่ม field author เผื่อ API ส่งกลับมา
   author?: string; 
   teacher?: string;
+  // [Added] เพิ่ม field นี้เพื่อใช้เช็คเจ้าของ
+  authorEmail?: string; 
 };
 
 /* =======================
    Helpers
 ======================= */
-
-// วันที่แบบประเทศไทย
 function formatThaiDate(d?: string) {
   if (!d) return "ไม่กำหนดวันส่ง";
   try {
@@ -50,7 +47,6 @@ function formatThaiDate(d?: string) {
   }
 }
 
-// รวมคะแนนจาก testcases
 function calcTotalScore(testcases?: any[]) {
   if (!Array.isArray(testcases)) return 0;
   return testcases.reduce((sum, tc) => {
@@ -60,24 +56,39 @@ function calcTotalScore(testcases?: any[]) {
 }
 
 function Mylab() {
-  // 2. ดึงข้อมูล Session
-  const { data: session } = useSession();
-
+  const { data: session, status } = useSession(); // เพิ่ม status เพื่อเช็ค loading session
   const [labs, setLabs] = useState<LocalLab[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ดึง Email ของคนปัจจุบัน
+  const currentUserEmail = session?.user?.email;
 
   /* =======================
       Load labs
   ======================= */
   useEffect(() => {
-    const stored = localStorage.getItem("labs");
-    const parsed: LocalLab[] = stored ? JSON.parse(stored) : [];
-    setLabs(parsed);
+    // ถ้า Session ยังโหลดไม่เสร็จ หรือไม่มี User ให้ไม่ทำอะไร (หรือเคลียร์ Lab)
+    if (status === "loading") return;
+    if (!currentUserEmail) {
+        setLabs([]); // ถ้าไม่ได้ login ให้ไม่แสดงอะไรเลย
+        return;
+    }
 
-    const remoteLabs = parsed.filter(
+    const stored = localStorage.getItem("labs");
+    const allLabs: LocalLab[] = stored ? JSON.parse(stored) : [];
+
+    // [KEY CHANGE] กรองเฉพาะ Lab ที่ authorEmail ตรงกับคน Login
+    // หมายเหตุ: คุณต้องแน่ใจว่าตอน Create Lab คุณได้บันทึก authorEmail ลงไปใน localStorage ด้วย
+    const myLabs = allLabs.filter(lab => lab.authorEmail === currentUserEmail);
+
+    setLabs(myLabs);
+
+    // ดึงข้อมูลอัปเดตจาก Server (เฉพาะของ User นี้)
+    const remoteLabs = myLabs.filter(
       (l) => l.labId !== undefined && l.labId !== null
     );
+    
     if (remoteLabs.length === 0) return;
 
     let mounted = true;
@@ -100,29 +111,40 @@ function Mylab() {
 
         if (!mounted) return;
 
-        const updated = [...parsed];
+        // Note: เราจะไม่อัปเดตกลับไปทับ LocalStorage ทั้งก้อนแบบเดิมตรงๆ 
+        // เพราะอาจจะไปลบของ User อื่นทิ้ง (ถ้าใช้ browser เดียวกัน)
+        // แต่วิธีที่ง่ายที่สุดคือ อัปเดต state ปัจจุบัน และ อัปเดต localStorage เฉพาะส่วนของ User นี้
+        
+        // 1. ดึงข้อมูลทั้งหมดจาก LocalStorage อีกรอบเพื่อความชัวร์
+        const currentLocalStorageAll = stored ? JSON.parse(stored) : [];
         let anyUpdated = false;
 
-        results.forEach((r) => {
-          if (r.ok && r.remoteLab) {
-            const idx = updated.findIndex(
-              (x) => String(x.labId) === String(r.labId)
-            );
-            if (idx !== -1) {
-              updated[idx] = {
-                ...updated[idx],
-                ...r.remoteLab,
-              };
-              anyUpdated = true;
+        // 2. Map เพื่อ update ข้อมูลใหม่
+        const updatedAllLabs = currentLocalStorageAll.map((localLab: LocalLab) => {
+            // เช็คว่าเป็น Lab ของเรา และ ID ตรงกับที่ fetch มาไหม
+            const matchResult = results.find(r => r.ok && String(r.labId) === String(localLab.labId));
+            
+            if (matchResult && matchResult.remoteLab) {
+                anyUpdated = true;
+                return {
+                    ...localLab,
+                    ...matchResult.remoteLab
+                };
             }
-          }
+            return localLab;
         });
 
         if (anyUpdated) {
-          setLabs(updated);
-          localStorage.setItem("labs", JSON.stringify(updated));
+          // Update State ที่แสดงผล (กรองเฉพาะของเรา)
+          const updatedMyLabs = updatedAllLabs.filter((l: LocalLab) => l.authorEmail === currentUserEmail);
+          setLabs(updatedMyLabs);
+
+          // Save กลับลง LocalStorage (เก็บของทุกคนไว้เหมือนเดิม อัปเดตแค่ค่าที่เปลี่ยน)
+          localStorage.setItem("labs", JSON.stringify(updatedAllLabs));
         }
-      } catch {
+
+      } catch (err) {
+        console.error(err);
         setError("Failed to fetch remote labs");
       } finally {
         if (mounted) setLoading(false);
@@ -130,10 +152,12 @@ function Mylab() {
     };
 
     fetchRemote();
+
     return () => {
       mounted = false;
     };
-  }, []);
+  // เพิ่ม dependency: currentUserEmail เพื่อให้ useEffect รันใหม่เมื่อเปลี่ยน User
+  }, [currentUserEmail, status]); 
 
   /* =======================
       Sort newest first
@@ -143,6 +167,10 @@ function Mylab() {
     const db = new Date(b.createdAt ?? b.id ?? 0).getTime();
     return db - da;
   });
+
+  if (status === "loading") {
+      return <div className="p-20 text-center">Loading session...</div>;
+  }
 
   return (
     <div className="min-h-screen w-full ">
@@ -162,7 +190,7 @@ function Mylab() {
             </div>
 
             <h2 className="text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-4">
-              My Labs
+              My Labs <span className="text-base text-gray-500 font-normal">(User: {session?.user?.name})</span>
             </h2>
 
             {loading && (
@@ -177,7 +205,7 @@ function Mylab() {
 
             {displayLabs.length === 0 ? (
               <div className="p-6 text-gray-600">
-                ยังไม่มี Lab กด Create Lab เพื่อสร้างใหม่
+                ยังไม่มี Lab สำหรับบัญชีนี้ หรือคุณยังไม่ได้สร้าง Lab
               </div>
             ) : (
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -194,11 +222,7 @@ function Mylab() {
                   const testcases = lab.testcases ?? lab.testCases ?? [];
                   const totalScore = calcTotalScore(testcases);
 
-                  // 3. กำหนดชื่อผู้สร้าง
-                  // ลำดับความสำคัญ:
-                  // 1. ชื่อจาก API (ถ้ามี field author/teacher)
-                  // 2. ชื่อจาก Session (คน Login ปัจจุบัน)
-                  // 3. Fallback "Unknown"
+                  // ใช้ชื่อจาก Lab object ก่อน ถ้าไม่มีให้ fallback
                   const teacherName = 
                     lab.author || 
                     lab.teacher || 
@@ -214,7 +238,6 @@ function Mylab() {
                       <ClassCard
                         code={String(labId)}
                         title={name}
-                        // ส่งชื่อ teacher ไปที่ Card
                         teacher={teacherName} 
                         score={totalScore}
                         due={due}

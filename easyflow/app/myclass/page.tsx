@@ -7,7 +7,7 @@ import ClassCard_Other from './_components/ClassCard_Other';
 import CreateClassModal from "./_components/CreateClassModal";
 import Link from "next/link";
 import { apiCreateClass, apiGetClasses } from "@/app/service/FlowchartService";
-import { useSession } from "next-auth/react"; // ✅ Import useSession
+import { useSession } from "next-auth/react";
 
 export type ClassItem = {
   id: number | string;
@@ -24,10 +24,10 @@ function Myclass() {
   const [myClasses, setMyClasses] = useState<ClassItem[]>([]);
   const [joinedClasses, setJoinedClasses] = useState<ClassItem[]>([]);
 
-  // ✅ 1. ดึงข้อมูล User จาก Session
+  // 1. ดึงข้อมูล User จาก Session
   const { data: session, status } = useSession();
   
-  // แปลง ID เป็น Number (หรือใช้ String ตาม Database คุณ)
+  // ดึง ID ของ user ปัจจุบัน
   const currentUserId = session?.user 
     ? Number((session.user as any).id || (session.user as any).userId) 
     : null;
@@ -39,9 +39,8 @@ function Myclass() {
     room: '',
   });
 
-  // ✅ 2. โหลดข้อมูลเมื่อได้ User ID แล้ว
+ // ✅ 2. โหลดข้อมูล
   useEffect(() => {
-    // ถ้ายังโหลด Session ไม่เสร็จ หรือไม่มี User ให้หยุดรอ
     if (status === "loading" || !currentUserId) return;
 
     apiGetClasses().then((res: any) => {
@@ -51,32 +50,49 @@ function Myclass() {
         const joinedList: ClassItem[] = [];
 
         res.classes.forEach((c: any) => {
-          // -----------------------------------------------------
-          // 🔍 Logic หาชื่อ Teacher (แบบละเอียด)
-          // -----------------------------------------------------
           
-          // 1. หา User ที่มี Role เป็น Owner/Teacher/Creator
-          let ownerEntry = c.userClasses?.find((uc: any) => {
-            const r = uc.role?.roleName?.toLowerCase() || '';
-            return r === 'owner' || r === 'teacher' || r === 'creator';
+          // --- หาข้อมูลของตัวเราใน Class นี้ ---
+          const myUserClassEntry = c.userClasses?.find((uc: any) => Number(uc.userId) === currentUserId);
+          if (!myUserClassEntry) return; // ถ้าไม่มีเราในคลาส ข้ามไป
+
+          // -----------------------------------------------------
+          // 🔍 Logic หาชื่อ Teacher (ฉลาดขึ้น)
+          // -----------------------------------------------------
+          let teacherName = '';
+
+          // 1. หาคนที่เป็น Owner/Teacher ใน userClasses
+          const ownerEntry = c.userClasses?.find((uc: any) => {
+             const r = uc.role?.roleName?.toLowerCase() || '';
+             return ['owner', 'teacher', 'creator'].includes(r);
           });
 
-          let teacherName = 'Unknown Teacher';
-
-          // กรณี A: API ส่งข้อมูล User มาครบ
-          if (ownerEntry?.user) {
-            const u = ownerEntry.user;
-            teacherName = u.name || (u.fname ? `${u.fname} ${u.lname || ''}`.trim() : 'Unknown Name');
+          // Step A: เช็คว่า Owner คือตัวเราเองหรือเปล่า?
+          if (ownerEntry && Number(ownerEntry.userId) === currentUserId) {
+             teacherName = session?.user?.name || 'Me';
           }
-          // กรณี B: ข้อมูล User ไม่มา แต่ userId ตรงกับเรา -> ใช้ชื่อจาก Session เราเลย
-          else if (ownerEntry && Number(ownerEntry.userId) === currentUserId) {
-            teacherName = session?.user?.name || 'Me';
+          // Step B: เช็คว่าใน ownerEntry มีข้อมูล user object ไหม?
+          else if (ownerEntry && ownerEntry.user) {
+             const u = ownerEntry.user;
+             teacherName = u.name 
+                || (u.fname ? `${u.fname} ${u.lname || ''}`.trim() : null)
+                || u.username
+                || u.email;
           }
-          // กรณี C: ไม่เจอ Owner ใน List แต่เราคือคนสร้าง (เช็คจาก myEntry)
-          else {
-             const myEntry = c.userClasses?.find((uc: any) => Number(uc.userId) === currentUserId);
-             if (myEntry?.role?.roleName?.toLowerCase() === 'owner') {
-                teacherName = session?.user?.name || 'Me';
+          // Step C: เช็คที่ Root Object (เผื่อ Backend ส่ง c.owner หรือ c.teacher มา)
+          else if (c.owner && c.owner.name) {
+             teacherName = c.owner.name;
+          }
+          else if (c.teacher && c.teacher.name) {
+             teacherName = c.teacher.name;
+          }
+          
+          // Step D: ถ้ายังหาไม่เจอจริงๆ ให้ใช้ ID เป็นทางเลือกสุดท้าย
+          if (!teacherName) {
+             // เช็คว่า ownerEntry มีค่าไหม ถ้ามีเอา ID มาแสดง ดีกว่าขึ้น Unknown
+             if (ownerEntry?.userId) {
+                teacherName = `Teacher (ID: ${ownerEntry.userId})`;
+             } else {
+                teacherName = 'Unknown Teacher';
              }
           }
 
@@ -87,16 +103,15 @@ function Myclass() {
           const classObj: ClassItem = {
             id: c.classId ?? c.id ?? Math.random().toString(36).slice(2,9),
             code: c.classname ?? c.name ?? 'Unnamed',
-            teacher: teacherName, 
+            teacher: teacherName, // ใช้ชื่อที่หามาได้
             due: `Created ${createdDate}`,
             problem: c.classname ?? '',
           };
 
-          // แยก Class ของเรา vs Class ที่ไป Join
-          const myUserClassEntry = c.userClasses?.find((uc: any) => Number(uc.userId) === currentUserId);
-          const myRole = myUserClassEntry?.role?.roleName?.toLowerCase();
+          // --- แยก My Class vs Joined Class ---
+          const myRole = myUserClassEntry.role?.roleName?.toLowerCase();
           
-          if (myRole === 'owner' || myRole === 'teacher' || myRole === 'creator') {
+          if (['owner', 'teacher', 'creator'].includes(myRole)) {
             ownedList.push(classObj);
           } else {
             joinedList.push(classObj);
@@ -111,8 +126,9 @@ function Myclass() {
         setJoinedClasses([]);
       }
     }).catch(err => console.error("Failed to fetch classes:", err));
-  }, [currentUserId, status, session]); // ✅ ใส่ dependencies ให้ครบ
+  }, [currentUserId, status, session]);
 
+  
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => {
     setIsModalOpen(false);
@@ -143,7 +159,7 @@ function Myclass() {
     try {
       const result = await apiCreateClass(payload);
       if (result?.ok) {
-        // ✅ Optimistic Update: แสดงผลทันทีโดยใช้ชื่อจาก Session
+        // Optimistic Update: เพิ่มเข้า My Class ทันที
         const newClass: ClassItem = {
           id: result.class?.classId ?? result.class?.id ?? Math.random().toString(36).slice(2,9),
           code: `${className}-${section}`,
@@ -166,7 +182,6 @@ function Myclass() {
     }
   };
 
-  // แสดง Loading ระหว่างรอ Session
   if (status === "loading") {
     return <div className="min-h-screen flex items-center justify-center text-gray-500">Loading user session...</div>;
   }
@@ -179,6 +194,7 @@ function Myclass() {
           <Sidebar />
           <div className="flex-1 flex flex-col p-20">
             
+            {/* ปุ่ม Create Class */}
             <div className="flex justify-end mb-6">
               <button onClick={openModal} className="bg-[#0D3ACE] text-white px-4 py-2 rounded-lg flex items-center hover:bg-[#0B2EA6] hover:shadow-lg transition-all duration-200 cursor-pointer">
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -195,7 +211,7 @@ function Myclass() {
                 <p className="text-gray-500">You haven't created any classes yet.</p>
               ) : (
                 myClasses.map((classItem, index) => (
-                  <Link href={`/classes/${encodeURIComponent(String(classItem.id))}`} key={index}>
+                  <Link href={`/classes/${encodeURIComponent(String(classItem.id))}`} key={`my-${index}`}>
                     <ClassCard {...classItem} />
                   </Link>
                 ))
@@ -209,7 +225,7 @@ function Myclass() {
                 <p className="text-gray-500">No joined classes available.</p>
               ) : (
                 joinedClasses.map((classItem, index) => (
-                  <Link href={`/classes/${encodeURIComponent(String(classItem.id))}`} key={index}>
+                  <Link href={`/classes/${encodeURIComponent(String(classItem.id))}`} key={`joined-${index}`}>
                     <ClassCard_Other {...classItem} />
                   </Link>
                 ))
