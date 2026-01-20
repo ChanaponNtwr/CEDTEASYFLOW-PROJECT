@@ -5,7 +5,8 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import { useRouter } from "next/navigation";
-import { apiCreateTestcase, apiCreateLab } from "@/app/service/FlowchartService"; // <-- import APIs
+import { apiCreateTestcase, apiCreateLab } from "@/app/service/FlowchartService"; 
+import { useSession } from "next-auth/react"; // [1] Import Session
 
 interface TestCase {
   input: string;
@@ -17,6 +18,8 @@ interface TestCase {
 
 export default function Createlab() {
   const router = useRouter();
+  // [2] เรียกใช้ session
+  const { data: session } = useSession();
 
   const [name, setName] = useState("");
   const [dateline, setDateline] = useState("");
@@ -26,16 +29,16 @@ export default function Createlab() {
     { input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" },
   ]);
 
-const [symbols, setSymbols] = useState({
-  input: 0,
-  output: 0,
-  declare: 0,
-  assign: 0,
-  if: 0,
-  for: 0,
-  while: 0,
-  do: 0,
-});
+  const [symbols, setSymbols] = useState({
+    input: 0,
+    output: 0,
+    declare: 0,
+    assign: 0,
+    if: 0,
+    for: 0,
+    while: 0,
+    do: 0,
+  });
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -94,29 +97,41 @@ const [symbols, setSymbols] = useState({
     setSubmitting(true);
 
     try {
-      // 1) build lab payload (รวม symbols + testcases)
       const dueDateIso = toISODueDate(dateline);
 
+      // --- [ส่วนที่แก้ไขสำคัญ] ดึง ID จาก Session ---
+      const userSession = session?.user as any;
+      // พยายามหา id หรือ userId จาก object
+      const rawId = userSession?.id || userSession?.userId;
+      
+      // ถ้าไม่มี ID ใน Session จะแจ้งเตือนที่ Console และใช้ 1 เป็นค่าสำรอง
+      if (!rawId) {
+        console.warn("⚠️ Warning: ไม่พบ ID ของ User ใน Session! ระบบจะใช้ค่า Default: 1 (โปรดตรวจสอบการตั้งค่า NextAuth Callbacks)");
+      }
+
+      const ownerId = rawId ? Number(rawId) : 1;
+      
+      console.log("Creating Lab with Owner ID:", ownerId); // เช็ค log นี้ว่าเลขอะไร
+      // ------------------------------------------
+
       const labPayload: any = {
-        ownerUserId: 1, // ปรับตาม user จริงถ้ามี
+        ownerUserId: ownerId, 
         labname: name || "Untitled Lab",
         problemSolving: problem || "",
         status: "active",
-        // map symbols -> ชื่อ field ที่ backend คาดหวัง
-          inSymVal: Number(symbols.input) || 0,
-          outSymVal: Number(symbols.output) || 0,
-          declareSymVal: Number(symbols.declare) || 0,
-          assignSymVal: Number(symbols.assign) || 0,
-          ifSymVal: Number(symbols.if) || 0,
-          forSymVal: Number(symbols.for) || 0,
-          whileSymVal: Number(symbols.while) || 0,
+        inSymVal: Number(symbols.input) || 0,
+        outSymVal: Number(symbols.output) || 0,
+        declareSymVal: Number(symbols.declare) || 0,
+        assignSymVal: Number(symbols.assign) || 0,
+        ifSymVal: Number(symbols.if) || 0,
+        forSymVal: Number(symbols.for) || 0,
+        whileSymVal: Number(symbols.while) || 0,
       };
 
       if (dueDateIso) {
         labPayload.dueDate = dueDateIso;
       }
 
-      // attach testcases array to lab payload (so backend can create them in one request if supported)
       labPayload.testcases = testCases.map((tc) => ({
         inputVal: parseValues(tc.input),
         outputVal: parseValues(tc.output),
@@ -136,7 +151,6 @@ const [symbols, setSymbols] = useState({
       const createLabResp = await apiCreateLab(labPayload);
       console.log("[Createlab] createLabResp ->", createLabResp);
 
-      // extract labId from different possible shapes
       const labId =
         createLabResp && createLabResp.lab && createLabResp.lab.labId
           ? createLabResp.lab.labId
@@ -147,15 +161,29 @@ const [symbols, setSymbols] = useState({
         throw new Error("ไม่พบ labId ในการตอบกลับจาก server");
       }
 
-      // Check whether backend actually created testcases for us in the lab response
       const serverCreatedTestcases =
         !!(
           (createLabResp.lab && Array.isArray(createLabResp.lab.testcases) && createLabResp.lab.testcases.length >= labPayload.testcases.length) ||
           (Array.isArray(createLabResp.testcases) && createLabResp.testcases.length >= labPayload.testcases.length)
         );
 
+      // เตรียม Object สำหรับ LocalStorage
+      // เพิ่ม field authorEmail และ author เพื่อให้ Mylab กรองข้อมูลได้ถูกต้อง
+      const baseLabLocal = {
+        id: Date.now(),
+        labId,
+        name,
+        dateline,
+        problem,
+        testCases,
+        symbols,
+        createdAt: new Date().toISOString(),
+        remoteCreated: true,
+        authorEmail: session?.user?.email, 
+        author: session?.user?.name,
+      };
+
       if (!serverCreatedTestcases && labPayload.testcases.length > 0) {
-        // Fallback: create testcases one-by-one using apiCreateTestcase (existing behavior)
         console.log("[Createlab] backend did not create testcases; falling back to apiCreateTestcase per item");
         const promises = labPayload.testcases.map((payload: any, idx: number) =>
           apiCreateTestcase(String(labId), payload)
@@ -169,63 +197,26 @@ const [symbols, setSymbols] = useState({
         const results = await Promise.all(promises);
         const rejected = results.filter((r: any) => r.status === "rejected");
 
-        if (rejected.length > 0) {
-          // partial failure handling: save local and inform user
-          const newLabLocal = {
-            id: Date.now(),
-            labId,
-            name,
-            dateline,
-            problem,
-            testCases,
-            symbols,
-            createdAt: new Date().toISOString(),
-            remoteCreated: true,
-            testcaseUploadStatus: "partial-failure",
-          };
-
-          const stored = localStorage.getItem("labs");
-          const labs = stored ? JSON.parse(stored) : [];
-          labs.push(newLabLocal);
-          localStorage.setItem("labs", JSON.stringify(labs));
-
-          alert(
-            "สร้าง Lab สำเร็จ แต่มีบาง Testcase ส่งไป server ไม่สำเร็จ ดู console log สำหรับรายละเอียด"
-          );
-        } else {
-          // all ok
-          const newLabLocal = {
-            id: Date.now(),
-            labId,
-            name,
-            dateline,
-            problem,
-            testCases,
-            symbols,
-            createdAt: new Date().toISOString(),
-            remoteCreated: true,
-            testcaseUploadStatus: "all-ok",
-          };
-
-          const stored = localStorage.getItem("labs");
-          const labs = stored ? JSON.parse(stored) : [];
-          labs.push(newLabLocal);
-          localStorage.setItem("labs", JSON.stringify(labs));
-
-          alert("สร้าง Lab และส่ง Testcase ขึ้น server เรียบร้อยแล้ว");
-        }
-      } else {
-        // backend already created testcases (or there were none)
         const newLabLocal = {
-          id: Date.now(),
-          labId,
-          name,
-          dateline,
-          problem,
-          testCases,
-          symbols,
-          createdAt: new Date().toISOString(),
-          remoteCreated: true,
+            ...baseLabLocal,
+            testcaseUploadStatus: rejected.length > 0 ? "partial-failure" : "all-ok",
+        };
+
+        const stored = localStorage.getItem("labs");
+        const labs = stored ? JSON.parse(stored) : [];
+        labs.push(newLabLocal);
+        localStorage.setItem("labs", JSON.stringify(labs));
+
+        if (rejected.length > 0) {
+            alert("สร้าง Lab สำเร็จ แต่มีบาง Testcase ส่งไป server ไม่สำเร็จ");
+        } else {
+            alert("สร้าง Lab และส่ง Testcase ขึ้น server เรียบร้อยแล้ว");
+        }
+
+      } else {
+        // Backend created testcases
+        const newLabLocal = {
+          ...baseLabLocal,
           testcaseUploadStatus: "all-ok",
         };
 
@@ -234,7 +225,7 @@ const [symbols, setSymbols] = useState({
         labs.push(newLabLocal);
         localStorage.setItem("labs", JSON.stringify(labs));
 
-        alert("สร้าง Lab และ (ถ้ามี) Testcase เรียบร้อยแล้ว");
+        alert("สร้าง Lab เรียบร้อยแล้ว");
       }
 
       router.push("/mylab");
@@ -271,7 +262,7 @@ const [symbols, setSymbols] = useState({
                 {submitting ? "Creating..." : "Create"}
               </button>
             </div>
-
+            
             {/* Heading */}
             <h2 className="text-3xl md:text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-6">
               Create Lab

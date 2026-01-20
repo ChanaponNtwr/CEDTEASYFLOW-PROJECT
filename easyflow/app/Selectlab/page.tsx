@@ -6,7 +6,6 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import ClassCard from "./_components/ClassCard";
 import { apiGetLab } from "@/app/service/FlowchartService";
-// 1. Import useSession
 import { useSession } from "next-auth/react";
 
 /* =======================
@@ -25,9 +24,10 @@ type LocalLab = {
   testCases?: any[];
   testcases?: any[];
   createdAt?: string;
-  // เพิ่ม field author/teacher เผื่อ API ส่งมา
   author?: string;
   teacher?: string;
+  // [Added] เพิ่ม field นี้เพื่อใช้เช็คเจ้าของ
+  authorEmail?: string; 
 };
 
 /* =======================
@@ -57,8 +57,8 @@ function calcTotalScore(testcases?: any[]) {
 }
 
 export default function Selectlab() {
-  // 2. ดึงข้อมูล Session
-  const { data: session } = useSession();
+  // 2. ดึงข้อมูล Session และ Status
+  const { data: session, status } = useSession();
 
   const [labs, setLabs] = useState<LocalLab[]>([]);
   const [loading, setLoading] = useState(false);
@@ -78,11 +78,25 @@ export default function Selectlab() {
       Load local labs + remote update
   ======================== */
   useEffect(() => {
-    // load stored labs
+    // [Logic] รอ Session โหลดเสร็จก่อน
+    if (status === "loading") return;
+    
+    // ถ้าไม่มี User ให้เคลียร์ Lab (หรือ redirect ไป login)
+    const currentUserEmail = session?.user?.email;
+    if (!currentUserEmail) {
+        setLabs([]);
+        return;
+    }
+
+    // 1. Load stored labs & Filter
+    let allLabs: LocalLab[] = [];
     try {
       const stored = localStorage.getItem("labs");
-      const parsed: LocalLab[] = stored ? JSON.parse(stored) : [];
-      setLabs(parsed);
+      allLabs = stored ? JSON.parse(stored) : [];
+      
+      // [Logic] กรองเฉพาะ Lab ของเรา
+      const myLabs = allLabs.filter(l => l.authorEmail === currentUserEmail);
+      setLabs(myLabs);
 
       // Check import-mode data in sessionStorage
       const rawForm = sessionStorage.getItem("importForm");
@@ -99,24 +113,16 @@ export default function Selectlab() {
       if (mode) setImportMode(true);
       if (ret) setImportReturn(ret);
     } catch (err) {
-      // ignore parse/storage errors
       setLabs([]);
     }
 
-    // fetch remote labs that have labId
-    let mounted = true;
-    const local = (() => {
-      try {
-        const stored = localStorage.getItem("labs");
-        return stored ? (JSON.parse(stored) as LocalLab[]) : [];
-      } catch {
-        return [];
-      }
-    })();
-
-    const remoteLabs = local.filter((l) => l.labId !== undefined && l.labId !== null);
+    // 2. fetch remote labs (เฉพาะ Lab ของเรา)
+    const myLabs = allLabs.filter(l => l.authorEmail === currentUserEmail); // ใช้ตัวแปรนี้เพื่อความชัวร์
+    const remoteLabs = myLabs.filter((l) => l.labId !== undefined && l.labId !== null);
+    
     if (remoteLabs.length === 0) return;
 
+    let mounted = true;
     const fetchRemote = async () => {
       setLoading(true);
       setError(null);
@@ -135,31 +141,34 @@ export default function Selectlab() {
 
         if (!mounted) return;
 
-        const updated = [...local];
+        // [Logic] Update ข้อมูลกลับลง LocalStorage (โดยไม่ทับของ User อื่น)
+        const storedNow = localStorage.getItem("labs");
+        const currentAllLabs: LocalLab[] = storedNow ? JSON.parse(storedNow) : [];
         let anyUpdated = false;
 
-        results.forEach((r) => {
-          if (r.ok && r.remoteLab) {
-            const idx = updated.findIndex(
-              (x) => String(x.labId) === String(r.labId)
-            );
-            if (idx !== -1) {
-              updated[idx] = {
-                ...updated[idx],
-                ...r.remoteLab,
-              };
-              anyUpdated = true;
+        const updatedAllLabs = currentAllLabs.map((existingLab) => {
+            // เช็คว่าเป็น Lab ของเราไหม และมีผลลัพธ์จาก Server ไหม
+            const matchResult = results.find(r => r.ok && String(r.labId) === String(existingLab.labId));
+            
+            if (matchResult && matchResult.remoteLab && existingLab.authorEmail === currentUserEmail) {
+                anyUpdated = true;
+                return {
+                    ...existingLab,
+                    ...matchResult.remoteLab
+                };
             }
-          }
+            return existingLab;
         });
 
         if (anyUpdated) {
-          setLabs(updated);
+          // Update State (เฉพาะของเรา)
+          const updatedMyLabs = updatedAllLabs.filter(l => l.authorEmail === currentUserEmail);
+          setLabs(updatedMyLabs);
+          
+          // Save ลง LocalStorage (ทั้งหมด)
           try {
-            localStorage.setItem("labs", JSON.stringify(updated));
-          } catch {
-            // ignore storage error
-          }
+            localStorage.setItem("labs", JSON.stringify(updatedAllLabs));
+          } catch {}
         }
       } catch (err) {
         setError("Failed to fetch remote labs");
@@ -172,7 +181,7 @@ export default function Selectlab() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [session, status]); // เพิ่ม dependencies
 
   /* =======================
       Sort newest first
@@ -254,6 +263,10 @@ export default function Selectlab() {
     router.push(`/labinfo?labId=${encodeURIComponent(labId)}`);
   };
 
+  if (status === "loading") {
+      return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
   return (
     <div className="pt-20 min-h-screen bg-gray-100">
       <div className="pl-60">
@@ -291,7 +304,9 @@ export default function Selectlab() {
               </button>
             </div>
 
-            <h2 className="text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-4">My Labs</h2>
+            <h2 className="text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-4">
+                My Labs <span className="text-sm font-normal text-gray-500">(User: {session?.user?.name})</span>
+            </h2>
 
             {loading && <div className="mb-4 text-sm text-gray-600">กำลังอัปเดตข้อมูลจากเซิร์ฟเวอร์...</div>}
 
@@ -309,7 +324,7 @@ export default function Selectlab() {
                   const testcases = lab.testcases ?? lab.testCases ?? [];
                   const totalScore = calcTotalScore(testcases);
 
-                  // 3. กำหนดชื่อผู้สร้าง (Logic เดียวกับ Mylab)
+                  // 3. กำหนดชื่อผู้สร้าง
                   const teacherName = 
                     lab.author || 
                     lab.teacher || 

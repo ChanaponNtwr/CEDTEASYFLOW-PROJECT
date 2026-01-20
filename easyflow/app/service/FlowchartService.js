@@ -490,15 +490,28 @@ export const apiGetClassUsers = async (classId) => {
   }
 };
 
-export const apiSearchUsers = async (query) => {
+// แก้ไขฟังก์ชัน apiSearchUsers
+export const apiSearchUsers = async (classId, query, currentUserId) => {
+  // ตรวจสอบข้อมูลเบื้องต้น (Optional)
+  if (!classId || !currentUserId) {
+    console.warn("apiSearchUsers: Missing classId or currentUserId");
+    // อาจจะ return ค่าว่างกลับไปเพื่อป้องกัน error
+    return { ok: true, users: [] };
+  }
+
   try {
-    // ใช้ params เพื่อให้ axios จัดการ ?q=... ให้ (รวมถึง encode ตัวอักษรพิเศษ)
-    const resp = await axios.get(`${BASE_URL}/classes/users/search`, {
+    // 1. แทรก classId ลงใน URL ตาม Requirement: /classes/{id}/users/search
+    const url = `${BASE_URL}/classes/${encodeURIComponent(classId)}/users/search`;
+
+    const resp = await axios.get(url, {
       params: { q: query }, 
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        // 2. เพิ่ม Header x-user-id ตาม Requirement
+        "x-user-id": currentUserId 
+      },
     });
 
-    // คาดหวัง return shape: { ok: true, users: [...] } หรือตามที่ backend ส่งมา
     return resp.data;
   } catch (err) {
     console.error("apiSearchUsers error:", err?.response ?? err);
@@ -539,9 +552,33 @@ export const apiAddUserToClass = async (classId, targetUserId, roleId, actorId) 
 };
 
 
+// เปลี่ยน Role ของ User ใน Class
+export const apiUpdateUserRole = async (classId, targetUserId, newRoleId, currentUserId) => {
+  if (!classId || !targetUserId || !newRoleId || !currentUserId) {
+    throw new Error("apiUpdateUserRole: Missing required parameters");
+  }
 
+  try {
+    // URL format: /classes/:classId/users/:userId/role
+    const url = `${BASE_URL}/classes/${classId}/users/${targetUserId}/role`;
 
+    const resp = await axios.patch(
+      url,
+      { roleId: newRoleId }, // Body: { "roleId": ... }
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUserId, // Header: x-user-id
+        },
+      }
+    );
 
+    return resp.data;
+  } catch (err) {
+    console.error("apiUpdateUserRole error:", err?.response ?? err);
+    throw err;
+  }
+};
 
 
 

@@ -11,7 +11,7 @@ interface AddPersonModalProps {
   role: "Teacher" | "TA" | "Students";
   classId: string;
   onUserAdded: () => void;
-  currentUserId: number; // ✅ รับค่า ID จาก Parent ตามที่แก้ไปข้อก่อนหน้า
+  currentUserId: number; 
 }
 
 export default function AddPersonModal({
@@ -27,7 +27,6 @@ export default function AddPersonModal({
   const [isSearching, setIsSearching] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   
-  // ✅ 1. เปลี่ยนจากเก็บคนเดียว เป็นเก็บ Array
   const [selectedUsers, setSelectedUsers] = useState<any[]>([]);
 
   // --- Search Logic ---
@@ -36,7 +35,9 @@ export default function AddPersonModal({
       if (searchTerm.trim().length > 1) {
         setIsSearching(true);
         try {
-          const response = await apiSearchUsers(searchTerm);
+          // ✅ [แก้ไขจุดที่ 1]: ส่ง classId และ currentUserId ไปด้วย
+          const response = await apiSearchUsers(classId, searchTerm, currentUserId);
+          
           if (response && response.users) {
             setSearchResults(response.users);
           } else if (Array.isArray(response)) {
@@ -56,27 +57,26 @@ export default function AddPersonModal({
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm]);
+  // ✅ [แก้ไขจุดที่ 2]: เพิ่ม dependency ให้ครบ
+  }, [searchTerm, classId, currentUserId]);
 
   // --- Reset Logic ---
   useEffect(() => {
     if (!visible) {
       setSearchTerm("");
       setSearchResults([]);
-      setSelectedUsers([]); // ✅ รีเซ็ต Array
+      setSelectedUsers([]); 
       setIsAdding(false);
     }
   }, [visible]);
 
-  // ✅ 2. ฟังก์ชันเลือก/ยกเลิกเลือก User
+  // ฟังก์ชันเลือก/ยกเลิกเลือก User
   const toggleUser = (user: any) => {
     setSelectedUsers((prev) => {
       const exists = prev.find((u) => u.id === user.id);
       if (exists) {
-        // ถ้ามีแล้ว ให้เอาออก
         return prev.filter((u) => u.id !== user.id);
       } else {
-        // ถ้ายังไม่มี ให้เพิ่มเข้าไป
         return [...prev, user];
       }
     });
@@ -98,7 +98,6 @@ export default function AddPersonModal({
 
     setIsAdding(true);
     try {
-      // ✅ 3. วนลูปยิง API ทีละคน (ใช้ Promise.all เพื่อความเร็ว)
       const promises = selectedUsers.map((user) => 
         apiAddUserToClass(classId, user.id, roleIdToSend, currentUserId)
       );
@@ -112,7 +111,6 @@ export default function AddPersonModal({
     } catch (err: any) {
       console.error("Failed to add users:", err);
       alert("Some users might not have been added (already in class or permission issue).");
-      // ถึงจะ Error บางคน ก็ให้รีเฟรชหน้าจอ
       if (onUserAdded) onUserAdded(); 
       onClose();
     } finally {
@@ -160,7 +158,6 @@ export default function AddPersonModal({
                 </div>
               </div>
               
-              {/* แสดงจำนวนคนที่เลือก */}
               {selectedUsers.length > 0 && (
                 <div className="mb-2 text-sm text-blue-600 font-medium">
                   Selected: {selectedUsers.length} people
@@ -178,7 +175,6 @@ export default function AddPersonModal({
                 ) : (
                   <ul className="space-y-2">
                     {searchResults.map((user) => {
-                      // เช็คว่าคนนี้ถูกเลือกไปหรือยัง
                       const isSelected = selectedUsers.some((u) => u.id === user.id);
 
                       return (
