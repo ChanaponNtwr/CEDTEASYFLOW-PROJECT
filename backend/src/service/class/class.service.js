@@ -21,26 +21,48 @@ class ClassService {
   /* =========================================================
    * CLASS
    * ======================================================= */
-  async searchUsers(query) {
-  if (!query) return [];
+  /**
+   * Search users by name/email.
+   * If excludeClassId provided, exclude users who are already in that class.
+   * @param {string} query
+   * @param {number|null} excludeClassId
+   */
+  async searchUsers(query, excludeClassId = null) {
+    if (!query) return [];
 
-  const users = await prisma.user.findMany({
-    where: {
+    const q = String(query).trim();
+
+    // If need exclude, get userIds in that class
+    let excludedIds = [];
+    if (excludeClassId !== null && excludeClassId !== undefined) {
+      const members = await classRepo.listUsersInClass(excludeClassId);
+      excludedIds = (members || []).map(m => Number(m.userId)).filter(Boolean);
+    }
+
+    // Build where clause
+    const where = {
       OR: [
-        { email: { contains: query, mode: "insensitive" } },
-        { name: { contains: query, mode: "insensitive" } } // ถ้า schema ใช้ fname/lname ต้องแก้
+        { email: { contains: q, mode: "insensitive" } },
+        { name: { contains: q, mode: "insensitive" } }
       ]
-    },
-    select: {
-      id: true,       // แก้จาก userId → id
-      name: true,     // ถ้า schema มี fname/lname ต้องใช้ fname/lname
-      email: true
-    },
-    take: 20
-  });
+    };
 
-  return users;
-}
+    if (Array.isArray(excludedIds) && excludedIds.length > 0) {
+      where.AND = [{ id: { notIn: excludedIds } }];
+    }
+
+    const users = await prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        email: true
+      },
+      take: 20
+    });
+
+    return users;
+  }
 
 
   async createClass(payload = {}, currentUserId = null) {
@@ -78,8 +100,6 @@ class ClassService {
 
     return classRepo.findById(created.classId);
   }
-
-  
 
   async getClass(classId) {
     // validate param
@@ -143,7 +163,7 @@ class ClassService {
       return { ok: true, message: "already attached" };
     }
 
-    // แปลง dueDate เป็น Date object ถ้าได้รับมา
+    // parse dueDate
     let parsedDueDate = null;
     if (dueDate) {
       parsedDueDate = new Date(dueDate);
@@ -152,7 +172,7 @@ class ClassService {
 
     return classRepo.addLabToClass(classId, labId, parsedDueDate);
   }
-  
+
   async updateLabDueDate(classId, labId, actorUserId, dueDate) {
     if (!actorUserId) throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
 
@@ -169,7 +189,6 @@ class ClassService {
 
     return classRepo.updateLabDueDate(classId, labId, dueDate);
   }
-
 
   async removeLabFromClass(classId, labId, actorUserId) {
     if (!actorUserId) throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
@@ -235,6 +254,97 @@ class ClassService {
     return classRepo.listUsersInClass(classId);
   }
 
+  /**
+ * Update role of a user in a class.
+ * Only owner of the class can perform this.
+ */
+  async updateUserRoleInClass(userId, classId, roleId, actorUserId) {
+    if (!actorUserId) {
+      throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
+    }
+
+    const cId = Number(classId);
+    const uId = Number(userId);
+    const rId = Number(roleId);
+    const aId = Number(actorUserId);
+
+    // 1. ตรวจว่า class มีอยู่จริง
+    if (!await classRepo.existsClass(cId)) {
+      throw Object.assign(new Error("Class not found"), { code: "NOT_FOUND" });
+    }
+
+    // 2. ตรวจ actor อยู่ในคลาส และเป็น owner
+    const actorUC = await prisma.userClass.findUnique({
+      where: {
+        userId_classId: {
+          userId: aId,
+          classId: cId
+        }
+      },
+      include: { role: true }
+    });
+
+    if (!actorUC) {
+      throw Object.assign(new Error("You are not in this class"), { code: "FORBIDDEN" });
+    }
+
+    assertClassRole(actorUC, ["owner"]);
+
+    // 3. กัน owner เปลี่ยน role ตัวเอง
+    if (aId === uId) {
+      throw Object.assign(
+        new Error("Owner cannot change their own role"),
+        { code: "FORBIDDEN" }
+      );
+    }
+
+    // 4. ตรวจว่า user เป้าหมายอยู่ในคลาสนี้จริง
+    const targetUC = await prisma.userClass.findUnique({
+      where: {
+        userId_classId: {
+          userId: uId,
+          classId: cId
+        }
+      }
+    });
+
+    if (!targetUC) {
+      throw Object.assign(
+        new Error("Target user is not in this class"),
+        { code: "NOT_FOUND" }
+      );
+    }
+
+    // 5. ตรวจว่า role มีอยู่จริง
+    const roleExists = await prisma.role.findUnique({
+      where: { roleId: rId }
+    });
+
+    if (!roleExists) {
+      throw Object.assign(new Error("Role not found"), { code: "NOT_FOUND" });
+    }
+
+    // 6. อัปเดต role
+    const updated = await prisma.userClass.update({
+      where: {
+        userId_classId: {
+          userId: uId,
+          classId: cId
+        }
+      },
+      data: {
+        roleId: rId
+      },
+      include: {
+        user: true,
+        role: true
+      }
+    });
+
+    return updated;
+  }
+
+
   /* =========================================================
    * PACKAGE (owner only)
    * ======================================================= */
@@ -255,6 +365,52 @@ class ClassService {
   async listPackagesForClass(classId) {
     return classRepo.listPackagesForClass(classId);
   }
+
+  async searchUsersNotInClass(query, classId, actorUserId) {
+    if (!actorUserId) throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
+
+  // ตรวจว่า actor เป็น owner ของคลาสนี้
+  const actorUC = await prisma.userClass.findUnique({
+    where: { userId_classId: { userId: Number(actorUserId), classId: Number(classId) } },
+    include: { role: true }
+  });
+
+  assertClassRole(actorUC, ["owner"]);
+
+  // ดึง userId ที่อยู่ในคลาสนี้แล้ว
+  const members = await prisma.userClass.findMany({
+    where: { classId: Number(classId) },
+    select: { userId: true }
+  });
+
+  const memberIds = members.map(m => m.userId);
+
+  // ค้นหา user ที่ชื่อหรือ email ตรง และ NOT อยู่ในคลาสนี้
+  const users = await prisma.user.findMany({
+    where: {
+      AND: [
+        {
+          OR: [
+            { email: { contains: query, mode: "insensitive" } },
+            { name: { contains: query, mode: "insensitive" } }
+          ]
+        },
+        {
+          id: { notIn: memberIds.length ? memberIds : [0] }
+        }
+      ]
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true
+    },
+    take: 20
+  });
+
+  return users;
+  }
+
 }
 
 export default new ClassService();
