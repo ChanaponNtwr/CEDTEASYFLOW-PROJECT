@@ -552,9 +552,33 @@ export const apiAddUserToClass = async (classId, targetUserId, roleId, actorId) 
 };
 
 
+// เปลี่ยน Role ของ User ใน Class
+export const apiUpdateUserRole = async (classId, targetUserId, newRoleId, currentUserId) => {
+  if (!classId || !targetUserId || !newRoleId || !currentUserId) {
+    throw new Error("apiUpdateUserRole: Missing required parameters");
+  }
 
+  try {
+    // URL format: /classes/:classId/users/:userId/role
+    const url = `${BASE_URL}/classes/${classId}/users/${targetUserId}/role`;
 
+    const resp = await axios.patch(
+      url,
+      { roleId: newRoleId }, // Body: { "roleId": ... }
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUserId, // Header: x-user-id
+        },
+      }
+    );
 
+    return resp.data;
+  } catch (err) {
+    console.error("apiUpdateUserRole error:", err?.response ?? err);
+    throw err;
+  }
+};
 
 
 
