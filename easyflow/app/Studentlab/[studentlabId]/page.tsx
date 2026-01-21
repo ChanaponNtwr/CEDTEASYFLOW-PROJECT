@@ -13,9 +13,10 @@ import {
   apiGetTestcases, 
   apiGetLab, 
   apiPostFlowchart, 
-  apiGetSubmissionsByLab // ✅ ต้อง import อันนี้
+  apiGetSubmissionsByLab 
 } from "@/app/service/FlowchartService";
 
+// --- Interfaces ---
 interface TestCase {
   no: number;
   input: string;
@@ -34,6 +35,14 @@ interface RemoteLab {
   testCases?: any[];
   problemSolving?: string;
   problem?: string;
+  inSymVal?: number;
+  outSymVal?: number;
+  declareSymVal?: number;
+  assignSymVal?: number;
+  ifSymVal?: number;
+  forSymVal?: number;
+  whileSymVal?: number;
+  // Fields สำหรับเช็คสถานะการส่ง
   isSubmitted?: boolean;
   submission?: any;
   submissions?: any[];
@@ -41,7 +50,7 @@ interface RemoteLab {
   [k: string]: any;
 }
 
-// Interface สำหรับรับผลลัพธ์จาก API
+// Interface สำหรับผลลัพธ์ราย Testcase
 interface SubmissionResult {
   testcaseId?: number;
   status: string; // "PASS", "FAIL", "ERROR"
@@ -49,6 +58,7 @@ interface SubmissionResult {
   score?: number;
 }
 
+// --- Helper Functions ---
 function formatDueDate(d?: string | null) { 
   if (!d) return "No due date";
   try {
@@ -97,6 +107,7 @@ const parseVal = (val: any): any => {
 const flattenDeep = (arr: any[]): any[] =>
   arr.reduce((acc, v) => (Array.isArray(v) ? acc.concat(flattenDeep(v)) : acc.concat(v)), []);
 
+// --- Main Component ---
 export default function StudentLabPage() {
   const params = useParams();
   const router = useRouter();
@@ -111,8 +122,11 @@ export default function StudentLabPage() {
 
   const [isStarting, setIsStarting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  
+  // เก็บผลลัพธ์การส่งล่าสุด
   const [tcResults, setTcResults] = useState<SubmissionResult[]>([]);
 
+  // --- Fetch Data ---
   useEffect(() => {
     if (!labIdResolved) return;
     if (session === undefined) return; 
@@ -131,10 +145,9 @@ export default function StudentLabPage() {
         if (!mounted) return;
         setLab(remoteLab);
 
-        // 2. เช็คสถานะ isSubmitted เบื้องต้น
+        // 2. เช็คสถานะ isSubmitted เบื้องต้น (จากข้อมูล Lab)
         let submittedFlag = false;
         if (remoteLab) {
-            // เช็คจาก field ต่างๆ ที่อาจจะเป็นไปได้
             const hasSubmissionsArray = Array.isArray(remoteLab.submissions) && remoteLab.submissions.length > 0;
             submittedFlag = 
                 remoteLab.isSubmitted === true || 
@@ -180,30 +193,31 @@ export default function StudentLabPage() {
           setTestCases(mappedTC);
         }
 
-        // 4. 🔥🔥 ดึงข้อมูล Submission (แก้ไขตาม Log) 🔥🔥
+        // 4. 🔥🔥 ดึงข้อมูล Submission History 🔥🔥
         if (session?.user) {
             try {
+                // ✅ ส่งแค่ labId ตามที่ API ต้องการ
                 const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
                 console.log("📌 DEBUG: Submissions Response:", apiResponse);
 
-                // เจาะข้อมูลตามโครงสร้าง: { ok: true, data: [ { submissions: [...] } ] }
+                // ✅ เจาะข้อมูลตามโครงสร้าง: { ok: true, data: [ { submissions: [...] } ] }
                 if (apiResponse && apiResponse.data && Array.isArray(apiResponse.data) && apiResponse.data.length > 0) {
                     
-                    // เลือกรายการแรก (หรือจะ loop หา userId ที่ตรงกับ session ก็ได้)
+                    // เลือกรายการแรก (User คนนี้)
                     const userRecord = apiResponse.data[0];
                     console.log("📌 DEBUG: User Record found:", userRecord);
 
                     if (userRecord && Array.isArray(userRecord.submissions)) {
                         console.log("📌 DEBUG: Found Results:", userRecord.submissions);
                         
-                        // Set ค่าผลลัพธ์
+                        // Set ผลลัพธ์รายข้อ
                         setTcResults(userRecord.submissions);
                         
-                        // ถ้ามีผลลัพธ์ ถือว่าส่งแล้ว
+                        // ยืนยันว่าส่งแล้ว
                         setIsSubmitted(true);
                     }
                 } else if (Array.isArray(apiResponse)) {
-                    // Fallback เผื่อโครงสร้างเปลี่ยน
+                    // Fallback เผื่อโครงสร้างไม่ซับซ้อน
                     setTcResults(apiResponse);
                 }
 
@@ -230,6 +244,7 @@ export default function StudentLabPage() {
     };
   }, [labIdResolved, session]);
 
+  // --- Handlers ---
   const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (!session?.user) { alert("Please login first!"); return; }
@@ -258,7 +273,7 @@ export default function StudentLabPage() {
   const totalPoints = testCases.reduce((s, t) => s + (t.score ?? 0), 0);
   const labTitle = lab?.labname ?? lab?.name ?? `Lab ${labIdResolved}`;
   const labProblem = lab?.problemSolving ?? lab?.problem ?? "";
-  const dueText = lab?.dueDate ?? lab?.dateline ?? undefined;
+  const dueText = lab?.dueDate ?? lab?.dateline ?? undefined; // แก้ null เป็น undefined
 
   const symbolLabData = lab
     ? {
@@ -272,7 +287,7 @@ export default function StudentLabPage() {
       }
     : undefined;
 
-  // ✅ Function render Badge
+  // --- Render Helpers ---
   const renderStatusBadge = (status: string) => {
     if (!status) return <span className="text-gray-400">-</span>;
     const s = String(status).toUpperCase();
@@ -298,6 +313,7 @@ export default function StudentLabPage() {
           <div className="flex-1 flex justify-center p-6 md:p-10">
             <div className="w-full max-w-5xl bg-white p-8 rounded-lg shadow-md min-h-[500px]">
               
+              {/* Header & Buttons */}
               <div className="flex justify-end space-x-3 mb-6">
                 <button
                   onClick={handleClick}
@@ -374,9 +390,13 @@ export default function StudentLabPage() {
                         <tbody className="bg-white divide-y divide-gray-200">
                           {testCases.length > 0 ? (
                             testCases.map((tc, index) => {
-                                // 📌 Mapping ข้อมูลจาก tcResults โดยใช้ index
-                                const result = tcResults[index]; 
-                                const status = result?.status || ""; 
+                                // 📌 Mapping Results
+                                const result = tcResults[index];
+                                const status = result?.status || "";
+                                
+                                // คำนวณคะแนนที่แสดง
+                                const obtainedScore = result?.score ?? 0;
+                                const maxScore = tc.score;
 
                                 return (
                                   <tr key={tc.no} className="hover:bg-gray-50 transition-colors">
@@ -387,11 +407,27 @@ export default function StudentLabPage() {
                                     <td className="px-6 py-4 text-sm text-blue-700">
                                       <code className="bg-blue-50 px-2 py-1 rounded text-xs font-mono">{tc.output}</code>
                                     </td>
+                                    
+                                    {/* Column Score: คะแนนที่ได้ / คะแนนเต็ม */}
                                     <td className="px-6 py-4 text-center">
-                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        {tc.score}
-                                      </span>
+                                      {isSubmitted ? (
+                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-sm
+                                          ${obtainedScore === maxScore 
+                                            ? "bg-green-100 text-green-700 border border-green-200" 
+                                            : obtainedScore > 0 
+                                              ? "bg-yellow-100 text-yellow-700 border border-yellow-200"
+                                              : "bg-red-50 text-red-600 border border-red-100"
+                                          }
+                                        `}>
+                                          {obtainedScore} / {maxScore}
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                          {maxScore} pts
+                                        </span>
+                                      )}
                                     </td>
+
                                     <td className="px-6 py-4 text-center">
                                         {renderStatusBadge(status)}
                                     </td>
