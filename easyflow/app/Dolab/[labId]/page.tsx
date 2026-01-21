@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useEffect } from "react";
+import React, { useMemo, useEffect, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -35,8 +35,8 @@ import { useNodeMutations } from "../hooks/useNodeMutations";
 import { apiGetFlowchart } from "@/app/service/FlowchartService";
 import { convertBackendFlowchart } from "../utils/backendConverter";
 
-// ✅ Import Hook
-import { useParams } from "next/navigation";
+// ✅ Import useParams และ useSearchParams
+import { useParams, useSearchParams } from "next/navigation";
 
 const nodeTypes = {
   if: IfNodeComponent,
@@ -53,41 +53,69 @@ const nodeTypes = {
 
 type Props = { 
   flowchartId?: string;
-  // เราไม่จำเป็นต้องรับ params ผ่าน props แล้วใน Next.js 15 Client Component
-  // เพราะ useParams() จัดการให้ดีกว่า
 };
 
 const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
-  // 1. ดึง Params ผ่าน Hook (Next.js 15 Safe ✅)
+  // 1. ดึง Params ผ่าน Hook
   const paramsHook = useParams();
+  const searchParams = useSearchParams(); // ✅ เพิ่ม: ดึง Query Params (?labId=...)
 
-  // 2. คำนวณ ID
+  // ✅ เพิ่ม State สำหรับเก็บ labId
+  const [labId, setLabId] = useState<number | null>(null);
+
+  // 2. คำนวณ ID ของ Flowchart
   const resolvedFlowchartId = useMemo(() => {
-    // A. ถ้ามี Props ส่งมาตรงๆ (เช่นเรียกใช้เป็น Component ย่อย) ให้ใช้ก่อน
     if (propId) return propId;
-
-    // B. ถ้าไม่มี Props ให้หาจาก URL Params ผ่าน Hook
     if (!paramsHook) return "";
 
     const findIdInObject = (obj: any) => {
       if (!obj) return null;
       if (obj.id) return obj.id;
       if (obj.flowchartId) return obj.flowchartId;
-      if (obj.labId) return obj.labId;
-      if (obj.studentlabId) return obj.studentlabId;
+      if (obj.labId) return obj.labId; // ระวัง: บางที route อาจจะเป็น [labId] แทน [flowchartId] ต้องเช็คดีๆ
       
       const keys = Object.keys(obj);
-      if (keys.length > 0) return obj[keys[0]]; // fallback
+      if (keys.length > 0) return obj[keys[0]]; 
       return null;
     };
 
-    // ❌ ลบส่วนที่เช็ค props.params ออก เพื่อแก้ Error Next.js 15 Promise
     const fromHook = findIdInObject(paramsHook);
     return Array.isArray(fromHook) ? fromHook[0] : fromHook || "";
+  }, [propId, paramsHook]);
 
-  }, [propId, paramsHook]); // dependency เหลือแค่นี้
+  // ✅ Effect ใหม่: พยายามหา Lab ID จาก URL หรือ API
+  useEffect(() => {
+    // 1. ถ้ามี ?labId=xx มากับ URL ให้ใช้เลย (เร็วสุด)
+    const paramLabId = searchParams?.get("labId");
+    if (paramLabId) {
+      setLabId(Number(paramLabId));
+      return;
+    }
 
-  // Debug
+    // 2. ถ้าไม่มีใน URL ให้ลองดึงข้อมูล Flowchart มาดูว่าผูกกับ Lab ไหน
+    if (resolvedFlowchartId) {
+      apiGetFlowchart(String(resolvedFlowchartId))
+        .then((resp) => {
+          // หา Lab ID จาก Response (เช็คหลายๆ property เผื่อโครงสร้างต่างกัน)
+          const foundLabId = 
+            resp?.labId ?? 
+            resp?.lab_id ?? 
+            resp?.assignmentId ?? 
+            resp?.assignment_id ??
+            resp?.flowchart?.labId ??
+            resp?.flowchart?.lab_id ??
+            resp?.data?.labId;
+
+          if (foundLabId) {
+            console.log("✅ [FlowchartEditor] Found Lab ID from API:", foundLabId);
+            setLabId(Number(foundLabId));
+          }
+        })
+        .catch((err) => console.warn("Could not fetch metadata for labId:", err));
+    }
+  }, [resolvedFlowchartId, searchParams]);
+
+  // Debug Flowchart ID
   useEffect(() => {
     console.log(`✅ [FlowchartEditor] Resolved ID: "${resolvedFlowchartId}"`);
   }, [resolvedFlowchartId]);
@@ -117,6 +145,11 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
     if (!resolvedFlowchartId) return;
     try {
       const payload = await apiGetFlowchart(String(resolvedFlowchartId));
+      
+      // ✅ อัปเดต Lab ID ด้วยเผื่อมีการเปลี่ยนแปลง หรือยังไม่ได้ค่า
+      const foundLabId = payload?.labId ?? payload?.lab_id ?? payload?.flowchart?.labId;
+      if (foundLabId) setLabId(Number(foundLabId));
+
       const converted = convertBackendFlowchart(payload);
       setNodes(converted.nodes);
       setEdges(converted.edges);
@@ -189,6 +222,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
       <div className="mt-20 ml-4 z-10 relative">
         <TopBarControls 
           flowchartId={Number(resolvedFlowchartId)} 
+          // ✅ ส่ง labId เข้าไป (ถ้ามีค่า)
+          labId={labId}
           onHighlightNode={highlightNode} 
         />
         {loading && <div className="mt-2 text-sm text-blue-600">Loading flowchart ID: {resolvedFlowchartId}...</div>}

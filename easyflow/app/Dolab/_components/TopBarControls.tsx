@@ -1,4 +1,3 @@
-// TopBarControls.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -8,8 +7,12 @@ import {
   apiGetFlowchart,
   apiResetFlowchart,
   apiRunTestcaseFromFlowchart,
+  apiGetLab,
   apiGetTestcases,
+  apiSubmitFlowchart,
 } from "@/app/service/FlowchartService";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react"; // <--- 1. เพิ่ม import นี้
 
 type Variable = { name: string; value: any };
 
@@ -43,19 +46,26 @@ type ExecuteResponse = {
 
 interface TopBarControlsProps {
   flowchartId?: number | string | null;
+  labId?: number | string | null;
   initialVariables?: Variable[] | null;
   forceAdvanceBP?: boolean;
   onHighlightNode?: (nodeId: string | number | null) => void;
   autoPlayInputs?: boolean;
+  classId?: number | string | null;
 }
 
 export default function TopBarControls({
   flowchartId,
+  labId,
   initialVariables = null,
   forceAdvanceBP = true,
   onHighlightNode,
   autoPlayInputs = false,
+  classId = null,
 }: TopBarControlsProps) {
+  // --- 2. เรียกใช้ Hook session ---
+  const { data: session } = useSession();
+
   // --- standard UI state ---
   const [showPopup, setShowPopup] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -79,6 +89,13 @@ export default function TopBarControls({
 
   const runAllActiveRef = useRef(false);
   const runAllWaitingForInputRef = useRef<(() => void) | null>(null);
+
+  // --- New State for Robust Lab ID Handling ---
+  const [detectedLabId, setDetectedLabId] = useState<string | number | null>(null);
+
+  // --- Submit State ---
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
 
   const togglePopup = () => setShowPopup((v) => !v);
 
@@ -104,8 +121,7 @@ export default function TopBarControls({
       try {
         setFetchingVars(true);
         const resp = await apiGetFlowchart(flowchartId);
-        console.log("[TopBarControls] fetchVars - apiGetFlowchart resp:", resp);
-
+        
         const nodes: any[] = resp?.flowchart?.nodes ?? resp?.nodes ?? [];
 
         const varNodes = nodes.filter((n) => {
@@ -161,7 +177,6 @@ export default function TopBarControls({
     try {
       if (!flowchartId) return undefined;
       const flowResp = await apiGetFlowchart(flowchartId);
-      console.log("[TopBarControls] getFirstVarNameForNode - flowResp:", flowResp);
       const nodes: any[] = flowResp?.flowchart?.nodes ?? flowResp?.nodes ?? [];
       const target = nodes.find((n) => String(n?.id) === String(nodeId));
       if (target) {
@@ -191,7 +206,6 @@ export default function TopBarControls({
     return String(v);
   };
 
-  // append outputs to chat and (for non-auto) pause until user acknowledges
   const handleResponseOutputs = (resp: ExecuteResponse | undefined | null, autoContinue = false): boolean => {
     const respOutputs = resp?.result?.context?.output ?? resp?.context?.output ?? [];
     if (Array.isArray(respOutputs) && respOutputs.length > 0) {
@@ -199,7 +213,6 @@ export default function TopBarControls({
       setChatMessages((m) => [...m, ...mapped]);
 
       if (!autoContinue) {
-        // set pending highlight and wait for user to press Acknowledge
         return true;
       }
       console.log("Auto-continue: output recorded", respOutputs);
@@ -744,7 +757,7 @@ export default function TopBarControls({
   }, [chatMessages]);
 
   // -------------------
-  // Test UI state & handler (ปรับปรุงการดึงโจทย์ + testcase แบบ dynamic ตาม flowchartId)
+  // Test UI state & handler (ปรับปรุงการดึงโจทย์ด้วย apiGetLab)
   // -------------------
   type TestLevel = "error" | "warning" | "info" | "success";
   const [testResults, setTestResults] = useState<Record<string, { level: TestLevel; text: string }[]>>({});
@@ -792,9 +805,10 @@ export default function TopBarControls({
     return null;
   };
 
-  // ดึงรายละเอียดโจทย์และ Testcases ตาม flowchartId (robust mapping)
+  // ดึงรายละเอียดโจทย์และ Testcases ตาม flowchartId หรือ labId
   useEffect(() => {
-    if (!flowchartId) {
+    // ถ้าไม่มี ID อะไรเลยให้ Reset
+    if (!flowchartId && !labId && !detectedLabId) {
       setProblemDetail(null);
       setLabTestcases([]);
       return;
@@ -804,20 +818,23 @@ export default function TopBarControls({
     const loadTestcases = async () => {
       setLoadingProblem(true);
       setLoadingTestcases(true);
-      
 
       try {
-        // 1. ดึงข้อมูล Flowchart (เก็บทั้ง fullResp และ nested flowchart ถ้ามี)
-        const fullResp = await apiGetFlowchart(flowchartId);
-        const nestedFlow = fullResp?.flowchart ?? null;
+        let fullResp: any = null;
+        let nestedFlow: any = null;
 
-        // debug log (ช่วยดูว่าข้อมูลอยู่ตรงไหน)
-        console.log("loadTestcases: flowResp (full):", fullResp);
-        console.log("loadTestcases: nestedFlow (flowchart):", nestedFlow);
-        
+        // 1. ถ้ามี flowchartId ให้ดึงข้อมูล Flowchart ก่อน เผื่อมีรายละเอียด Lab ติดมา
+        if (flowchartId) {
+            try {
+                fullResp = await apiGetFlowchart(flowchartId);
+                nestedFlow = fullResp?.flowchart ?? null;
+            } catch(e) {
+                console.warn("Could not fetch flowchart details", e);
+            }
+        }
 
-        // 2. หา ID ของ Lab หรือ Assignment (รองรับหลายฟอร์แมต และทั้ง top-level / nested)
-        let targetLabId =
+        // 2. Resolve Target Lab ID
+        let targetLabId = detectedLabId ?? labId ??
           fullResp?.labId ??
           fullResp?.lab_id ??
           fullResp?.assignmentId ??
@@ -837,17 +854,23 @@ export default function TopBarControls({
           fullResp?.raw?.lab_id ??
           nestedFlow?.raw?.labId ??
           null;
-          console.log("Resolved targetLabId for testcases:", targetLabId);
 
+        // Try parsing 'raw' if it is a string JSON
+        if (!targetLabId && fullResp?.raw && typeof fullResp.raw === 'string') {
+             try {
+                const parsedRaw = JSON.parse(fullResp.raw);
+                if (parsedRaw.labId) targetLabId = parsedRaw.labId;
+             } catch {}
+        }
 
         // If still null, do a deeper scan
-        if (!targetLabId) {
+        if (!targetLabId && fullResp) {
           const found = findLabLikeId(fullResp) ?? findLabLikeId(nestedFlow);
           if (found) targetLabId = found;
         }
 
-        // 3. เซ็ตข้อมูลโจทย์ (Title/Description) จากทั้งสองที่
-        const title =
+        // 3. เริ่มต้นค่า Title/Desc จากข้อมูล Flowchart ที่มีอยู่แล้ว (Fallback)
+        let title =
           nestedFlow?.assignment?.title ??
           nestedFlow?.lab?.title ??
           nestedFlow?.title ??
@@ -858,7 +881,8 @@ export default function TopBarControls({
           fullResp?.name ??
           fullResp?.meta?.title ??
           null;
-        const desc =
+        
+        let desc =
           nestedFlow?.assignment?.description ??
           nestedFlow?.assignment?.detail ??
           nestedFlow?.lab?.description ??
@@ -871,43 +895,54 @@ export default function TopBarControls({
           fullResp?.meta?.description ??
           null;
 
-        if (mounted) setProblemDetail({ title: title ?? "โจทย์ Lab", description: desc ?? "" });
+        if (targetLabId && !detectedLabId) {
+             setDetectedLabId(targetLabId);
+        }
 
-        // 4. ถ้ามี ID ให้ไปดึง Testcases (apiGetTestcases อาจ accept labId/assignmentId)
+        // 4. ถ้ามี Lab ID: ใช้ apiGetLab เพื่อดึงข้อมูล Lab เต็มๆ (ชื่อ, โจทย์, Testcases)
         if (targetLabId) {
           try {
-            // ensure numeric if looks like number
             const normalizedLabId =
               typeof targetLabId === "string" && /^\d+$/.test(String(targetLabId)) ? Number(String(targetLabId)) : targetLabId;
-            console.log("Calling apiGetTestcases with id:", normalizedLabId);
-            const resp = await apiGetTestcases(normalizedLabId);
-            console.log("apiGetTestcases response:", resp);
-            let tcs: any[] = [];
+            
+            const resp = await apiGetLab(normalizedLabId);
+            
+            // ข้อมูลมักจะอยู่ในรูปแบบ { lab: { ... } } หรือ raw object
+            // พยายามดึง lab object ออกมาก่อน
+            const labObj = resp?.lab ?? resp?.data ?? resp;
 
-            if (Array.isArray(resp)) tcs = resp;
-            else if (Array.isArray(resp?.data)) tcs = resp.data;
-            else if (Array.isArray(resp?.testcases)) tcs = resp.testcases;
-            else if (Array.isArray(resp?.result)) tcs = resp.result;
-            else if (Array.isArray(resp?.items)) tcs = resp.items;
-            else if (resp?.data?.testcases && Array.isArray(resp.data.testcases)) tcs = resp.data.testcases;
-            // sometimes nested under raw
-            else if (resp?.raw?.testcases && Array.isArray(resp.raw.testcases)) tcs = resp.raw.testcases;
+            // --- แก้ไข: Update Title/Description ให้ครอบคลุมทุก case ---
+            if (labObj) {
+                // เช็ค title ในหลายๆ จุด
+                if (labObj.title) title = labObj.title;
+                else if (labObj.assignment?.title) title = labObj.assignment.title;
+                else if (labObj.name) title = labObj.name;
+                else if (resp?.title) title = resp.title; // บางทีอยู่นอกสุด
 
-            // final fallback: try to find first array-valued prop
-            if (!Array.isArray(tcs) && typeof resp === "object" && resp !== null) {
-              const arrProp = Object.keys(resp).find((k) => Array.isArray((resp as any)[k]));
-              if (arrProp) tcs = (resp as any)[arrProp];
+                // เช็ค description ในหลายๆ จุด
+                if (labObj.description) desc = labObj.description;
+                else if (labObj.detail) desc = labObj.detail;
+                else if (labObj.assignment?.description) desc = labObj.assignment.description;
+                else if (resp?.description) desc = resp.description; // บางทีอยู่นอกสุด
             }
 
-            if (!Array.isArray(tcs)) tcs = [];
+            // Extract Testcases
+            let tcs: any[] = [];
+            if (labObj && Array.isArray(labObj.testcases)) {
+                tcs = labObj.testcases;
+            } else if (Array.isArray(labObj)) {
+                tcs = labObj;
+            } else if (resp?.testcases && Array.isArray(resp.testcases)) {
+                tcs = resp.testcases;
+            }
 
             if (mounted) setLabTestcases(tcs);
           } catch (err) {
-            console.warn("apiGetTestcases failed", err);
+            console.warn("apiGetLab failed", err);
             if (mounted) setLabTestcases([]);
           }
         } else {
-          // ถ้าไม่เจอ ID: ลองดึง testcases จาก flowResp โดยตรง (บางระบบ embed อยู่)
+          // ถ้าไม่เจอ Lab ID: ลองดึง testcases จาก flowResp (Legacy)
           const embeddedTcs =
             nestedFlow?.testcases ??
             nestedFlow?.lab?.testcases ??
@@ -922,6 +957,9 @@ export default function TopBarControls({
             if (mounted) setLabTestcases([]);
           }
         }
+
+        if (mounted) setProblemDetail({ title: title ?? "โจทย์ Lab", description: desc ?? "" });
+
       } catch (err) {
         console.warn("Failed to load data", err);
         if (mounted) {
@@ -940,178 +978,165 @@ export default function TopBarControls({
     return () => {
       mounted = false;
     };
-  }, [flowchartId]);
+  }, [flowchartId, labId, detectedLabId]);
 
-  // --- Run tests handler (แทนของเดิมด้วยอันนี้) ---
-const handleRunTests = async () => {
-  if (!flowchartId) return;
-  setRunningTests(true);
-  setTestResults({});
+  // --- Run tests handler ---
+  const handleRunTests = async () => {
+    if (!flowchartId) return;
+    setRunningTests(true);
+    setTestResults({});
 
-  try {
-    const data = await apiRunTestcaseFromFlowchart(flowchartId);
-    console.log("apiRunTestcaseFromFlowchart raw response:", data);
+    try {
+      const data = await apiRunTestcaseFromFlowchart(flowchartId);
+      console.log("apiRunTestcaseFromFlowchart raw response:", data);
 
-    // พยายามหา rawResults ในที่ต่าง ๆ
-    const rawResults =
-      data?.session?.results ??
-      data?.results ??
-      data?.data?.results ??
-      data?.testcases ??
-      data?.session?.testcases ??
-      data?.session?.results ??
-      [];
-
-    if (!Array.isArray(rawResults)) {
-      console.warn("runTests: rawResults is not an array", rawResults);
-      setRunningTests(false);
-      return;
-    }
-
-    // สร้าง mapping ของผลทดสอบ (เหมือนเดิม)
-    const newResults: Record<string, { level: TestLevel; text: string }[]> = {};
-
-    rawResults.forEach((r: any, idx: number) => {
-      const rawId =
-        r.testcaseId ??
-        r.testcase_id ??
-        r.id ??
-        r.tcId ??
-        r.testcase?.id ??
-        r.testcase?.testcaseId ??
-        (typeof r === "object" && r?.inputVal ? idx + 1 : undefined);
-
-      const tcId = rawId ?? idx + 1;
-
-      let statusRaw =
-        r.status ??
-        r.result?.status ??
-        r.statusCode ??
-        r.status_code ??
-        r.state ??
-        r.outcome ??
-        r.verdict ??
-        r.status?.name ??
-        r.status?.code ??
-        null;
-
-      let status = "UNKNOWN";
-      if (statusRaw === null || typeof statusRaw === "undefined") {
-        status = "UNKNOWN";
-      } else if (typeof statusRaw === "string" || typeof statusRaw === "number") {
-        status = String(statusRaw).toUpperCase();
-      } else if (typeof statusRaw === "object") {
-        status = (statusRaw.name ?? statusRaw.code ?? JSON.stringify(statusRaw)).toString().toUpperCase();
+      const runLabId = data?.labId ?? data?.lab_id ?? data?.session?.labId ?? data?.session?.lab_id;
+      if (runLabId) {
+          setDetectedLabId(runLabId);
       }
 
-      const errorMessage =
-        r.errorMessage ??
-        r.error_message ??
-        r.error ??
-        (typeof r.error === "object" ? r.error?.message ?? JSON.stringify(r.error) : undefined) ??
-        r.message ??
-        r.msg ??
-        (Array.isArray(r.errors) ? r.errors.join("; ") : undefined) ??
-        null;
+      const rawResults =
+        data?.session?.results ??
+        data?.results ??
+        data?.data?.results ??
+        data?.testcases ??
+        data?.session?.testcases ??
+        data?.session?.results ??
+        [];
 
-      const expected =
-        r.expected ??
-        r.expectedVal ??
-        r.expected_val ??
-        r.expectedOutput ??
-        r.expected_output ??
-        r.expectedResult ??
-        r.expected_result ??
-        r.expected?.output ??
-        null;
-      const actual =
-        r.actual ??
-        r.actualVal ??
-        r.actual_val ??
-        r.output ??
-        r.outputVal ??
-        r.output_val ??
-        r.resultOutput ??
-        r.result_output ??
-        null;
-
-      let level: TestLevel = "info";
-      if (["PASS", "PASSED", "OK", "SUCCESS"].includes(status)) level = "success";
-      else if (["FAIL", "FAILED", "ERROR", "INPUT_MISSING", "TIMEOUT", "WRONG"].includes(status)) level = "error";
-      else if (["WARN", "WARNING"].includes(status)) level = "warning";
-
-      const messages: { level: TestLevel; text: string }[] = [];
-      messages.push({ level, text: `${status}` });
-
-      if (errorMessage) {
-        messages.push({ level: "error", text: String(errorMessage) });
+      if (!Array.isArray(rawResults)) {
+        console.warn("runTests: rawResults is not an array", rawResults);
+        setRunningTests(false);
+        return;
       }
 
-      if (actual !== null && typeof actual !== "undefined") {
-        try {
-          const aStr = Array.isArray(actual) ? actual.join(", ") : String(actual);
-          messages.push({ level: "info", text: `Actual: ${aStr}` });
-        } catch {
-          messages.push({ level: "info", text: `Actual: ${String(actual)}` });
+      const newResults: Record<string, { level: TestLevel; text: string }[]> = {};
+
+      rawResults.forEach((r: any, idx: number) => {
+        const rawId =
+          r.testcaseId ??
+          r.testcase_id ??
+          r.id ??
+          r.tcId ??
+          r.testcase?.id ??
+          r.testcase?.testcaseId ??
+          (typeof r === "object" && r?.inputVal ? idx + 1 : undefined);
+
+        const tcId = rawId ?? idx + 1;
+
+        let statusRaw =
+          r.status ??
+          r.result?.status ??
+          r.statusCode ??
+          r.status_code ??
+          r.state ??
+          r.outcome ??
+          r.verdict ??
+          r.status?.name ??
+          r.status?.code ??
+          null;
+
+        let status = "UNKNOWN";
+        if (statusRaw === null || typeof statusRaw === "undefined") {
+          status = "UNKNOWN";
+        } else if (typeof statusRaw === "string" || typeof statusRaw === "number") {
+          status = String(statusRaw).toUpperCase();
+        } else if (typeof statusRaw === "object") {
+          status = (statusRaw.name ?? statusRaw.code ?? JSON.stringify(statusRaw)).toString().toUpperCase();
         }
-      }
 
-      // alternate keys
-      const altKeys = new Set<string>();
-      altKeys.add(String(tcId));
-      if (r.testcaseId) altKeys.add(String(r.testcaseId));
-      if (r.testcase_id) altKeys.add(String(r.testcase_id));
-      if (r.id) altKeys.add(String(r.id));
-      if (r.tcId) altKeys.add(String(r.tcId));
-      if (r.testcase?.id) altKeys.add(String(r.testcase.id));
-      if (r.testcase?.testcaseId) altKeys.add(String(r.testcase.testcaseId));
-      altKeys.add(String(idx + 1));
+        const errorMessage =
+          r.errorMessage ??
+          r.error_message ??
+          r.error ??
+          (typeof r.error === "object" ? r.error?.message ?? JSON.stringify(r.error) : undefined) ??
+          r.message ??
+          r.msg ??
+          (Array.isArray(r.errors) ? r.errors.join("; ") : undefined) ??
+          null;
 
-      altKeys.forEach((k) => {
-        newResults[k] = messages;
-      });
-    });
+        const actual =
+          r.actual ??
+          r.actualVal ??
+          r.actual_val ??
+          r.output ??
+          r.outputVal ??
+          r.output_val ??
+          r.resultOutput ??
+          r.result_output ??
+          null;
 
-    console.log("Mapped test results:", newResults);
+        let level: TestLevel = "info";
+        if (["PASS", "PASSED", "OK", "SUCCESS"].includes(status)) level = "success";
+        else if (["FAIL", "FAILED", "ERROR", "INPUT_MISSING", "TIMEOUT", "WRONG"].includes(status)) level = "error";
+        else if (["WARN", "WARNING"].includes(status)) level = "warning";
 
-    // ถ้า our labTestcases ยังว่างอยู่ ให้สร้างรายการแบบย่อจากผลทดสอบ
-    if ((!labTestcases || labTestcases.length === 0) && Object.keys(newResults).length > 0) {
-      const synthetic: any[] = [];
-      const keys = Array.from(new Set(Object.keys(newResults))).sort((a, b) => {
-        // พยายาม sort ตัวเลขก่อน ถ้าเป็นตัวเลข
-        const na = Number(a);
-        const nb = Number(b);
-        if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
-        return a.localeCompare(b);
-      });
+        const messages: { level: TestLevel; text: string }[] = [];
+        messages.push({ level, text: `${status}` });
 
-      keys.forEach((k) => {
-        // หาข้อความ Actual/Expected ใน newResults[k] (ถ้ามี)
-        const msgs = newResults[k];
-        const actualMsg = msgs.find((m) => m.text?.startsWith("Actual:"))?.text?.replace(/^Actual:\s*/, "") ?? null;
-        // สร้าง testcase แบบย่อ
-        synthetic.push({
-          id: k,
-          testcaseId: k,
-          inputVal: null,
-          outputVal: actualMsg ?? null,
-          score: 0,
-          // keep original object for debugging if needed
-          __generatedFromResults: true,
+        if (errorMessage) {
+          messages.push({ level: "error", text: String(errorMessage) });
+        }
+
+        if (actual !== null && typeof actual !== "undefined") {
+          try {
+            const aStr = Array.isArray(actual) ? actual.join(", ") : String(actual);
+            messages.push({ level: "info", text: `Actual: ${aStr}` });
+          } catch {
+            messages.push({ level: "info", text: `Actual: ${String(actual)}` });
+          }
+        }
+
+        const altKeys = new Set<string>();
+        altKeys.add(String(tcId));
+        if (r.testcaseId) altKeys.add(String(r.testcaseId));
+        if (r.testcase_id) altKeys.add(String(r.testcase_id));
+        if (r.id) altKeys.add(String(r.id));
+        if (r.tcId) altKeys.add(String(r.tcId));
+        if (r.testcase?.id) altKeys.add(String(r.testcase.id));
+        if (r.testcase?.testcaseId) altKeys.add(String(r.testcase.testcaseId));
+        altKeys.add(String(idx + 1));
+
+        altKeys.forEach((k) => {
+          newResults[k] = messages;
         });
       });
 
-      console.log("Generated synthetic labTestcases from results:", synthetic);
-      setLabTestcases(synthetic);
-    }
+      console.log("Mapped test results:", newResults);
 
-    setTestResults(newResults);
-  } catch (err) {
-    console.error("Failed to run tests:", err);
-  } finally {
-    setRunningTests(false);
-  }
-};
+      if ((!labTestcases || labTestcases.length === 0) && !runLabId && Object.keys(newResults).length > 0) {
+        const synthetic: any[] = [];
+        const keys = Array.from(new Set(Object.keys(newResults))).sort((a, b) => {
+          const na = Number(a);
+          const nb = Number(b);
+          if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+          return a.localeCompare(b);
+        });
+
+        keys.forEach((k) => {
+          const msgs = newResults[k];
+          const actualMsg = msgs.find((m) => m.text?.startsWith("Actual:"))?.text?.replace(/^Actual:\s*/, "") ?? null;
+          synthetic.push({
+            id: k,
+            testcaseId: k,
+            inputVal: null,
+            outputVal: actualMsg ?? null,
+            score: 0,
+            __generatedFromResults: true,
+          });
+        });
+
+        console.log("Generated synthetic labTestcases from results:", synthetic);
+        setLabTestcases(synthetic);
+      }
+
+      setTestResults(newResults);
+    } catch (err) {
+      console.error("Failed to run tests:", err);
+    } finally {
+      setRunningTests(false);
+    }
+  };
 
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
     const base = "inline-block text-xs px-2 py-1 rounded-md mb-2";
@@ -1193,7 +1218,102 @@ const handleRunTests = async () => {
     return arr.reduce((acc, val) => (Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val)), []);
   };
 
-  // --- Render UI (เหมือนเดิม) ---
+  // ---------------------------
+  // NEW: Submit flowchart handler (Updated)
+  // ---------------------------
+
+  const readUserIdFromLocalStorage = (): number | null => {
+    // ยังคงเก็บไว้เป็น Fallback เผื่อระบบเก่า
+    if (typeof window === "undefined") return null;
+    try {
+      const candidateKeys = ["userId", "user_id", "uid", "id", "user"];
+      for (const k of candidateKeys) {
+        const raw = localStorage.getItem(k);
+        if (!raw) continue;
+        if (/^\d+$/.test(raw.trim())) return Number(raw.trim());
+        try {
+          const parsed = JSON.parse(raw);
+          const id = parsed?.id ?? parsed?.userId ?? parsed?.user_id ?? parsed?.sub ?? parsed?.user?.id ?? null;
+          if (id) return Number(id);
+        } catch {}
+      }
+    } catch {}
+    return null;
+  };
+
+const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setErrorMsg(null);
+
+    try {
+      // 1. หา User ID
+      let uid: number | string | null = null;
+      if (session?.user) {
+        // @ts-ignore
+        uid = session.user.id ?? session.user.userId ?? session.user.sub ?? null;
+      }
+      if (!uid) {
+        uid = readUserIdFromLocalStorage();
+      }
+      if (!uid) {
+         const manualId = window.prompt("ไม่พบ User ID อัตโนมัติ กรุณากรอก ID ของคุณ (ตัวเลข):");
+         if (manualId && manualId.trim() !== "") {
+            uid = manualId.trim();
+         } else {
+            alert("ยกเลิกการส่งงาน: จำเป็นต้องมี User ID");
+            setSubmitting(false);
+            return;
+         }
+      }
+
+      const finalUserId = Number(uid);
+
+      if (!finalUserId || isNaN(finalUserId)) {
+        alert("User ID ไม่ถูกต้อง");
+        setSubmitting(false);
+        return;
+      }
+      if (!flowchartId) {
+        alert("ไม่พบ Flowchart ID (กรุณา Save งานก่อนส่ง)");
+        setSubmitting(false);
+        return;
+      }
+
+      // --------------------------------------------------------
+      // ตรวจสอบ ID ปลายทางที่จะ Redirect (หาให้เจอก่อนส่ง)
+      // --------------------------------------------------------
+      const targetId = labId ?? detectedLabId ?? classId;
+      console.log(`Submitting FlowchartID: ${flowchartId}, UserID: ${finalUserId}, TargetRedirectID: ${targetId}`);
+
+      // 2. เรียก API ส่งงาน
+      const resp = await apiSubmitFlowchart(Number(flowchartId), finalUserId);
+      console.log("✅ Submit Success:", resp);
+
+      // 3. Redirect
+      if (targetId) {
+        // ถ้าเจอ ID -> ไปหน้า Lab นั้น
+        router.push(`/Studentlab/${targetId}`);
+      } else {
+        // ❌ ถ้าไม่เจอ ID -> ห้ามไป /Studentlab เพราะจะเจอ 404
+        // ให้กลับหน้าแรก หรือแจ้งเตือนแทน
+        console.warn("ไม่พบ Lab ID หรือ Class ID สำหรับ Redirect");
+        alert("ส่งงานสำเร็จ! (แต่ไม่สามารถกลับไปหน้ารายวิชาได้เนื่องจากไม่พบ ID กรุณากดปุ่ม Back ของ Browser)");
+        // หรือถ้าต้องการให้กลับหน้าแรกสุดให้ใช้:
+        // router.push("/"); 
+      }
+
+    } catch (err) {
+      console.error("❌ Submit Failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      alert(`ส่งงานไม่สำเร็จ: ${message}`);
+      setErrorMsg(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // --- Render UI ---
   return (
     <div className="absolute z-1 pt-4">
       {/* Control bar */}
@@ -1332,7 +1452,7 @@ const handleRunTests = async () => {
                   String(tc.testcase_id ?? ""),
                   String(tc.tcId ?? ""),
                   String(index + 1),
-                ].filter((k) => k !== ""); // remove empty strings
+                ].filter((k) => k !== "");
 
                 let matchedKey: string | null = null;
                 for (const k of possibleKeys) {
@@ -1354,10 +1474,6 @@ const handleRunTests = async () => {
                         </div>
 
                         <div className="mt-2 text-sm text-gray-500">Output: <span className="ml-1 text-gray-700">{outputDisplay}</span></div>
-
-                        {Array.isArray(tc.inHiddenVal) && tc.inHiddenVal.length > 0 && (
-                          <div className="mt-1 text-xs text-gray-400">Hidden Inputs: {tc.inHiddenVal.join(", ")}</div>
-                        )}
                       </div>
 
                       <div className="flex gap-4">
@@ -1408,7 +1524,13 @@ const handleRunTests = async () => {
                 {runningTests ? "Testing..." : "Test"}
               </button>
 
-              <button className="mt-0 bg-blue-900 text-white text-sm px-6 py-2 rounded-full hover:bg-blue-800 transition-colors">Submit</button>
+              <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className={`mt-0 text-sm px-6 py-2 rounded-full text-white transition-colors ${submitting ? "bg-gray-400 cursor-not-allowed" : "bg-blue-900 hover:bg-blue-800"}`}
+              >
+                {submitting ? "Submitting..." : "Submit"}
+              </button>
             </div>
           </div>
         </div>

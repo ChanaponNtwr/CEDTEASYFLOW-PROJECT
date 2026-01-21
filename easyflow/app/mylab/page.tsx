@@ -25,7 +25,6 @@ type LocalLab = {
   createdAt?: string;
   author?: string; 
   teacher?: string;
-  // [Added] เพิ่ม field นี้เพื่อใช้เช็คเจ้าของ
   authorEmail?: string; 
 };
 
@@ -56,35 +55,30 @@ function calcTotalScore(testcases?: any[]) {
 }
 
 function Mylab() {
-  const { data: session, status } = useSession(); // เพิ่ม status เพื่อเช็ค loading session
+  const { data: session, status } = useSession();
   const [labs, setLabs] = useState<LocalLab[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ดึง Email ของคนปัจจุบัน
   const currentUserEmail = session?.user?.email;
 
   /* =======================
-      Load labs
-  ======================= */
+       Load labs
+   ======================= */
   useEffect(() => {
-    // ถ้า Session ยังโหลดไม่เสร็จ หรือไม่มี User ให้ไม่ทำอะไร (หรือเคลียร์ Lab)
     if (status === "loading") return;
     if (!currentUserEmail) {
-        setLabs([]); // ถ้าไม่ได้ login ให้ไม่แสดงอะไรเลย
+        setLabs([]);
         return;
     }
 
     const stored = localStorage.getItem("labs");
     const allLabs: LocalLab[] = stored ? JSON.parse(stored) : [];
 
-    // [KEY CHANGE] กรองเฉพาะ Lab ที่ authorEmail ตรงกับคน Login
-    // หมายเหตุ: คุณต้องแน่ใจว่าตอน Create Lab คุณได้บันทึก authorEmail ลงไปใน localStorage ด้วย
     const myLabs = allLabs.filter(lab => lab.authorEmail === currentUserEmail);
 
     setLabs(myLabs);
 
-    // ดึงข้อมูลอัปเดตจาก Server (เฉพาะของ User นี้)
     const remoteLabs = myLabs.filter(
       (l) => l.labId !== undefined && l.labId !== null
     );
@@ -111,17 +105,10 @@ function Mylab() {
 
         if (!mounted) return;
 
-        // Note: เราจะไม่อัปเดตกลับไปทับ LocalStorage ทั้งก้อนแบบเดิมตรงๆ 
-        // เพราะอาจจะไปลบของ User อื่นทิ้ง (ถ้าใช้ browser เดียวกัน)
-        // แต่วิธีที่ง่ายที่สุดคือ อัปเดต state ปัจจุบัน และ อัปเดต localStorage เฉพาะส่วนของ User นี้
-        
-        // 1. ดึงข้อมูลทั้งหมดจาก LocalStorage อีกรอบเพื่อความชัวร์
         const currentLocalStorageAll = stored ? JSON.parse(stored) : [];
         let anyUpdated = false;
 
-        // 2. Map เพื่อ update ข้อมูลใหม่
         const updatedAllLabs = currentLocalStorageAll.map((localLab: LocalLab) => {
-            // เช็คว่าเป็น Lab ของเรา และ ID ตรงกับที่ fetch มาไหม
             const matchResult = results.find(r => r.ok && String(r.labId) === String(localLab.labId));
             
             if (matchResult && matchResult.remoteLab) {
@@ -135,11 +122,8 @@ function Mylab() {
         });
 
         if (anyUpdated) {
-          // Update State ที่แสดงผล (กรองเฉพาะของเรา)
           const updatedMyLabs = updatedAllLabs.filter((l: LocalLab) => l.authorEmail === currentUserEmail);
           setLabs(updatedMyLabs);
-
-          // Save กลับลง LocalStorage (เก็บของทุกคนไว้เหมือนเดิม อัปเดตแค่ค่าที่เปลี่ยน)
           localStorage.setItem("labs", JSON.stringify(updatedAllLabs));
         }
 
@@ -156,12 +140,11 @@ function Mylab() {
     return () => {
       mounted = false;
     };
-  // เพิ่ม dependency: currentUserEmail เพื่อให้ useEffect รันใหม่เมื่อเปลี่ยน User
   }, [currentUserEmail, status]); 
 
   /* =======================
-      Sort newest first
-  ======================= */
+       Sort newest first
+   ======================= */
   const displayLabs = [...labs].sort((a, b) => {
     const da = new Date(a.createdAt ?? a.id ?? 0).getTime();
     const db = new Date(b.createdAt ?? b.id ?? 0).getTime();
@@ -222,7 +205,6 @@ function Mylab() {
                   const testcases = lab.testcases ?? lab.testCases ?? [];
                   const totalScore = calcTotalScore(testcases);
 
-                  // ใช้ชื่อจาก Lab object ก่อน ถ้าไม่มีให้ fallback
                   const teacherName = 
                     lab.author || 
                     lab.teacher || 
@@ -230,9 +212,10 @@ function Mylab() {
                     "Unknown Teacher";
 
                   return (
+                    // ✅ แก้ไขตรงนี้: เปลี่ยน href ให้เป็น Dynamic Route
                     <Link
                       key={String(labId)}
-                      href={`/labinfo?labId=${labId}`}
+                      href={`/labinfo/${labId}`} 
                       className="block"
                     >
                       <ClassCard
