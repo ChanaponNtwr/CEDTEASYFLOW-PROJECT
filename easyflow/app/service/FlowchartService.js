@@ -768,3 +768,97 @@ export const apiGetTrialShapeRemaining = async (trialId) => {
     throw err;
   }
 };
+
+
+// ---------------------------------------------------------
+// Submission APIs (ส่งงาน / ตรวจงาน)
+// ---------------------------------------------------------
+
+/**
+ * ส่งงาน (Submit Flowchart)
+ * Endpoint: POST /api/submission/submit
+ */
+export const apiSubmitFlowchart = async (flowchartId, userId) => {
+  if (!flowchartId || !userId) {
+    throw new Error("apiSubmitFlowchart: missing flowchartId or userId");
+  }
+
+  try {
+    const payload = {
+      flowchartId: Number(flowchartId),
+      userId: Number(userId),
+    };
+
+    const resp = await axios.post(`${BASE_URL}/api/submission/submit`, payload);
+    return resp.data; // Expected: { ok: true, summary: {...}, normalizedResults: [...] }
+  } catch (err) {
+    console.error("apiSubmitFlowchart error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ดึงรายการส่งงานของ Lab นั้นๆ (List Submissions by Lab)
+ * Endpoint: GET /api/submission/lab/{labId}
+ */
+export const apiGetSubmissionsByLab = async (labId) => {
+  if (!labId) {
+    throw new Error("apiGetSubmissionsByLab: missing labId");
+  }
+
+  try {
+    const resp = await axios.get(`${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}`);
+    return resp.data; // Expected: List of submissions or specific submission structure
+  } catch (err) {
+    console.error("apiGetSubmissionsByLab error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ยืนยัน/อนุมัติงาน (Confirm Submission)
+ * Endpoint: POST /api/submission/lab/{labId}/user/{userId}/confirm
+ */
+export const apiConfirmSubmission = async (labId, studentUserId, reviewerId) => {
+  if (!labId || !studentUserId || !reviewerId) {
+    throw new Error("apiConfirmSubmission: missing required parameters");
+  }
+
+  try {
+    const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}/user/${encodeURIComponent(studentUserId)}/confirm`;
+    
+    const payload = { 
+      reviewerId: Number(reviewerId) 
+    };
+
+    const resp = await axios.post(url, payload);
+    return resp.data;
+  } catch (err) {
+    console.error("apiConfirmSubmission error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ปฏิเสธงาน (Reject Submission)
+ * Endpoint: POST /api/submission/lab/{labId}/user/{userId}/reject
+ */
+export const apiRejectSubmission = async (labId, studentUserId, reviewerId) => {
+  if (!labId || !studentUserId || !reviewerId) {
+    throw new Error("apiRejectSubmission: missing required parameters");
+  }
+
+  try {
+    const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}/user/${encodeURIComponent(studentUserId)}/reject`;
+    
+    const payload = { 
+      reviewerId: Number(reviewerId) 
+    };
+
+    const resp = await axios.post(url, payload);
+    return resp.data;
+  } catch (err) {
+    console.error("apiRejectSubmission error:", err?.response ?? err);
+    throw err;
+  }
+};

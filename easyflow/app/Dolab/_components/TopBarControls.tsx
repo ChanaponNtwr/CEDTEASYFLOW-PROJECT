@@ -1,4 +1,3 @@
-// TopBarControls.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -8,9 +7,12 @@ import {
   apiGetFlowchart,
   apiResetFlowchart,
   apiRunTestcaseFromFlowchart,
-  apiGetLab, // ใช้ apiGetLab เป็นหลักในการดึงโจทย์
+  apiGetLab,
   apiGetTestcases,
+  apiSubmitFlowchart,
 } from "@/app/service/FlowchartService";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react"; // <--- 1. เพิ่ม import นี้
 
 type Variable = { name: string; value: any };
 
@@ -49,6 +51,7 @@ interface TopBarControlsProps {
   forceAdvanceBP?: boolean;
   onHighlightNode?: (nodeId: string | number | null) => void;
   autoPlayInputs?: boolean;
+  classId?: number | string | null;
 }
 
 export default function TopBarControls({
@@ -58,7 +61,11 @@ export default function TopBarControls({
   forceAdvanceBP = true,
   onHighlightNode,
   autoPlayInputs = false,
+  classId = null,
 }: TopBarControlsProps) {
+  // --- 2. เรียกใช้ Hook session ---
+  const { data: session } = useSession();
+
   // --- standard UI state ---
   const [showPopup, setShowPopup] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -85,6 +92,10 @@ export default function TopBarControls({
 
   // --- New State for Robust Lab ID Handling ---
   const [detectedLabId, setDetectedLabId] = useState<string | number | null>(null);
+
+  // --- Submit State ---
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
 
   const togglePopup = () => setShowPopup((v) => !v);
 
@@ -852,8 +863,6 @@ export default function TopBarControls({
              } catch {}
         }
 
-        console.log("Resolved targetLabId for testcases:", targetLabId, "detected:", detectedLabId, "from props:", labId);
-
         // If still null, do a deeper scan
         if (!targetLabId && fullResp) {
           const found = findLabLikeId(fullResp) ?? findLabLikeId(nestedFlow);
@@ -886,13 +895,16 @@ export default function TopBarControls({
           fullResp?.meta?.description ??
           null;
 
+        if (targetLabId && !detectedLabId) {
+             setDetectedLabId(targetLabId);
+        }
+
         // 4. ถ้ามี Lab ID: ใช้ apiGetLab เพื่อดึงข้อมูล Lab เต็มๆ (ชื่อ, โจทย์, Testcases)
         if (targetLabId) {
           try {
             const normalizedLabId =
               typeof targetLabId === "string" && /^\d+$/.test(String(targetLabId)) ? Number(String(targetLabId)) : targetLabId;
             
-            console.log("Calling apiGetLab with id:", normalizedLabId);
             const resp = await apiGetLab(normalizedLabId);
             
             // ข้อมูลมักจะอยู่ในรูปแบบ { lab: { ... } } หรือ raw object
@@ -1206,6 +1218,101 @@ export default function TopBarControls({
     return arr.reduce((acc, val) => (Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val)), []);
   };
 
+  // ---------------------------
+  // NEW: Submit flowchart handler (Updated)
+  // ---------------------------
+
+  const readUserIdFromLocalStorage = (): number | null => {
+    // ยังคงเก็บไว้เป็น Fallback เผื่อระบบเก่า
+    if (typeof window === "undefined") return null;
+    try {
+      const candidateKeys = ["userId", "user_id", "uid", "id", "user"];
+      for (const k of candidateKeys) {
+        const raw = localStorage.getItem(k);
+        if (!raw) continue;
+        if (/^\d+$/.test(raw.trim())) return Number(raw.trim());
+        try {
+          const parsed = JSON.parse(raw);
+          const id = parsed?.id ?? parsed?.userId ?? parsed?.user_id ?? parsed?.sub ?? parsed?.user?.id ?? null;
+          if (id) return Number(id);
+        } catch {}
+      }
+    } catch {}
+    return null;
+  };
+
+const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setErrorMsg(null);
+
+    try {
+      // 1. หา User ID
+      let uid: number | string | null = null;
+      if (session?.user) {
+        // @ts-ignore
+        uid = session.user.id ?? session.user.userId ?? session.user.sub ?? null;
+      }
+      if (!uid) {
+        uid = readUserIdFromLocalStorage();
+      }
+      if (!uid) {
+         const manualId = window.prompt("ไม่พบ User ID อัตโนมัติ กรุณากรอก ID ของคุณ (ตัวเลข):");
+         if (manualId && manualId.trim() !== "") {
+            uid = manualId.trim();
+         } else {
+            alert("ยกเลิกการส่งงาน: จำเป็นต้องมี User ID");
+            setSubmitting(false);
+            return;
+         }
+      }
+
+      const finalUserId = Number(uid);
+
+      if (!finalUserId || isNaN(finalUserId)) {
+        alert("User ID ไม่ถูกต้อง");
+        setSubmitting(false);
+        return;
+      }
+      if (!flowchartId) {
+        alert("ไม่พบ Flowchart ID (กรุณา Save งานก่อนส่ง)");
+        setSubmitting(false);
+        return;
+      }
+
+      // --------------------------------------------------------
+      // ตรวจสอบ ID ปลายทางที่จะ Redirect (หาให้เจอก่อนส่ง)
+      // --------------------------------------------------------
+      const targetId = labId ?? detectedLabId ?? classId;
+      console.log(`Submitting FlowchartID: ${flowchartId}, UserID: ${finalUserId}, TargetRedirectID: ${targetId}`);
+
+      // 2. เรียก API ส่งงาน
+      const resp = await apiSubmitFlowchart(Number(flowchartId), finalUserId);
+      console.log("✅ Submit Success:", resp);
+
+      // 3. Redirect
+      if (targetId) {
+        // ถ้าเจอ ID -> ไปหน้า Lab นั้น
+        router.push(`/Studentlab/${targetId}`);
+      } else {
+        // ❌ ถ้าไม่เจอ ID -> ห้ามไป /Studentlab เพราะจะเจอ 404
+        // ให้กลับหน้าแรก หรือแจ้งเตือนแทน
+        console.warn("ไม่พบ Lab ID หรือ Class ID สำหรับ Redirect");
+        alert("ส่งงานสำเร็จ! (แต่ไม่สามารถกลับไปหน้ารายวิชาได้เนื่องจากไม่พบ ID กรุณากดปุ่ม Back ของ Browser)");
+        // หรือถ้าต้องการให้กลับหน้าแรกสุดให้ใช้:
+        // router.push("/"); 
+      }
+
+    } catch (err) {
+      console.error("❌ Submit Failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      alert(`ส่งงานไม่สำเร็จ: ${message}`);
+      setErrorMsg(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // --- Render UI ---
   return (
     <div className="absolute z-1 pt-4">
@@ -1367,7 +1474,6 @@ export default function TopBarControls({
                         </div>
 
                         <div className="mt-2 text-sm text-gray-500">Output: <span className="ml-1 text-gray-700">{outputDisplay}</span></div>
-                        {/* Hidden Inputs removed here */}
                       </div>
 
                       <div className="flex gap-4">
@@ -1418,7 +1524,13 @@ export default function TopBarControls({
                 {runningTests ? "Testing..." : "Test"}
               </button>
 
-              <button className="mt-0 bg-blue-900 text-white text-sm px-6 py-2 rounded-full hover:bg-blue-800 transition-colors">Submit</button>
+              <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className={`mt-0 text-sm px-6 py-2 rounded-full text-white transition-colors ${submitting ? "bg-gray-400 cursor-not-allowed" : "bg-blue-900 hover:bg-blue-800"}`}
+              >
+                {submitting ? "Submitting..." : "Submit"}
+              </button>
             </div>
           </div>
         </div>
