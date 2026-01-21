@@ -3,19 +3,19 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-// ✅ 1. Import Session Hook เพื่อดึง UserId
 import { useSession } from "next-auth/react";
 
-// --- Components ---
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection"; 
 
-// --- Services ---
-// ✅ 2. Import apiPostFlowchart
-import { apiGetTestcases, apiGetLab, apiPostFlowchart } from "@/app/service/FlowchartService";
+import { 
+  apiGetTestcases, 
+  apiGetLab, 
+  apiPostFlowchart, 
+  apiGetSubmissionsByLab // ✅ ต้อง import อันนี้
+} from "@/app/service/FlowchartService";
 
-// --- Interfaces ---
 interface TestCase {
   no: number;
   input: string;
@@ -34,18 +34,22 @@ interface RemoteLab {
   testCases?: any[];
   problemSolving?: string;
   problem?: string;
-  inSymVal?: number;
-  outSymVal?: number;
-  declareSymVal?: number;
-  assignSymVal?: number;
-  ifSymVal?: number;
-  forSymVal?: number;
-  whileSymVal?: number;
+  isSubmitted?: boolean;
+  submission?: any;
+  submissions?: any[];
+  status?: string;
   [k: string]: any;
 }
 
-// --- Helper Functions ---
-function formatDueDate(d?: string) {
+// Interface สำหรับรับผลลัพธ์จาก API
+interface SubmissionResult {
+  testcaseId?: number;
+  status: string; // "PASS", "FAIL", "ERROR"
+  output?: string;
+  score?: number;
+}
+
+function formatDueDate(d?: string | null) { 
   if (!d) return "No due date";
   try {
     const dt = new Date(d);
@@ -93,12 +97,9 @@ const parseVal = (val: any): any => {
 const flattenDeep = (arr: any[]): any[] =>
   arr.reduce((acc, v) => (Array.isArray(v) ? acc.concat(flattenDeep(v)) : acc.concat(v)), []);
 
-// --- Main Component ---
 export default function StudentLabPage() {
   const params = useParams();
   const router = useRouter();
-  
-  // ✅ 3. เรียกใช้ Session
   const { data: session } = useSession();
 
   const labIdResolved = params?.studentlabId as string;
@@ -109,22 +110,43 @@ export default function StudentLabPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [isStarting, setIsStarting] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [tcResults, setTcResults] = useState<SubmissionResult[]>([]);
 
-  // --- Fetch Data ---
   useEffect(() => {
     if (!labIdResolved) return;
+    if (session === undefined) return; 
 
     let mounted = true;
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
+        console.log(`📌 DEBUG: Fetching Lab ID: ${labIdResolved}`);
+        
+        // 1. ดึงข้อมูล Lab
         const labResp = await apiGetLab(labIdResolved);
         const remoteLab: RemoteLab = labResp?.lab ?? labResp ?? null;
 
         if (!mounted) return;
         setLab(remoteLab);
 
+        // 2. เช็คสถานะ isSubmitted เบื้องต้น
+        let submittedFlag = false;
+        if (remoteLab) {
+            // เช็คจาก field ต่างๆ ที่อาจจะเป็นไปได้
+            const hasSubmissionsArray = Array.isArray(remoteLab.submissions) && remoteLab.submissions.length > 0;
+            submittedFlag = 
+                remoteLab.isSubmitted === true || 
+                remoteLab.status === "SUBMITTED" || 
+                remoteLab.status === "completed" ||
+                hasSubmissionsArray ||
+                (remoteLab.submission && Object.keys(remoteLab.submission).length > 0);
+            
+            setIsSubmitted(submittedFlag);
+        }
+
+        // 3. จัดการ Testcases
         let list: any[] = [];
         if (remoteLab && (remoteLab.testcases || remoteLab.testCases)) {
           list = remoteLab.testcases ?? remoteLab.testCases ?? [];
@@ -140,7 +162,7 @@ export default function StudentLabPage() {
           }
         }
 
-        const mapped = (list ?? []).map((tc: any, idx: number) => {
+        const mappedTC = (list ?? []).map((tc: any, idx: number) => {
           const rawInput = parseVal(tc.inputVal ?? tc.input ?? tc.inHiddenVal ?? tc.inHidden ?? tc.stdin ?? tc.args ?? []);
           const rawOutput = parseVal(tc.outputVal ?? tc.output ?? tc.outHiddenVal ?? tc.outHidden ?? tc.stdout ?? tc.expected ?? []);
           const format = (v: any) => (Array.isArray(v) ? flattenDeep(v).join(", ") : String(v ?? ""));
@@ -155,9 +177,43 @@ export default function StudentLabPage() {
         });
 
         if (mounted) {
-          setTestCases(mapped);
-          setLoading(false);
+          setTestCases(mappedTC);
         }
+
+        // 4. 🔥🔥 ดึงข้อมูล Submission (แก้ไขตาม Log) 🔥🔥
+        if (session?.user) {
+            try {
+                const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
+                console.log("📌 DEBUG: Submissions Response:", apiResponse);
+
+                // เจาะข้อมูลตามโครงสร้าง: { ok: true, data: [ { submissions: [...] } ] }
+                if (apiResponse && apiResponse.data && Array.isArray(apiResponse.data) && apiResponse.data.length > 0) {
+                    
+                    // เลือกรายการแรก (หรือจะ loop หา userId ที่ตรงกับ session ก็ได้)
+                    const userRecord = apiResponse.data[0];
+                    console.log("📌 DEBUG: User Record found:", userRecord);
+
+                    if (userRecord && Array.isArray(userRecord.submissions)) {
+                        console.log("📌 DEBUG: Found Results:", userRecord.submissions);
+                        
+                        // Set ค่าผลลัพธ์
+                        setTcResults(userRecord.submissions);
+                        
+                        // ถ้ามีผลลัพธ์ ถือว่าส่งแล้ว
+                        setIsSubmitted(true);
+                    }
+                } else if (Array.isArray(apiResponse)) {
+                    // Fallback เผื่อโครงสร้างเปลี่ยน
+                    setTcResults(apiResponse);
+                }
+
+            } catch (subErr) {
+                console.warn("Failed to fetch submissions:", subErr);
+            }
+        }
+
+        if (mounted) setLoading(false);
+
       } catch (err: any) {
         console.error("Fetch error:", err);
         if (mounted) {
@@ -172,59 +228,37 @@ export default function StudentLabPage() {
     return () => {
       mounted = false;
     };
-  }, [labIdResolved]);
+  }, [labIdResolved, session]);
 
-  // --- Action Handler: Do Lab ---
   const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    
-    // เช็คว่าล็อกอินหรือยัง
-    if (!session?.user) {
-      alert("Please login first!");
-      return;
-    }
-
+    if (!session?.user) { alert("Please login first!"); return; }
     setIsStarting(true);
-
     try {
-      // ✅ 4. เตรียม Payload (userId + labId)
       const user = session.user as any;
-      const userId = user.id || user.userId || user.sub; // ดึง ID ให้ชัวร์
-
-      const payload = { 
-        userId: Number(userId),  // แปลงเป็น Number ตาม API
-        labId: Number(labIdResolved)
-      };
-
-      console.log("Creating Flowchart with:", payload);
-
-      // ✅ 5. เรียก apiPostFlowchart
+      const userId = user.id || user.userId || user.sub; 
+      const payload = { userId: Number(userId), labId: Number(labIdResolved) };
       const result = await apiPostFlowchart(payload);
-      
-      console.log("Create Response:", result);
-
-      // ✅ 6. Redirect ไปยังหน้า Dolab
-      // หมายเหตุ: เช็คว่า API response กลับมาเป็น property ชื่ออะไร (id, flowchartId, หรือ trialId)
       const targetId = result.id || result.flowchartId || result.trialId;
-      
-      if (targetId) {
-        router.push(`/Dolab/${targetId}`);
-      } else {
-        throw new Error("API did not return a valid flowchart ID");
-      }
-
+      if (targetId) router.push(`/Dolab/${targetId}`);
+      else throw new Error("API did not return a valid flowchart ID");
     } catch (error: any) {
-      console.error("Failed to start lab:", error);
       alert(`Failed to start lab: ${error.message || "Unknown error"}`);
     } finally {
       setIsStarting(false);
     }
   };
 
+  const handleUnsubmitMock = () => {
+    if (confirm("คุณต้องการยกเลิกการส่งงานใช่หรือไม่? (UI Only)")) {
+        console.log("Unsubmit button clicked");
+    }
+  };
+
   const totalPoints = testCases.reduce((s, t) => s + (t.score ?? 0), 0);
   const labTitle = lab?.labname ?? lab?.name ?? `Lab ${labIdResolved}`;
   const labProblem = lab?.problemSolving ?? lab?.problem ?? "";
-  const dueText = lab?.dueDate ?? lab?.dateline ?? null;
+  const dueText = lab?.dueDate ?? lab?.dateline ?? undefined;
 
   const symbolLabData = lab
     ? {
@@ -238,6 +272,23 @@ export default function StudentLabPage() {
       }
     : undefined;
 
+  // ✅ Function render Badge
+  const renderStatusBadge = (status: string) => {
+    if (!status) return <span className="text-gray-400">-</span>;
+    const s = String(status).toUpperCase();
+    
+    if (["PASS", "PASSED", "CORRECT", "OK", "SUCCESS"].includes(s)) {
+      return <span className="px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold border border-green-200">PASS</span>;
+    }
+    if (["FAIL", "FAILED", "INCORRECT", "WRONG"].includes(s)) {
+      return <span className="px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-bold border border-red-200">FAIL</span>;
+    }
+    if (["ERROR", "ERR", "TIMEOUT", "CRASH"].includes(s)) {
+        return <span className="px-2 py-1 rounded bg-orange-100 text-orange-700 text-xs font-bold border border-orange-200">ERROR</span>;
+    }
+    return <span className="px-2 py-1 rounded bg-gray-100 text-gray-600 text-xs font-bold border border-gray-200">{s}</span>;
+  };
+
   return (
     <div className="min-h-screen w-full bg-gray-100">
       <div className="pt-20 pl-60">
@@ -248,47 +299,38 @@ export default function StudentLabPage() {
             <div className="w-full max-w-5xl bg-white p-8 rounded-lg shadow-md min-h-[500px]">
               
               <div className="flex justify-end space-x-3 mb-6">
-                 {/* ปุ่ม Do Lab ที่เชื่อม API แล้ว */}
-                 <button
+                <button
                   onClick={handleClick}
-                  disabled={loading || isStarting}
+                  disabled={loading || isStarting || isSubmitted}
                   className={`px-6 py-2 rounded-full flex items-center justify-center text-white transition-colors shadow-sm font-medium
-                    ${loading || isStarting 
-                      ? 'bg-gray-400 cursor-not-allowed' 
-                      : 'bg-blue-600 hover:bg-blue-700'}
+                    ${loading || isStarting || isSubmitted ? 'bg-gray-400 cursor-not-allowed opacity-70' : 'bg-blue-600 hover:bg-blue-700'}
                   `}
                 >
                   {isStarting ? "Creating..." : "Do lab"}
                 </button>
 
-                <Link
-                  href="/"
-                  className="bg-[#133384] text-white px-6 py-2 rounded-full flex items-center justify-center hover:bg-[#1945B7] transition-colors shadow-sm font-medium"
-                >
-                  Submit
-                </Link>
-
-                {/* <Link
-                  href={`/labinclass?labId=${labIdResolved}`}
-                  className="bg-gray-100 text-gray-700 px-5 py-2 rounded-full flex items-center hover:bg-gray-200 transition-colors shadow-sm font-medium border border-gray-200"
-                >
-                  <span className="mr-2">👁️</span> View Score
-                </Link> */}
+                {isSubmitted ? (
+                    <button onClick={handleUnsubmitMock} className="bg-red-600 text-white px-6 py-2 rounded-full flex items-center justify-center hover:bg-red-700 transition-colors shadow-sm font-medium">
+                        Unsubmit
+                    </button>
+                ) : (
+                    <Link href="/" className="bg-[#133384] text-white px-6 py-2 rounded-full flex items-center justify-center hover:bg-[#1945B7] transition-colors shadow-sm font-medium">
+                        Submit
+                    </Link>
+                )}
               </div>
 
-              {/* ... (ส่วนแสดงผลเหมือนเดิม) ... */}
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b-2 border-gray-100 pb-4 mb-6">
                 <div className="flex items-center">
                   <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mr-4 shadow-sm border border-blue-100">
                     <img src="/images/lab.png" className="w-8 h-10 object-contain opacity-80" alt="lab" />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-bold text-gray-800">
-                      {labTitle}
-                    </h2>
+                    <h2 className="text-3xl font-bold text-gray-800">{labTitle}</h2>
                     <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-md">
                       {totalPoints} Points
                     </span>
+                    {isSubmitted && <span className="ml-2 inline-block px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-md border border-blue-200">Submitted</span>}
                   </div>
                 </div>
                 <div className="mt-2 md:mt-0 text-gray-500 text-sm font-medium bg-gray-50 px-3 py-1 rounded-lg">
@@ -312,9 +354,7 @@ export default function StudentLabPage() {
                 )}
                 
                 {error && (
-                  <div className="p-4 mb-6 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg text-center">
-                    Error: {error}
-                  </div>
+                  <div className="p-4 mb-6 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg text-center">Error: {error}</div>
                 )}
 
                 {!loading && !error && (
@@ -333,25 +373,34 @@ export default function StudentLabPage() {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {testCases.length > 0 ? (
-                            testCases.map((tc, index) => (
-                              <tr key={tc.no} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-6 py-4 text-sm text-gray-600 font-semibold">{tc.no}</td>
-                                <td className="px-6 py-4 text-sm text-gray-700">
-                                  <code className="bg-gray-100 px-2 py-1 rounded text-xs font-mono">{tc.input}</code>
-                                </td>
-                                <td className="px-6 py-4 text-sm text-blue-700">
-                                  <code className="bg-blue-50 px-2 py-1 rounded text-xs font-mono">{tc.output}</code>
-                                </td>
-                                <td className="px-6 py-4 text-center">
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    {tc.score}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))
+                            testCases.map((tc, index) => {
+                                // 📌 Mapping ข้อมูลจาก tcResults โดยใช้ index
+                                const result = tcResults[index]; 
+                                const status = result?.status || ""; 
+
+                                return (
+                                  <tr key={tc.no} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-6 py-4 text-sm text-gray-600 font-semibold">{tc.no}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-700">
+                                      <code className="bg-gray-100 px-2 py-1 rounded text-xs font-mono">{tc.input}</code>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-blue-700">
+                                      <code className="bg-blue-50 px-2 py-1 rounded text-xs font-mono">{tc.output}</code>
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        {tc.score}
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                        {renderStatusBadge(status)}
+                                    </td>
+                                  </tr>
+                                );
+                            })
                           ) : (
                             <tr>
-                              <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                              <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                                 No test cases found.
                               </td>
                             </tr>
