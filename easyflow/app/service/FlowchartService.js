@@ -376,59 +376,66 @@ export const apiGetClass = async (classId) => {
 
 // FlowchartService.js
 
-export const apiAddLabToClass = async (classId, labId, userId, dueDate) => { // ✅ รับ dueDate เพิ่ม
-  if (!classId) throw new Error("apiAddLabToClass: missing classId");
-  if (!labId) throw new Error("apiAddLabToClass: missing labId");
-  
-  // เพิ่มการเช็ค userId
-  if (!userId) throw new Error("apiAddLabToClass: missing userId (x-user-id)");
+export const apiAddLabToClass = async (classId, labId, userId, dueDate) => {
+  if (!classId || !labId || !userId) {
+    throw new Error("apiAddLabToClass: missing required parameters");
+  }
 
   try {
-    // เตรียม Body Payload
+    const url = `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`;
+    
+    // Body: { "labId": 3, "dueDate": "..." }
     const payload = { 
-      labId: labId 
+      labId: Number(labId) 
     };
 
-    // ✅ ถ้ามี dueDate ส่งมา ให้เพิ่มเข้าไปใน Body
+    // ถ้ามี dueDate ส่งมาด้วย ให้เพิ่มเข้าไปใน body
     if (dueDate) {
       payload.dueDate = dueDate;
     }
 
-    const resp = await axios.post(
-      `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`,
-      payload,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-id": String(userId), // ✅ แก้ไข: ส่ง userId ใน Header ตาม Spec
-        },
-        // allow axios to resolve for 2xx; we'll check status below
-        validateStatus: (status) => status >= 200 && status < 300,
-      }
-    );
+    const resp = await axios.post(url, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": String(userId), // Teacher ID
+      },
+      // ยอมรับ status 200 หรือ 201 ว่าสำเร็จ
+      validateStatus: (status) => status === 200 || status === 201,
+    });
 
-    // Accept both 200 and 201 as success
-    if (resp.status !== 200 && resp.status !== 201) {
-      console.warn(`apiAddLabToClass: expected 200/201 but got ${resp.status}`);
-    }
-
-    // Expect response like { ok: true }
     return resp.data;
   } catch (err) {
-    // If backend returns non-2xx, axios throws: err.response may exist
     console.error("apiAddLabToClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+// ✅ แก้ไขวันครบกำหนด (Edit Due Date)
+// Method: PATCH /classes/:classId/labs/:labId
+export const apiUpdateLabDueDate = async (classId, labId, userId, newDueDate) => {
+  if (!classId || !labId || !userId || !newDueDate) {
+    throw new Error("apiUpdateLabDueDate: missing required parameters");
+  }
+
+  try {
+    const url = `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs/${encodeURIComponent(labId)}`;
     
-    // Re-throw with helpful message
-    const message =
-      err?.response?.data?.message ||
-      err?.response?.data ||
-      err.message ||
-      "apiAddLabToClass failed";
-      
-    const e = new Error(message);
-    // attach response for callers who want more detail
-    e.response = err?.response;
-    throw e;
+    const payload = { 
+      dueDate: newDueDate 
+    };
+
+    const resp = await axios.patch(url, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": String(userId),
+      },
+      validateStatus: (status) => status === 200 || status === 201,
+    });
+
+    return resp.data;
+  } catch (err) {
+    console.error("apiUpdateLabDueDate error:", err?.response ?? err);
+    throw err;
   }
 };
 

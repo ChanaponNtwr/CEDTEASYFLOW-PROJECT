@@ -15,7 +15,6 @@ import { useSession } from "next-auth/react";
 
 function Classwork({ classId: propClassId }: { classId?: string }) {
   const params = useParams();
-  // Safe access to params
   const routeClassId = params ? (params.classId as string) : undefined;
   const finalClassId = propClassId ?? routeClassId;
 
@@ -30,6 +29,13 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   const [activeTab, setActiveTab] = useState<string>("Classwork");
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
+  // ✅ เพิ่ม State สำหรับเก็บข้อมูล Lab ที่กำลังแก้ไข
+  const [editingLab, setEditingLab] = useState<{
+    labId: string;
+    dueDate: string;
+    labName: string;
+  } | null>(null);
+
   const [formData, setFormData] = useState({
     labId: "",
     dueDate: "",
@@ -41,8 +47,17 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
 
-  const handleCreateClick = () => setIsModalOpen(true);
-  const closeModal = () => setIsModalOpen(false);
+  // ✅ ปรับปรุง: เมื่อกดปุ่ม Import (Create) ให้เคลียร์ค่า edit และเปิด Modal
+  const handleCreateClick = () => {
+    setEditingLab(null); // เคลียร์โหมดแก้ไข
+    setFormData({ labId: "", dueDate: "", dueTime: "" }); // เคลียร์ฟอร์ม
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingLab(null); // รีเซ็ตเมื่อปิด
+  };
 
   const fetchClass = async (cid: string) => {
     setLoading(true);
@@ -81,24 +96,46 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finalClassId, status, session]);
 
+  // เมื่อบันทึกเสร็จ ให้รีเฟรชข้อมูล
   const handleAddClick = async () => {
     if (!finalClassId) return;
     await fetchClass(finalClassId);
   };
 
-  const assignments = useMemo(() => {
+  // ✅ ฟังก์ชันเมื่อกดปุ่ม Edit ที่ AssignmentItem
+  const handleEditLab = (labId: string, rawDueDate: string, title: string) => {
+    setEditingLab({
+      labId,
+      dueDate: rawDueDate, // ส่งค่าวันที่ดิบ (ISO String) ไปให้ Modal แปลง
+      labName: title,
+    });
+    setIsModalOpen(true);
+  };
+
+const assignments = useMemo(() => {
     if (!classDetail?.classLabs?.length) return [];
     return classDetail.classLabs.map((cl: any) => {
       const lab = cl.lab || {};
+      
+      // ✅ แก้ไข: ให้ดึง dueDate จาก 'cl' (ตารางความสัมพันธ์) ก่อน
+      // เพราะการสั่งงาน (Assignment) จะเก็บวันส่งไว้ที่นี่
+      const actualDueDate = cl.dueDate || lab.dueDate; 
+
       return {
         labId: lab.labId,
         title: lab.labname || "Untitled Lab",
         problemSolving: lab.problemSolving || "",
-        dueDate: lab.dueDate
-          ? new Date(lab.dueDate).toLocaleDateString("th-TH", {
+        
+        // ✅ ใช้ actualDueDate แทน lab.dueDate
+        rawDueDate: actualDueDate || "", 
+        
+        dueDate: actualDueDate
+          ? new Date(actualDueDate).toLocaleDateString("th-TH", {
               year: "numeric",
               month: "short",
               day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit"
             })
           : "No due date",
       };
@@ -168,9 +205,10 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
                         title={a.title}
                         description={a.problemSolving}
                         due={`Due ${a.dueDate}`}
+                        // ✅ เชื่อมต่อปุ่ม Edit ให้เรียก handleEditLab
                         onEditClick={
                           canEdit
-                            ? () => console.log("Edit lab:", a.labId)
+                            ? () => handleEditLab(a.labId, a.rawDueDate, a.title)
                             : undefined
                         }
                       />
@@ -182,6 +220,7 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
           </div>
         </div>
 
+        {/* ✅ ส่ง Props isEditMode และ editData ไปให้ ImportLabModal */}
         {canEdit && (
           <ImportLabModal
             isOpen={isModalOpen}
@@ -191,6 +230,8 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
             setFormData={setFormData}
             classId={finalClassId}
             userId={currentUserId}
+            isEditMode={!!editingLab} // ถ้ามี editingLab แปลว่าเป็นโหมดแก้ไข
+            editData={editingLab || undefined} // ส่งข้อมูลที่จะแก้เข้าไป
           />
         )}
       </div>
