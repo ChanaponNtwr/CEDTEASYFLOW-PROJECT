@@ -1,20 +1,20 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import { FaFilter } from "react-icons/fa";
 import Link from "next/link";
 import SymbolSection from "./_components/SymbolSection";
+import { useSession } from "next-auth/react";
 
-// Import API Services
 import { 
   apiGetLab, 
   apiGetTestcases, 
   apiGetSubmissionsByLab, 
-  apiConfirmSubmission, 
-  apiRejectSubmission 
+  apiConfirmSubmission,
+  apiRejectSubmission
 } from "@/app/service/FlowchartService";
 
 // --- Interfaces ---
@@ -26,31 +26,32 @@ interface TestCase {
   score: number;
 }
 
-interface LabData {
+interface PageLabData {
   labId: number;
   labname: string;
   detail: string;
   totalScore: number;
   testCases: TestCase[];
-  // Symbol Data
-  inSymVal?: number;
-  outSymVal?: number;
-  declareSymVal?: number;
-  assignSymVal?: number;
-  ifSymVal?: number;
-  forSymVal?: number;
-  whileSymVal?: number;
+  inSymVal: number;
+  outSymVal: number;
+  declareSymVal: number;
+  assignSymVal: number;
+  ifSymVal: number;
+  forSymVal: number;
+  whileSymVal: number;
 }
 
 interface TestResult {
-  status: string; // PASS, FAIL, PENDING
+  status: string;
+  score: number;   
+  maxScore: number; 
 }
 
 interface StudentSubmission {
   studentId: number | string;
   submissionId?: number;
   name: string;
-  status: string; // submitted, pending, pass, fail
+  status: string; 
   score: number;
   maxScore: number;
   selected: boolean;
@@ -60,90 +61,124 @@ interface StudentSubmission {
 function LabInClass() {
   const params = useParams();
   const router = useRouter();
+  const { data: session } = useSession();
   
   const rawId = params?.labinclassId;
   const labId = Array.isArray(rawId) ? rawId[0] : rawId;
 
-  // --- States ---
   const [loading, setLoading] = useState(true);
-  const [labData, setLabData] = useState<LabData | null>(null);
+  const [labData, setLabData] = useState<PageLabData | null>(null);
   const [students, setStudents] = useState<StudentSubmission[]>([]);
   const [filterStatus, setFilterStatus] = useState("All");
 
-  // --- Fetch Data ---
-  useEffect(() => {
+  // ✅ 1. แยก fetchData ออกมาเป็น function (ใช้ useCallback เพื่อให้เรียกซ้ำได้)
+  const fetchData = useCallback(async () => {
     if (!labId) return;
+    
+    // อย่าเพิ่ง setLoading(true) ทุกครั้งที่เรียก เพื่อไม่ให้ UI กระพริบตอนกด Submit
+    // setLoading(true); 
 
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [labResp, tcResp] = await Promise.all([
-           apiGetLab(String(labId)),
-           apiGetTestcases(String(labId))
-        ]);
+    try {
+      const [labResp, tcResp] = await Promise.all([
+         apiGetLab(String(labId)),
+         apiGetTestcases(String(labId))
+      ]);
 
-        const remoteLab = labResp?.lab ?? labResp ?? null;
-        
-        let tcs: TestCase[] = [];
-        const rawTcs = Array.isArray(tcResp) ? tcResp : (tcResp?.data ?? remoteLab?.testcases ?? []);
-        
-        tcs = rawTcs.map((tc: any, index: number) => ({
-            testcaseId: tc.testcaseId ?? tc.id,
-            no: index + 1,
-            input: String(tc.inputVal || tc.input || ""),
-            output: String(tc.outputVal || tc.output || ""),
-            score: Number(tc.score || 0)
-        }));
+      const remoteLab = labResp?.lab ?? labResp ?? null;
+      
+      let tcs: TestCase[] = [];
+      const rawTcs = Array.isArray(tcResp) ? tcResp : (tcResp?.data ?? remoteLab?.testcases ?? []);
+      
+      tcs = rawTcs.map((tc: any, index: number) => ({
+          testcaseId: tc.testcaseId ?? tc.id,
+          no: index + 1,
+          input: String(tc.inputVal || tc.input || ""),
+          output: String(tc.outputVal || tc.output || ""),
+          score: Number(tc.score || 0)
+      }));
 
-        const totalScore = tcs.reduce((acc, tc) => acc + tc.score, 0);
+      const totalScore = tcs.reduce((acc, tc) => acc + tc.score, 0);
 
-        setLabData({
-            labId: Number(labId),
-            labname: remoteLab?.labname ?? remoteLab?.name ?? "Unknown Lab",
-            detail: remoteLab?.problemSolving ?? remoteLab?.problem ?? "",
-            totalScore: totalScore,
-            testCases: tcs,
-            inSymVal: remoteLab?.inSymVal,
-            outSymVal: remoteLab?.outSymVal,
-            declareSymVal: remoteLab?.declareSymVal,
-            assignSymVal: remoteLab?.assignSymVal,
-            ifSymVal: remoteLab?.ifSymVal,
-            forSymVal: remoteLab?.forSymVal,
-            whileSymVal: remoteLab?.whileSymVal,
-        });
+      setLabData({
+          labId: Number(labId),
+          labname: remoteLab?.labname ?? remoteLab?.name ?? "Unknown Lab",
+          detail: remoteLab?.problemSolving ?? remoteLab?.problem ?? "",
+          totalScore: totalScore,
+          testCases: tcs,
+          inSymVal: remoteLab?.inSymVal ?? 0,
+          outSymVal: remoteLab?.outSymVal ?? 0,
+          declareSymVal: remoteLab?.declareSymVal ?? 0,
+          assignSymVal: remoteLab?.assignSymVal ?? 0,
+          ifSymVal: remoteLab?.ifSymVal ?? 0,
+          forSymVal: remoteLab?.forSymVal ?? 0,
+          whileSymVal: remoteLab?.whileSymVal ?? 0,
+      });
 
-        const subResp = await apiGetSubmissionsByLab(String(labId));
-        const rawSubs = subResp?.data ?? subResp ?? [];
+      const subResp = await apiGetSubmissionsByLab(String(labId));
+      const rawSubs = subResp?.data ?? subResp ?? [];
 
-        const mappedStudents: StudentSubmission[] = rawSubs.map((sub: any) => {
-            const results: TestResult[] = tcs.map((tc) => {
-                const match = sub.results?.find((r: any) => r.testcaseId === tc.testcaseId);
-                return { status: match?.status ?? "PENDING" };
-            });
+      const mappedStudents: StudentSubmission[] = rawSubs.map((sub: any) => {
+          const results: TestResult[] = tcs.map((tc) => {
+              const match = sub.results?.find((r: any) => r.testcaseId === tc.testcaseId);
+              const status = match?.status ?? "PENDING";
+              
+              let obtainedScore = 0;
+              if (match?.score !== undefined) {
+                  obtainedScore = Number(match.score);
+              } else if (status === "PASS") {
+                  obtainedScore = tc.score;
+              }
 
-            return {
-                studentId: sub.userId ?? sub.studentId ?? Math.random(),
-                submissionId: sub.submissionId ?? sub.id,
-                name: sub.user?.name ?? sub.studentName ?? "Unknown Student",
-                status: sub.status ?? "pending",
-                score: sub.score ?? 0,
-                maxScore: totalScore,
-                selected: false,
-                results: results
-            };
-        });
+              return { 
+                  status: status,
+                  score: obtainedScore,
+                  maxScore: tc.score
+              };
+          });
 
-        setStudents(mappedStudents);
+          let studentName = "Unknown Student";
+          if (sub.user?.name) studentName = sub.user.name;
+          else if (sub.User?.name) studentName = sub.User.name;
+          else if (sub.student?.name) studentName = sub.student.name;
+          else if (sub.studentName) studentName = sub.studentName;
+          else if (sub.username) studentName = sub.username;
+          else if (sub.user?.firstname) studentName = `${sub.user.firstname} ${sub.user.lastname || ""}`;
+          else if (sub.user?.email) studentName = sub.user.email;
 
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+          // ✅ 3. ปรับ Logic หา Status ให้ฉลาดขึ้น
+          // บางที API อาจจะเก็บ status ไว้ใน sub.submission.status หรือ sub.submissions[0].status
+          const rawStatus = 
+             sub.status || 
+             sub.submission?.status || 
+             (Array.isArray(sub.submissions) ? sub.submissions[0]?.status : undefined) ||
+             "pending";
 
-    fetchData();
+          return {
+              studentId: sub.userId ?? sub.studentId ?? Math.random(),
+              submissionId: sub.submissionId ?? sub.id,
+              name: studentName,
+              status: rawStatus, // ใช้ค่าที่หามาได้
+              score: sub.score ?? 0,
+              maxScore: totalScore,
+              selected: false,
+              results: results
+          };
+      });
+
+      setStudents(mappedStudents);
+
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+    } finally {
+      setLoading(false);
+    }
   }, [labId]);
+
+  // useEffect เรียก fetchData ครั้งแรก
+  useEffect(() => {
+      setLoading(true);
+      fetchData();
+  }, [fetchData]);
 
   // --- Handlers ---
   const handleSelectAll = (checked: boolean) => {
@@ -162,30 +197,75 @@ function LabInClass() {
   };
 
   const handleSubmitAll = async () => {
+    const user = session?.user as any;
+    const reviewerId = user?.id || user?.userId || user?.sub;
+
+    if (!reviewerId) {
+        alert("ไม่พบข้อมูลผู้ตรวจ (Reviewer ID) กรุณา Login ใหม่");
+        return;
+    }
+
     const selectedStudents = students.filter(s => s.selected);
     if (selectedStudents.length === 0) return;
 
-    const confirmMsg = `ยืนยันการตรวจ (Confirm) นักเรียน ${selectedStudents.length} คน?`;
-    if (!confirm(confirmMsg)) return;
+    if (!confirm(`ยืนยันการให้ผ่าน (Pass) นักเรียน ${selectedStudents.length} คน?`)) return;
 
     try {
         await Promise.all(selectedStudents.map(async (student) => {
-            if (student.submissionId) {
-                await apiConfirmSubmission(student.submissionId);
+            if (student.studentId) {
+                await apiConfirmSubmission(
+                    String(labId),             
+                    String(student.studentId), 
+                    String(reviewerId)         
+                );
             }
         }));
 
-        const updated = students.map((student) =>
-            student.selected
-              ? { ...student, status: "Pass", selected: false }
-              : student
-        );
-        setStudents(updated);
-        alert("บันทึกผลการตรวจเรียบร้อยแล้ว");
+        alert("บันทึกผลการตรวจ (Pass) เรียบร้อยแล้ว");
+        // ✅ 2. เรียก fetchData ใหม่ทันที เพื่อดึงข้อมูลล่าสุดจาก DB
+        // ถ้า DB อัปเดตจริง หน้าเว็บจะโชว์ Pass เอง และเมื่อกด F5 ก็จะยังเป็น Pass
+        await fetchData(); 
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Failed to submit:", error);
-        alert("เกิดข้อผิดพลาดในการบันทึก");
+        const msg = error?.response?.data?.message || error.message;
+        alert(`เกิดข้อผิดพลาด: ${msg}`);
+    }
+  };
+
+  const handleRejectAll = async () => {
+    const user = session?.user as any; 
+    const reviewerId = user?.id || user?.userId || user?.sub;
+
+    if (!reviewerId) {
+        alert("ไม่พบข้อมูลผู้ตรวจ (Reviewer ID) กรุณา Login ใหม่");
+        return;
+    }
+
+    const selectedStudents = students.filter(s => s.selected);
+    if (selectedStudents.length === 0) return;
+
+    if (!confirm(`ยืนยันการปฏิเสธ (Reject) นักเรียน ${selectedStudents.length} คน?`)) return;
+
+    try {
+        await Promise.all(selectedStudents.map(async (student) => {
+            if (student.studentId) {
+                await apiRejectSubmission(
+                    String(labId), 
+                    String(student.studentId), 
+                    String(reviewerId)
+                );
+            }
+        }));
+
+        alert("บันทึกผลการปฏิเสธ (Reject) เรียบร้อยแล้ว");
+        // ✅ 2. เรียก fetchData ใหม่ทันที
+        await fetchData();
+
+    } catch (error: any) {
+        console.error("Failed to reject:", error);
+        const msg = error?.response?.data?.message || error.message;
+        alert(`เกิดข้อผิดพลาด: ${msg}`);
     }
   };
 
@@ -206,13 +286,21 @@ function LabInClass() {
   const filterOptions = ["All", "Pass", "Submitted", "Pending", "Fail"];
 
   const renderStatusBadge = (status: string) => {
-      const s = status.toLowerCase();
+      const s = status ? status.toLowerCase() : "unknown";
       let color = "bg-gray-100 text-gray-600 border-gray-200";
       
-      if (s === "pass" || s === "graded") color = "bg-green-100 text-green-700 border-green-200";
-      else if (s === "fail" || s === "rejected") color = "bg-red-100 text-red-700 border-red-200";
-      else if (s === "submitted") color = "bg-blue-100 text-blue-700 border-blue-200";
-      else if (s === "pending") color = "bg-yellow-100 text-yellow-700 border-yellow-200";
+      if (s === "pass" || s === "graded" || s === "confirmed") {
+          color = "bg-green-100 text-green-700 border-green-200";
+      }
+      else if (s === "fail" || s === "rejected") {
+          color = "bg-red-100 text-red-700 border-red-200";
+      }
+      else if (s === "submitted") {
+          color = "bg-blue-100 text-blue-700 border-blue-200";
+      }
+      else if (s === "pending") {
+          color = "bg-yellow-100 text-yellow-700 border-yellow-200";
+      }
 
       return (
           <span className={`px-3 py-1 rounded-full text-xs font-bold border capitalize ${color}`}>
@@ -221,7 +309,7 @@ function LabInClass() {
       );
   };
 
-  if (loading) return <div className="p-20 text-center text-gray-500">Loading data...</div>;
+  if (loading && !labData) return <div className="p-20 text-center text-gray-500">Loading data...</div>;
   if (!labData) return <div className="p-20 text-center text-red-500">Lab not found.</div>;
 
   return (
@@ -233,16 +321,13 @@ function LabInClass() {
           <div className="flex-1 flex justify-center p-6 md:p-10">
             <div className="w-full max-w-6xl bg-white p-6 rounded-lg shadow-md">
               
-              {/* Header Info */}
               <div className="flex justify-between items-center border-b-2 border-gray-300 pb-1 mb-6 mt-4">
                 <div className="flex items-center">
                   <div className="w-20 h-20 bg-[#EEEEEE] rounded-full flex items-center justify-center mr-4">
                     <img src="/images/lab.png" className="w-12 h-14 object-contain" alt="Lab Icon" />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-bold text-gray-800">
-                        {labData.labname}
-                    </h2>
+                    <h2 className="text-3xl font-bold text-gray-800">{labData.labname}</h2>
                     <span className="text-sm font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md mt-1 inline-block">
                         Total Score: {labData.totalScore} points
                     </span>
@@ -251,16 +336,15 @@ function LabInClass() {
               </div>
 
               <div className="ml-0 md:ml-10">
-                {/* Problem Description */}
                 <p className="mb-6 text-gray-700 whitespace-pre-wrap leading-relaxed">
                   {labData.detail || "No details provided."}
                 </p>
 
-                {/* ✅ ส่วนที่เพิ่ม: แสดงตาราง Testcase ตรงโจทย์ */}
                 {labData.testCases.length > 0 && (
                   <div className="mb-8">
                     <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-
+                       <span>📋 Test Cases</span>
+                       <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{labData.testCases.length} items</span>
                     </h3>
                     <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
                       <table className="min-w-full divide-y divide-gray-200">
@@ -282,9 +366,7 @@ function LabInClass() {
                               <td className="px-6 py-3 text-sm text-gray-700">
                                 <code className="bg-blue-50 px-2 py-1 rounded text-xs font-mono text-blue-800 border border-blue-100">{tc.output}</code>
                               </td>
-                              <td className="px-6 py-3 text-sm text-gray-600 text-center font-semibold">
-                                {tc.score}
-                              </td>
+                              <td className="px-6 py-3 text-sm text-gray-600 text-center font-semibold">{tc.score}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -292,12 +374,10 @@ function LabInClass() {
                     </div>
                   </div>
                 )}
-                {/* จบส่วนตาราง Testcase */}
 
                 <div className="border-b-2 border-gray-300 pb-1 mb-6"></div>
 
-                {/* Filter + Submit Actions */}
-                <div className="flex justify-end gap-4 mb-6 pt-5">
+                <div className="flex justify-between items-center mb-6 pt-5">
                   <div className="relative flex items-center">
                     <FaFilter className="absolute left-3 text-white text-sm pointer-events-none" />
                     <select
@@ -306,9 +386,7 @@ function LabInClass() {
                       onChange={(e) => setFilterStatus(e.target.value)}
                     >
                       {filterOptions.map((opt) => (
-                        <option key={opt} className="bg-white text-black" value={opt}>
-                          {opt}
-                        </option>
+                        <option key={opt} className="bg-white text-black" value={opt}>{opt}</option>
                       ))}
                     </select>
                     <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
@@ -316,20 +394,33 @@ function LabInClass() {
                     </div>
                   </div>
 
-                  <button
-                    className={`px-5 py-2 rounded-full font-medium transition-all shadow-sm flex items-center
-                      ${students.some((s) => s.selected)
-                        ? "bg-[#2E8B57] text-white hover:bg-[#267347] active:scale-95"
-                        : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
-                      }`}
-                    onClick={handleSubmitAll}
-                    disabled={!students.some((s) => s.selected)}
-                  >
-                    Submit Selected
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                        className={`px-5 py-2 rounded-full font-medium transition-all shadow-sm
+                        ${students.some((s) => s.selected)
+                            ? "bg-red-600 text-white hover:bg-red-700 active:scale-95 border border-red-700"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                        }`}
+                        onClick={handleRejectAll}
+                        disabled={!students.some((s) => s.selected)}
+                    >
+                        Reject Selected
+                    </button>
+
+                    <button
+                        className={`px-5 py-2 rounded-full font-medium transition-all shadow-sm
+                        ${students.some((s) => s.selected)
+                            ? "bg-[#2E8B57] text-white hover:bg-[#267347] active:scale-95 border border-green-600"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                        }`}
+                        onClick={handleSubmitAll}
+                        disabled={!students.some((s) => s.selected)}
+                    >
+                        Submit Selected
+                    </button>
+                  </div>
                 </div>
 
-                {/* Student Table */}
                 <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -342,17 +433,13 @@ function LabInClass() {
                                 onChange={(e) => handleSelectAll(e.target.checked)}
                             />
                         </th>
-                        
                         <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
                         <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Name</th>
-                        
-                        {/* Dynamic Testcase Headers */}
                         {labData.testCases.map((tc, idx) => (
                              <th key={idx} className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider min-w-[80px]">
                                 TC {tc.no}
                              </th>
                         ))}
-
                         <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Score</th>
                         <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Action</th>
                       </tr>
@@ -376,23 +463,23 @@ function LabInClass() {
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     {renderStatusBadge(student.status)}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{student.name}</td>
-                                
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    {student.name}
+                                </td>
                                 {labData.testCases.map((_, idx) => {
                                     const res = student.results[idx];
-                                    let dotColor = "bg-gray-300"; 
-                                    let title = "Pending";
+                                    const isPass = res?.status === "PASS";
+                                    const scoreText = `${res?.score ?? 0}/${res?.maxScore ?? 0}`;
+                                    let textColor = "text-gray-400";
+                                    if (isPass) textColor = "text-green-600 font-bold";
+                                    else if (res?.status === "FAIL") textColor = "text-red-600 font-bold";
 
-                                    if (res?.status === "PASS") { dotColor = "bg-green-500"; title = "Passed"; }
-                                    else if (res?.status === "FAIL") { dotColor = "bg-red-500"; title = "Failed"; }
-                                    
                                     return (
-                                        <td key={idx} className="px-4 py-4 whitespace-nowrap text-center">
-                                            <div className={`w-3 h-3 rounded-full mx-auto ${dotColor}`} title={title}></div>
+                                        <td key={idx} className="px-4 py-4 whitespace-nowrap text-center text-xs">
+                                            <span className={textColor}>{scoreText}</span>
                                         </td>
                                     );
                                 })}
-
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700">
                                     {student.score} / {student.maxScore}
                                 </td>
