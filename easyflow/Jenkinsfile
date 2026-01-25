@@ -16,50 +16,40 @@ pipeline {
       agent {
         docker {
           image 'node:18' 
-          // เพิ่ม -e NODE_ENV=development เพื่อบังคับให้ install devDependencies (Prisma CLI) เสมอ
+          // เพิ่ม NODE_ENV=development เพื่อให้แน่ใจว่า install ครบ
           args '-u root:root -e BASE_API=${BASE_API} -e NODE_ENV=development'
         }
       }
       steps {
         dir('easyflow') {
           sh '''
-             # 1. ติดตั้ง Library พื้นฐานที่จำเป็น (OpenSSL)
-             apt-get update -y && apt-get install -y openssl
-
-             # 2. เตรียม Schema
+             # 1. เตรียม Schema
              echo "=== SETUP SCHEMA FROM BACKEND ==="
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
 
-             # 3. Clean & Install แบบล้างบาง
+             # 2. Clean Install
              echo "=== CLEAN & INSTALL ==="
              rm -rf node_modules
              rm -rf .prisma
              rm -rf node_modules/.prisma
-             
-             # ลบ package-lock.json เพื่อแก้ปัญหา version ตีกัน
              rm -f package-lock.json
              
-             # ย้ำอีกครั้งว่าต้องเป็น development เพื่อให้ได้ prisma cli
-             export NODE_ENV=development
-             npm install
+             # --- ส่วนที่แก้ไข (FIX) ---
+             # เปลี่ยนจาก npm install ธรรมดา เป็นการบังคับลง Prisma เวอร์ชันล่าสุด
+             # เพื่อแก้ปัญหา Bug ของ Prisma 5.7.1 บน Node 18 Bookworm / Next.js 15
+             echo "=== UPDATE PRISMA & INSTALL DEPENDENCIES ==="
+             npm install prisma@latest @prisma/client@latest --save-exact
+             # ------------------------
 
              echo "=== GENERATE & BUILD ==="
              
-             # Debug: เช็คว่า prisma cli ถูกติดตั้งจริงไหม (Log ต้องเจอไฟล์)
-             ls -l ./node_modules/.bin/prisma || echo "Prisma Binary NOT FOUND"
-             
-             # --- จุดสำคัญ (FIX) ---
-             # เรียกใช้ Prisma จาก node_modules โดยตรง (ห้ามใช้ npx prisma เฉยๆ)
-             # เพื่อป้องกันมันไปโหลด version ล่าสุดมาใช้จนเกิด Stack Overflow
-             ./node_modules/.bin/prisma generate --schema=./prisma/schema.prisma
-             # ---------------------
+             # ใช้ npx ได้เลยเพราะเราเพิ่งลง version ล่าสุดไป
+             npx prisma generate --schema=./prisma/schema.prisma
 
              npm test || true
              
              echo "Checking BASE_API: $BASE_API"
-             
-             # Build โปรเจกต์ (Next.js จะจัดการ env production ให้เองตอน build)
              npm run build
           '''
         }
