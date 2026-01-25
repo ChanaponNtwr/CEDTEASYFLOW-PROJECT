@@ -30,18 +30,27 @@ pipeline {
              rm -rf node_modules
              rm -rf .prisma
              rm -rf node_modules/.prisma
-             
-             # --- ส่วนที่แก้ไข: แก้ปัญหา Infinite Loop ---
-             # 1. ลบ package-lock.json ทิ้ง (เพราะไฟล์จากเครื่อง Dev อาจไม่เข้ากับ Linux ใน Docker)
              rm -f package-lock.json
              
-             # 2. ใช้ npm install แทน npm ci (เพื่อสร้าง dependency tree ใหม่ที่ถูกต้องสำหรับ Linux 100%)
+             # ติดตั้ง dependencies ใหม่
              npm install
              
              echo "=== GENERATE & BUILD ==="
              
-             # 3. ไม่ต้อง Hack ค่า Stack Size แล้ว กลับมาใช้คำสั่งมาตรฐาน
-             # เพราะเมื่อ dependency ถูกต้อง มันจะไม่เกิด infinite loop ครับ
+             # --- แก้ไข V7: ใช้ NODE_OPTIONS (ไม้ตาย) ---
+             
+             # 1. ตั้งค่า Engine เป็น Binary (เสถียรสุดใน Docker)
+             export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
+             export PRISMA_CLIENT_ENGINE_TYPE=binary
+             
+             # 2. ขยายเพดาน OS (เหมือนเดิม)
+             ulimit -s 65535 || echo "Warning: Could not set ulimit"
+             
+             # 3. *** จุดสำคัญ *** # ใช้ NODE_OPTIONS เพื่อบังคับ Stack Size 10MB ไปยัง "ทุก Process" 
+             # (ทั้งตัวแม่และตัวลูกที่ Prisma สร้างขึ้นมา)
+             export NODE_OPTIONS="--stack-size=10240"
+             
+             # 4. รันคำสั่งปกติ (ไม่ต้องใส่ flag แล้ว เพราะมันอยู่ใน NODE_OPTIONS)
              npx prisma generate
              
              # -----------------------------------------------------
