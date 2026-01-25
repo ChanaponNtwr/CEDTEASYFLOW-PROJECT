@@ -16,7 +16,7 @@ pipeline {
       agent {
         docker {
           image 'node:18' 
-          // หมายเหตุ: ต้องมั่นใจว่าตั้งค่า BASE_API ใน Jenkins หรือใส่ค่าจริงตรงนี้
+          // args: รันด้วย user root เพื่อให้มีสิทธิ์เขียนไฟล์ และส่งตัวแปร BASE_API เข้าไป
           args '-u root:root -e BASE_API=${BASE_API}'
         }
       }
@@ -35,18 +35,18 @@ pipeline {
              
              echo "=== GENERATE & BUILD ==="
              
-             # --- ส่วนที่แก้ไข (แก้ปัญหา exit code 9 และ stack size) ---
-             # เราไม่ใช้ export NODE_OPTIONS และไม่ใช้ npx เพราะติด permission และ overhead
-             # แต่เราเรียก node binary โดยตรงไปที่ script ของ prisma เพื่อส่ง --stack-size ได้
+             # --- ส่วนที่แก้ไขล่าสุด (V4) ---
+             # 1. เพิ่ม Stack Size เป็น 10000 (ประมาณ 10MB) ซึ่งเยอะกว่า 4096
+             # 2. เรียกไปที่ไฟล์ ./node_modules/prisma/build/index.js โดยตรง 
+             #    เพื่อให้แน่ใจว่า node process นี้คือตัวที่รัน prisma จริงๆ ไม่ใช่แค่ shell wrapper
              
-             node --stack-size=4096 ./node_modules/.bin/prisma generate
+             node --stack-size=10000 ./node_modules/prisma/build/index.js generate
              
              # -----------------------------------------------------
-             
+
              npm test || true
              
              echo "Checking BASE_API: $BASE_API"
-             
              npm run build
           '''
         }
