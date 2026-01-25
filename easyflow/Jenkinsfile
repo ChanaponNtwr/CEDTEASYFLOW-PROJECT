@@ -21,22 +21,21 @@ pipeline {
                         # สร้าง folder prisma รอไว้
                         mkdir -p prisma
 
-                        # ตรวจสอบว่ามีไฟล์จาก backend จริงไหม (กัน Error)
+                        # ตรวจสอบว่ามีไฟล์จาก backend จริงไหม
                         if [ -f ../backend/prisma/schema.prisma ]; then
                             echo "Found backend schema, copying..."
                             cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
                         else
                             echo "WARNING: Backend schema not found at ../backend/prisma/schema.prisma"
                             echo "Build might fail if schema is required."
-                            # ลอง list ดูว่ามี folder อะไรบ้างเผื่อ path ผิด
                             ls -la .. || true
                         fi
 
                         echo "=== 2. CHECK FILES ==="
-                        # เช็คให้ชัวร์ว่าไฟล์มาแล้วจริงๆ ก่อนสั่ง Build
                         ls -la prisma
 
                         echo "=== 3. DOCKER BUILD ==="
+                        # Build Image (ใช้ Dockerfile ตัวใหม่ที่เป็น node:20-slim)
                         docker build -t ${IMAGE_NAME}:${TAG} .
                         docker tag ${IMAGE_NAME}:${TAG} ${IMAGE_NAME}:latest
                     """
@@ -47,6 +46,7 @@ pipeline {
         stage('Deploy (local docker)') {
             steps {
                 sh """
+                    echo "=== DEPLOYING ==="
                     docker stop ${IMAGE_NAME} || true
                     docker rm ${IMAGE_NAME} || true
                     
@@ -70,7 +70,6 @@ pipeline {
     post {
         always {
             script {
-                // Clean workspace (ไม่ต้องใช้ docker ช่วยลบแล้ว เพราะเราไม่ได้ใช้ root สร้างไฟล์)
                 cleanWs()
             }
         }
