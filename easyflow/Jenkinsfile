@@ -34,12 +34,12 @@ pipeline {
              
              echo "=== GENERATE & BUILD ==="
              
-             # --- แก้ไขล่าสุด: ใช้ Binary Engine เพื่อความเสถียรใน Docker ---
+             # --- แก้ไขจุดนี้ ---
              export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
              export PRISMA_CLIENT_ENGINE_TYPE=binary
              
-             # เรียก prisma generate โดยตรง
-             ./node_modules/.bin/prisma generate
+             # ใช้ค่า 4096 (4MB) และเรียกไฟล์ JS ตรงๆ
+             node --stack-size=4096 ./node_modules/prisma/build/index.js generate
              
              npm test || true
              
