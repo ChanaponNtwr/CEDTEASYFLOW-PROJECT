@@ -1,6 +1,6 @@
 // /app/api/user/route.ts
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]/route";
+import { authOptions } from "../auth/[...nextauth]/options";
 import { prisma } from "@/lib/prisma";     // path ไป Prisma client ของคุณ
 
 export async function GET() {
