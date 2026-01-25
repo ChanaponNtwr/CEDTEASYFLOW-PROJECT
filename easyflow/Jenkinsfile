@@ -12,7 +12,7 @@ pipeline {
       }
     }
 
-  stage('Install & Test & Build (node)') {
+    stage('Install & Test & Build (node)') {
       agent {
         docker {
           image 'node:18' 
@@ -25,7 +25,7 @@ pipeline {
       steps {
         dir('easyflow') {
           sh '''
-             # ... (โค้ดส่วน copy prisma เหมือนเดิม ไม่ต้องแก้) ...
+             # ... (โค้ดส่วน copy prisma เหมือนเดิม) ...
              echo "=== SETUP SCHEMA FROM BACKEND ==="
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
@@ -37,7 +37,12 @@ pipeline {
              npm ci
              
              echo "=== GENERATE & BUILD ==="
-             npx prisma generate
+             # --- ส่วนที่แก้ไข: เพิ่ม Stack Size แก้ Error: Maximum call stack size exceeded ---
+             export NODE_OPTIONS="--stack-size=4096"
+             
+             # ใช้ --no-install เพื่อให้แน่ใจว่าใช้ package จาก node_modules
+             npx --no-install prisma generate
+             
              npm test || true
              
              # เพิ่มบรรทัดนี้เพื่อ Debug ดูว่าค่ามาไหม (Optional)
@@ -84,7 +89,7 @@ pipeline {
                 easyflow-frontend:latest
             """
           }
-        }
+      }
   }
 
   post {
