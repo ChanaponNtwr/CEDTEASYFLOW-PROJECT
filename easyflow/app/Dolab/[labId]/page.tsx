@@ -294,4 +294,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
   );
 };
 
-export default FlowchartEditor;
+// 1. สร้าง Component ใหม่เพื่อเป็นหน้า Page หลักที่รับค่า params จาก Next.js
+export default function Page({ params }: { params: { labId: string } }) {
+  // 2. ดึงค่า labId ออกมาแล้วส่งต่อให้ FlowchartEditor ตัวเดิมของคุณ
+  return <FlowchartEditor flowchartId={params.labId} />;
+}
