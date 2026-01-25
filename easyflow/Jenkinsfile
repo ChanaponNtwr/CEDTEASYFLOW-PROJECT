@@ -1,16 +1,7 @@
-// Jenkinsfile (Declarative pipeline) - รองรับ Docker (node:20-slim) หรือ fallback เป็น host
 pipeline {
   agent any
   environment {
-    NODE_IMAGE = 'node:20-slim'   // image ที่แนะนำ (glibc + Node 20)
-    SCHEMA_SRC = 'backend/prisma/schema.prisma' // ปรับตาม repo ถ้าต่างออกไป
-    SCHEMA_DEST = 'prisma/schema.prisma'
-    PRISMA_CLI = 'npx prisma'     // use npx so Prisma CLI handles platform specifics
-  }
-  options {
-    // เก็บ console log มากขึ้น ถ้าต้องการ
-    timestamps()
-    ansiColor('xterm')
+    NODE_VERSION = '20' // ค่าที่ต้องการ
   }
   stages {
     stage('Checkout') {
@@ -19,164 +10,74 @@ pipeline {
       }
     }
 
-    stage('Env check') {
+    stage('Env Check') {
       steps {
         sh '''
           echo "=== ENV CHECK ==="
-          echo "User: $(whoami || true)"
-          echo "CWD: $(pwd)"
-          echo "Node on host (if present):"
-          node -v || echo "node not found on host"
-          npm -v || echo "npm not found on host"
+          node -v || true
+          npm -v || true
           uname -a || true
           cat /etc/os-release || true
-          echo "---- list repo top ----"
-          ls -la | sed -n '1,200p'
         '''
       }
     }
 
-    stage('Clean & Prepare') {
+    stage('Prepare') {
       steps {
         sh '''
           echo "=== CLEAN & PREPARE ==="
-          rm -rf node_modules .prisma prisma || true
-          # ถ้ามี package-lock จากก่อนหน้านี้ไม่ต้องลบทิ้ง แต่ถ้คุณต้องการ rebuild ให้ลบ
-          # rm -f package-lock.json
+          rm -rf node_modules .prisma
+          rm -f package-lock.json
         '''
       }
     }
 
-    stage('Install dependencies (with lockfile fallback)') {
-      steps {
-        script {
-          // encapsulate the install commands into a script to be run either inside docker or host
-          def installScript = '''
-            set -euo pipefail
-            echo "PWD: $(pwd)"
-            echo "=== INSTALL DEPENDENCIES ==="
-            if [ -f package-lock.json ]; then
-              echo "Found package-lock.json -> running npm ci"
-              npm ci
-            else
-              echo "No package-lock.json -> create lockfile then try npm ci"
-              # สร้าง lockfile เท่านั้น ถ้าเป็นไปได้
-              npm install --package-lock-only || echo "npm install --package-lock-only failed, will fallback to npm install"
-              # ถ้า lockfile ถูกสร้าง จะพยายามใช้ npm ci เพื่อ deterministic install
-              if [ -f package-lock.json ]; then
-                npm ci || (echo "npm ci failed, falling back to npm install" && npm install)
-              else
-                echo "No lockfile created -> running npm install (non-deterministic fallback)"
-                npm install
-              fi
-            fi
-
-            echo "Installed node modules. node: $(node -v || echo none), npm: $(npm -v || echo none)"
-            echo "ls node_modules/prisma (if exists):"
-            ls -la node_modules/prisma || true
-          '''
-
-          // Try running inside Docker container if available, otherwise run on host
-          try {
-            docker.image(env.NODE_IMAGE).inside {
-              sh installScript
-            }
-          } catch (err) {
-            echo "Unable to run inside docker (${env.NODE_IMAGE}) - falling back to host. Error: ${err}"
-            sh installScript
-          }
-        }
-      }
-    }
-
-    stage('Prisma generate (npx)') {
-      steps {
-        script {
-          def schemaCopyAndGenerate = """
-            set -euo pipefail
-            echo "=== PREPARE PRISMA SCHEMA ==="
-            mkdir -p prisma
-            if [ -f ${SCHEMA_SRC} ]; then
-              cp ${SCHEMA_SRC} ${SCHEMA_DEST}
-              echo "Copied schema: ${SCHEMA_SRC} -> ${SCHEMA_DEST}"
-            else
-              echo "Warning: schema source not found at ${SCHEMA_SRC}. Looking for prisma/schema.prisma in repo."
-            fi
-            echo "Schema present?"; ls -la ${SCHEMA_DEST} || true
-
-            echo "=== PRISMA GENERATE ==="
-            # Use npx so Prisma CLI handles platform detection
-            ${PRISMA_CLI} generate --schema=./${SCHEMA_DEST}
-          """
-
-          try {
-            docker.image(env.NODE_IMAGE).inside {
-              // also print node/npm inside container for debugging
-              sh 'echo "Container node/npm versions:"; node -v; npm -v || true'
-              sh schemaCopyAndGenerate
-            }
-          } catch (err) {
-            echo "Docker run for prisma generate failed - falling back to host. Error: ${err}"
-            // host attempt (useful if no docker available)
-            sh 'echo "Host node/npm versions:"; node -v || true; npm -v || true'
-            sh schemaCopyAndGenerate
-          }
-        }
-      }
-    }
-
-    stage('Build (optional)') {
+    stage('Install') {
       steps {
         sh '''
-          echo "=== BUILD ==="
-          # ถ้ามี build step (เช่น Next.js) ให้เปิดบรรทัดด้านล่าง
-          if grep -q "\"build\"" package.json; then
-            echo "Running npm run build"
-            npm run build || echo "build failed or not configured"
+          echo "=== INSTALL DEPENDENCIES ==="
+          if [ -f package-lock.json ]; then
+            echo "Found package-lock.json -> npm ci"
+            npm ci
           else
-            echo "No build script found in package.json"
+            echo "No package-lock.json found -> create lockfile then npm ci"
+            npm install --package-lock-only
+            npm ci
           fi
         '''
       }
     }
 
-    stage('Archive & Inspect') {
+
+    stage('Generate Prisma') {
       steps {
         sh '''
-          echo "=== POST-BUILD CHECKS ==="
-          # แสดงไฟล์ที่สำคัญเพื่อตรวจสอบ
-          echo "Prisma client folder:"
-          ls -la node_modules/.prisma || true
-          ls -la node_modules/@prisma || true
-          ls -la prisma || true
-          echo "listing prisma client under node_modules:"
-          ls -la node_modules/@prisma || true
+          echo "=== PRISMA GENERATE ==="
+          # คัดลอก schema ถ้าจำเป็น (ปรับเส้นทางให้ตรงกับ repo)
+          mkdir -p prisma
+          if [ -f backend/prisma/schema.prisma ]; then cp backend/prisma/schema.prisma prisma/schema.prisma; fi
+
+          # เรียกผ่าน npx เพื่อหลีกเลี่ยงการเรียก binary โดยตรง
+          npx prisma generate --schema=./prisma/schema.prisma
         '''
-        archiveArtifacts artifacts: 'prisma/**, node_modules/**/prisma/**, node_modules/.prisma/**', allowEmptyArchive: true
       }
     }
-  } // stages
+
+    stage('Build') {
+      steps {
+        sh '''
+          echo "=== BUILD ==="
+          # ตัวอย่าง: ถ้าใช้ Next.js
+          # npm run build
+        '''
+      }
+    }
+  }
 
   post {
-    success {
-      echo "Pipeline finished SUCCESS"
-    }
-    unstable {
-      echo "Pipeline finished UNSTABLE"
-    }
-    failure {
-      echo "Pipeline finished FAILURE"
-      sh '''
-        echo "---- npm debug log (last 200 lines if exists) ----"
-        if [ -d "$HOME/.npm/_logs" ]; then
-          tail -n 200 $HOME/.npm/_logs/*.log || true
-        fi
-      '''
-    }
     always {
-      echo "Cleaning workspace (optional)"
-      // remove big node_modules if you want to save space on the agent
-      // sh 'rm -rf node_modules || true'
+      archiveArtifacts artifacts: 'prisma/**', allowEmptyArchive: true
+      echo 'Pipeline finished'
     }
   }
 }
