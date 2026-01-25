@@ -47,7 +47,10 @@ pipeline {
 
              echo "=== GENERATE & BUILD ==="
              
-             # [FIX] เรียกใช้จาก bin โดยตรง ไม่ผ่าน npx (แก้ Maximum call stack exceeded)
+             # [FIX: CRITICAL] เพิ่ม Stack Size เพื่อแก้ Error: Maximum call stack size exceeded
+             export NODE_OPTIONS="--stack-size=8192"
+
+             # [FIX] เรียกใช้จาก bin โดยตรง ไม่ผ่าน npx
              ./node_modules/.bin/prisma generate --schema=./prisma/schema.prisma
 
              npm test || true
