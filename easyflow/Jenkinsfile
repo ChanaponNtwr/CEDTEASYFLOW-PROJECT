@@ -16,35 +16,38 @@ pipeline {
       agent {
         docker {
           image 'node:18' 
-          args '-u root:root -e BASE_API=${BASE_API}'
+          // เพิ่ม Environment Variable เพื่อบังคับใช้ Binary Engine (เสถียรกว่าใน CI)
+          args '-u root:root -e BASE_API=${BASE_API} -e PRISMA_CLIENT_ENGINE_TYPE=binary -e PRISMA_CLI_QUERY_ENGINE_TYPE=binary'
         }
       }
       steps {
         dir('easyflow') {
           sh '''
-             # 1. เตรียม Schema
+             # 1. ติดตั้ง OpenSSL เพื่อความชัวร์ (บางที Node image ตัวเล็กอาจขาด lib นี้)
+             apt-get update -y && apt-get install -y openssl
+
+             # 2. เตรียม Schema
              echo "=== SETUP SCHEMA FROM BACKEND ==="
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
 
-             # 2. Clean Install
+             # 3. Clean Install
              echo "=== CLEAN & INSTALL ==="
              rm -rf node_modules
              rm -rf .prisma
              rm -rf node_modules/.prisma
-             npm ci
              
+             # ใช้ npm install แทน npm ci ชั่วคราว เพื่อให้มัน resolve version ที่เข้ากันได้ใหม่หน้างาน
+             # (ถ้า npm ci พังบ่อย ท่านี้ช่วยได้แต่ build จะช้าลงนิดหน่อย)
+             npm install
+             
+             # ท่าไม้ตาย: บังคับลง prisma version เดียวกันให้แน่ใจ (แก้ Stack Exceeded)
+             # npm install prisma@latest @prisma/client@latest --save-exact
+
              echo "=== GENERATE & BUILD ==="
              
-             # --- ส่วนที่แก้ไข (FIX) ---
-             # ลบ export NODE_OPTIONS เดิมออก เพราะใช้ไม่ได้กับ --stack-size ใน Node 18
-             # เปลี่ยนมาใช้ node เรียกไฟล์ execute ของ prisma โดยตรงเพื่อส่งค่า stack-size
-             
-             node --stack-size=8192 ./node_modules/prisma/build/index.js generate --schema=./prisma/schema.prisma
-             
-             # หมายเหตุ: หากยัง error เดิม ให้ตรวจสอบ version ของ "prisma" และ "@prisma/client" 
-             # ใน package.json ว่าเป็นเวอร์ชันเดียวกันเป๊ะหรือไม่ (เช่น 4.14.0 ทั้งคู่)
-             # ------------------------
+             # กลับมาใช้คำสั่งปกติ เพราะเราแก้ที่ env var และ dependency แล้ว
+             npx prisma generate --schema=./prisma/schema.prisma
 
              npm test || true
              
