@@ -32,7 +32,7 @@ pipeline {
       }
     }
 
-       stage('Install Dependencies') {
+        stage('Install Dependencies') {
             steps {
                 sh '''
                     set -e
@@ -44,15 +44,15 @@ pipeline {
                     echo "Workspace files:"
                     ls -la
 
-                    # เข้าโฟลเดอร์ที่มี package.json
-                    cd frontend
+                    echo "Enter frontend directory (easyflow)"
+                    cd easyflow
 
                     echo "After cd:"
                     pwd
                     ls -la
 
                     if [ ! -f package.json ]; then
-                      echo "❌ ERROR: package.json not found"
+                      echo "❌ ERROR: package.json not found in easyflow"
                       exit 1
                     fi
 
