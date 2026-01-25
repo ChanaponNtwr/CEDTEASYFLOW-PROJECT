@@ -1,38 +1,23 @@
-FROM node:18-slim AS builder
-
-RUN apt-get update -y && apt-get install -y openssl
+FROM node:18-alpine
 
 WORKDIR /app
 
 COPY package*.json ./
+
+# 1. ลง Openssl
+RUN apk add --no-cache openssl
+
+# --- แก้ไขจุดที่ 1: ลบ --only=production ออก เพื่อให้ลง Prisma CLI มาด้วย ---
+RUN npm ci 
+# -------------------------------------------------------------------
+
 COPY . .
 
-WORKDIR /app/easyflow
-
-RUN npm ci
-
-COPY backend/prisma/schema.prisma ./prisma/schema.prisma
-
+# 2. สร้าง Prisma Client
 RUN npx prisma generate
 
-ENV BASE_API="http://build-placeholder" \
-    DATABASE_URL="postgresql://build-placeholder:5432/db" \
-    GOOGLE_CLIENT_ID="build-placeholder" \
-    GOOGLE_CLIENT_SECRET="build-placeholder" \
-    NEXTAUTH_SECRET="build-placeholder" \
-    NEXTAUTH_URL="http://build-placeholder" \
-    SERVER_HOST="build-placeholder"
+# (Optional) ถ้าอยากลดขนาด Image ให้เพิ่มบรรทัดนี้หลังจาก generate เสร็จ
+# RUN npm prune --production
 
-RUN npm run build
-
-FROM node:18-slim
-WORKDIR /app
-ENV NODE_ENV=production
-
-RUN apt-get update -y && apt-get install -y openssl
-
-COPY --from=builder /app .
-RUN npm prune --production
-
-EXPOSE 3000
-CMD ["npm", "start"]
+EXPOSE 9000
+CMD ["node", "src/server.js"]
