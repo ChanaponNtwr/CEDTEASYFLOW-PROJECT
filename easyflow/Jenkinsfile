@@ -36,10 +36,12 @@ pipeline {
              rm -f package-lock.json
              
              # --- ส่วนที่แก้ไข (FIX) ---
-             # เปลี่ยนจาก npm install ธรรมดา เป็นการบังคับลง Prisma เวอร์ชันล่าสุด
-             # เพื่อแก้ปัญหา Bug ของ Prisma 5.7.1 บน Node 18 Bookworm / Next.js 15
+             # เปลี่ยนกลับเป็น Prisma 5 เพื่อให้รองรับ schema.prisma แบบเดิม
+             # และใช้ Node 20 (ที่คุณเพิ่งแก้ไป) รันได้โดยไม่มีปัญหา
              echo "=== UPDATE PRISMA & INSTALL DEPENDENCIES ==="
-             npm install prisma@latest @prisma/client@latest --save-exact
+             
+             # แก้จาก @latest เป็น @5
+             npm install prisma@5 @prisma/client@5 --save-exact
              # ------------------------
 
              echo "=== GENERATE & BUILD ==="
