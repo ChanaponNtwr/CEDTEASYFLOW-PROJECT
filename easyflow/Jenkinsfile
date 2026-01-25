@@ -16,14 +16,14 @@ pipeline {
       agent {
         docker {
           image 'node:18' 
-          // เพิ่ม Environment Variable เพื่อบังคับใช้ Binary Engine (เสถียรกว่าใน CI)
-          args '-u root:root -e BASE_API=${BASE_API} -e PRISMA_CLIENT_ENGINE_TYPE=binary -e PRISMA_CLI_QUERY_ENGINE_TYPE=binary'
+          // เพิ่ม -e NODE_ENV=development เพื่อบังคับให้ install devDependencies (Prisma CLI) เสมอ
+          args '-u root:root -e BASE_API=${BASE_API} -e NODE_ENV=development'
         }
       }
       steps {
         dir('easyflow') {
           sh '''
-             # 1. ติดตั้ง OpenSSL เพื่อความชัวร์ (บางที Node image ตัวเล็กอาจขาด lib นี้)
+             # 1. ติดตั้ง Library พื้นฐานที่จำเป็น (OpenSSL)
              apt-get update -y && apt-get install -y openssl
 
              # 2. เตรียม Schema
@@ -31,27 +31,35 @@ pipeline {
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
 
-             # 3. Clean Install
+             # 3. Clean & Install แบบล้างบาง
              echo "=== CLEAN & INSTALL ==="
              rm -rf node_modules
              rm -rf .prisma
              rm -rf node_modules/.prisma
              
-             # ใช้ npm install แทน npm ci ชั่วคราว เพื่อให้มัน resolve version ที่เข้ากันได้ใหม่หน้างาน
-             # (ถ้า npm ci พังบ่อย ท่านี้ช่วยได้แต่ build จะช้าลงนิดหน่อย)
-             npm install
+             # ลบ package-lock.json เพื่อแก้ปัญหา version ตีกัน
+             rm -f package-lock.json
              
-             # ท่าไม้ตาย: บังคับลง prisma version เดียวกันให้แน่ใจ (แก้ Stack Exceeded)
-             # npm install prisma@latest @prisma/client@latest --save-exact
+             # ย้ำอีกครั้งว่าต้องเป็น development เพื่อให้ได้ prisma cli
+             export NODE_ENV=development
+             npm install
 
              echo "=== GENERATE & BUILD ==="
              
-             # กลับมาใช้คำสั่งปกติ เพราะเราแก้ที่ env var และ dependency แล้ว
-             npx prisma generate --schema=./prisma/schema.prisma
+             # Debug: เช็คว่า prisma cli ถูกติดตั้งจริงไหม (Log ต้องเจอไฟล์)
+             ls -l ./node_modules/.bin/prisma || echo "Prisma Binary NOT FOUND"
+             
+             # --- จุดสำคัญ (FIX) ---
+             # เรียกใช้ Prisma จาก node_modules โดยตรง (ห้ามใช้ npx prisma เฉยๆ)
+             # เพื่อป้องกันมันไปโหลด version ล่าสุดมาใช้จนเกิด Stack Overflow
+             ./node_modules/.bin/prisma generate --schema=./prisma/schema.prisma
+             # ---------------------
 
              npm test || true
              
              echo "Checking BASE_API: $BASE_API"
+             
+             # Build โปรเจกต์ (Next.js จะจัดการ env production ให้เองตอน build)
              npm run build
           '''
         }
