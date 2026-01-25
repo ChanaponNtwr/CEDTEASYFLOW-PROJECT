@@ -15,8 +15,10 @@ pipeline {
     stage('Install & Test & Build (node)') {
       agent {
         docker {
-          image 'node:18' 
-          // เพิ่ม NODE_ENV=development เพื่อให้แน่ใจว่า install ครบ
+          # --- ส่วนที่แก้ไข (FIX) ---
+          # เปลี่ยนจาก node:18 เป็น node:20 เพื่อให้รองรับ Prisma 7.x และ Next.js 15 ได้เต็มประสิทธิภาพ
+          image 'node:20' 
+          # ------------------------
           args '-u root:root -e BASE_API=${BASE_API} -e NODE_ENV=development'
         }
       }
@@ -35,16 +37,14 @@ pipeline {
              rm -rf node_modules/.prisma
              rm -f package-lock.json
              
-             # --- ส่วนที่แก้ไข (FIX) ---
-             # เปลี่ยนจาก npm install ธรรมดา เป็นการบังคับลง Prisma เวอร์ชันล่าสุด
-             # เพื่อแก้ปัญหา Bug ของ Prisma 5.7.1 บน Node 18 Bookworm / Next.js 15
+             # 3. Update Prisma เป็นเวอร์ชันล่าสุด (ตอนนี้จะผ่านแล้วเพราะใช้ Node 20)
              echo "=== UPDATE PRISMA & INSTALL DEPENDENCIES ==="
+             # ติดตั้ง dependencies และบังคับใช้ Prisma ล่าสุด
              npm install prisma@latest @prisma/client@latest --save-exact
-             # ------------------------
 
              echo "=== GENERATE & BUILD ==="
              
-             # ใช้ npx ได้เลยเพราะเราเพิ่งลง version ล่าสุดไป
+             # Generate Client
              npx prisma generate --schema=./prisma/schema.prisma
 
              npm test || true
@@ -59,6 +59,10 @@ pipeline {
     stage('Build Docker Image') {
       steps {
         sh '''
+          # ตอน Build Docker Image จริง ก็ควรเปลี่ยนเป็น node:20 ด้วยเพื่อให้ Environment ตรงกัน
+          # แต่ถ้า Dockerfile ของคุณ fix ไว้ที่ 18 อาจจะแก้ในนี้ไม่ได้ทันที (แต่ production รันได้)
+          # แนะนำให้ไปแก้ไฟล์ Dockerfile ในโปรเจกต์ด้วยถ้าทำได้ แต่ถ้าไม่ได้ ให้ใช้บรรทัดนี้ไปก่อน
+          
           docker build \
             -t easyflow-frontend:${BUILD_NUMBER} \
             -f easyflow/Dockerfile \
