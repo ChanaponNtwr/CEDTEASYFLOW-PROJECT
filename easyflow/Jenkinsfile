@@ -18,10 +18,9 @@ pipeline {
                 dir('easyflow') {
                     sh """
                         echo "=== 1. PREPARE PRISMA SCHEMA ==="
-                        # สร้าง folder prisma รอไว้
                         mkdir -p prisma
 
-                        # ตรวจสอบว่ามีไฟล์จาก backend จริงไหม
+                        # ตรวจสอบและ copy schema
                         if [ -f ../backend/prisma/schema.prisma ]; then
                             echo "Found backend schema, copying..."
                             cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
@@ -35,7 +34,6 @@ pipeline {
                         ls -la prisma
 
                         echo "=== 3. DOCKER BUILD ==="
-                        # Build Image (ใช้ Dockerfile ตัวใหม่ที่เป็น node:20-slim)
                         docker build -t ${IMAGE_NAME}:${TAG} .
                         docker tag ${IMAGE_NAME}:${TAG} ${IMAGE_NAME}:latest
                     """

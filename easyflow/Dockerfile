@@ -2,35 +2,33 @@
 FROM node:20-slim AS deps
 WORKDIR /app
 
-# Install OpenSSL (Required for Prisma on Debian-based images)
+# Install OpenSSL (จำเป็นสำหรับ Prisma)
 RUN apt-get update -y && apt-get install -y openssl ca-certificates
 
 # Copy package files
 COPY package.json package-lock.json* ./
 
 # Copy prisma schema directory
-# [Note] Ensure 'prisma' is NOT in your .dockerignore file
 COPY prisma ./prisma/
 
-# Install dependencies
-RUN npm ci
+# [FIX] ใช้ npm install แทน npm ci
+# เพื่อบังคับให้โหลด Binary สำหรับ Linux (lightningcss-linux-x64-gnu)
+# ที่อาจจะไม่มีใน package-lock.json ของ Windows/Mac
+RUN npm install
 
 # Stage 2: Builder
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Copy node_modules from deps
+# Copy node_modules ที่ install มาใหม่ๆ จาก stage deps
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Generate Prisma Client
-# Note: Prisma on slim needs the openssl we installed in deps? 
-# Actually, builder needs its own environment, let's ensure it has what it needs.
-# But usually node_modules contains the engine.
 RUN npx prisma generate
 
 # Build Next.js
-# ตอนนี้ใช้ slim (glibc) ปัญหา lightningcss/swc จะหายไป
+# ตอนนี้จะมีไฟล์ lightningcss ครบแล้ว จะไม่ error
 RUN npm run build
 
 # Stage 3: Runner (Production Image)
@@ -40,14 +38,14 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Install OpenSSL for production runtime (Prisma needs it)
+# Install OpenSSL for production runtime
 RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # สร้าง user เพื่อความปลอดภัย
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy ไฟล์จำเป็นจาก Builder (โหมด Standalone)
+# Copy ไฟล์จำเป็นจาก Builder
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
