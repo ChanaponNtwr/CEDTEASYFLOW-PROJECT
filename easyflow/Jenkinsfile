@@ -1,5 +1,6 @@
 pipeline {
   agent any
+
   environment {
     IMAGE_NAME = "easyflow-frontend:${env.BUILD_NUMBER}"
     PRISMA_PIN_VERSION = "5.7.1"
@@ -14,13 +15,20 @@ pipeline {
       agent {
         docker {
           image 'node:18-bullseye'
-          args '-u root:root -e BASE_API=${BASE_API}'
+          // เพิ่ม --ulimit ให้ container ตั้งแต่รัน จะช่วยให้ ulimit -s ขยายได้จริง
+          args '-u root:root -e BASE_API=${BASE_API} --ulimit stack=65535:65535'
         }
       }
+
       steps {
         dir('easyflow') {
           sh '''
-            set -e
+            set -euo pipefail
+
+            echo "=== SET ULIMIT (OS stack) EARLY ==="
+            # พยายามขยาย stack ของ shell/process ให้มากขึ้น (ถ้าสามารถได้)
+            ulimit -s 65535 || echo "Warning: ulimit -s failed or not permitted"
+
             echo "=== SETUP SCHEMA FROM BACKEND ==="
             mkdir -p prisma
             cp ../backend/prisma/schema.prisma ./prisma/schema.prisma || true
@@ -30,18 +38,22 @@ pipeline {
             rm -rf .prisma
             rm -rf node_modules/.prisma
 
-            # ใช้ npm ci ตาม lockfile ถ้ามี
+            # ติดตั้ง dependencies ตาม package-lock.json
             npm ci
 
             echo "=== DEBUG VERSIONS ==="
             node -v
             npm -v
+            echo "ulimit -a after attempted change:"
+            ulimit -a || true
 
-            echo "=== ATTEMPT PRISMA CLI RESOLUTION (multiple fallbacks) ==="
+            echo "=== SET NODE_OPTIONS (pass stack-size to Node) ==="
+            export NODE_OPTIONS="--stack-size=60000 --max-old-space-size=4096"
+            echo "NODE_OPTIONS=$NODE_OPTIONS"
 
-            PRISMA_CMD=""
+            echo "=== ATTEMPT PRISMA CLI (with several fallbacks) ==="
 
-            # 1) try local bin (fast)
+            # 1) try local binary first
             if [ -x "./node_modules/.bin/prisma" ]; then
               echo "Trying local ./node_modules/.bin/prisma --version"
               if ./node_modules/.bin/prisma --version; then
@@ -54,8 +66,8 @@ pipeline {
               echo "No local prisma binary found."
             fi
 
-            # 2) If local failed, try npx with explicit package (forces npx to fetch exact package and run it)
-            if [ -z "$PRISMA_CMD" ]; then
+            # 2) If local binary not usable, try npx explicit package (this downloads and runs exact version)
+            if [ -z "${PRISMA_CMD:-}" ]; then
               echo "Trying npx --package prisma@${PRISMA_PIN_VERSION} prisma --version"
               if npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma --version; then
                 PRISMA_CMD="npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma"
@@ -65,32 +77,29 @@ pipeline {
               fi
             fi
 
-            # 3) If still no PRISMA_CMD, inspect installed prisma package files to debug
-            if [ -z "$PRISMA_CMD" ]; then
-              echo "Diagnosing local prisma package..."
-              echo "ls node_modules/prisma (if exists):"
-              ls -la node_modules/prisma || true
-              echo "Attempt to read package.json of local prisma (no code execution):"
-              node -e "try { console.log('local prisma package.json version:', require('./node_modules/prisma/package.json').version) } catch (e) { console.error('read package.json failed:', e && e.stack ? e.stack.split('\\n')[0] : e) }" || true
-
-              echo "Try direct require of @prisma/client package.json:"
-              node -e "try { console.log('local @prisma/client package.json version:', require('./node_modules/@prisma/client/package.json').version) } catch (e) { console.error('read @prisma/client package.json failed:', e && e.stack ? e.stack.split('\\n')[0] : e) }" || true
+            # 3) If still failing, try invoking node directly with --stack-size on the prisma index file
+            if [ -z "${PRISMA_CMD:-}" ]; then
+              if [ -f "./node_modules/prisma/build/index.js" ]; then
+                echo "Trying direct node invocation: node --stack-size=60000 ./node_modules/prisma/build/index.js --version"
+                if node --stack-size=60000 ./node_modules/prisma/build/index.js --version; then
+                  PRISMA_CMD="node --stack-size=60000 ./node_modules/prisma/build/index.js"
+                  echo "Using direct node invocation for prisma: $PRISMA_CMD"
+                else
+                  echo "Direct node invocation also failed."
+                fi
+              else
+                echo "No prisma build/index.js found to try direct node invocation."
+              fi
             fi
 
-            # 4) If still failiing -> clear npm cache and install pinned prisma locally (no-save),
-            #    then try local binary again.
-            if [ -z "$PRISMA_CMD" ]; then
+            # 4) If still not resolved, attempt reinstall pinned prisma locally (no-save) after cleaning npm cache
+            if [ -z "${PRISMA_CMD:-}" ]; then
               echo "Cleaning npm cache and reinstalling pinned prisma @${PRISMA_PIN_VERSION} (no-save)..."
               npm cache clean --force || true
               npm install prisma@${PRISMA_PIN_VERSION} --no-save @prisma/client@${PRISMA_PIN_VERSION} --no-save
 
-              echo "After reinstall, list prisma files:"
-              ls -la node_modules/prisma || true
-              ls -la node_modules/.bin || true
-
-              # try local binary again
+              echo "Trying freshly installed local binary ./node_modules/.bin/prisma --version"
               if [ -x "./node_modules/.bin/prisma" ]; then
-                echo "Trying freshly installed local binary ./node_modules/.bin/prisma --version"
                 if ./node_modules/.bin/prisma --version; then
                   PRISMA_CMD="./node_modules/.bin/prisma"
                   echo "Using freshly installed local prisma: $PRISMA_CMD"
@@ -99,34 +108,26 @@ pipeline {
                 fi
               fi
 
-              # try npx explicit package as final fallback
-              if [ -z "$PRISMA_CMD" ]; then
-                echo "Trying final fallback: npx --package prisma@${PRISMA_PIN_VERSION} prisma --version"
-                if npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma --version; then
-                  PRISMA_CMD="npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma"
-                  echo "Using final fallback prisma via npx: $PRISMA_CMD"
+              # try direct node invocation as well
+              if [ -z "${PRISMA_CMD:-}" ] && [ -f "./node_modules/prisma/build/index.js" ]; then
+                if node --stack-size=60000 ./node_modules/prisma/build/index.js --version; then
+                  PRISMA_CMD="node --stack-size=60000 ./node_modules/prisma/build/index.js"
+                  echo "Using direct node invocation after reinstall: $PRISMA_CMD"
                 fi
               fi
             fi
 
-            # If still not resolved, fail with helpful diagnostics
-            if [ -z "$PRISMA_CMD" ]; then
+            # Final check
+            if [ -z "${PRISMA_CMD:-}" ]; then
               echo "ERROR: Could not obtain a working prisma CLI."
-              echo "Please pin prisma & @prisma/client in package.json to a stable version (e.g. 5.7.1) and run npm ci."
-              echo "Diagnostic files:"
-              ls -la . || true
-              echo "node_modules tree (top):"
-              ls -la node_modules | head -n 200 || true
-              # show npm list for prisma
-              echo "npm list prisma --depth=0"
+              echo "Please pin prisma & @prisma/client in package.json to a stable version (e.g. ${PRISMA_PIN_VERSION}) and run npm ci."
+              echo "Diagnostics:"
               npm list prisma --depth=0 || true
-              echo "npm list @prisma/client --depth=0"
               npm list @prisma/client --depth=0 || true
-
-              # print some environment info
-              echo "ulimit -a"
+              node -e "console.log('Node version:', process.version)"
+              echo "ulimit -a:"
               ulimit -a || true
-
+              ls -la node_modules/prisma || true
               exit 1
             fi
 
@@ -135,11 +136,11 @@ pipeline {
             echo "=== PRISMA GENERATE ==="
             export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
             export PRISMA_CLIENT_ENGINE_TYPE=binary
-            export NODE_OPTIONS="--stack-size=60000 --max-old-space-size=4096"
-            ulimit -s 65535 || true
 
-            # run generate using resolved command
-            if echo "$PRISMA_CMD" | grep -q '^npx'; then
+            if echo "$PRISMA_CMD" | grep -q '^node'; then
+              # PRISMA_CMD already includes node and stack-size
+              $PRISMA_CMD generate --schema=./prisma/schema.prisma
+            elif echo "$PRISMA_CMD" | grep -q '^npx'; then
               $PRISMA_CMD generate --schema=./prisma/schema.prisma
             else
               "$PRISMA_CMD" generate --schema=./prisma/schema.prisma
