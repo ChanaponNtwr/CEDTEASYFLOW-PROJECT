@@ -15,8 +15,8 @@ pipeline {
     stage('Install & Test & Build (node)') {
       agent {
         docker {
+          // ใช้ Node 20 เพื่อความเสถียรกับ Next.js 15 และ Prisma
           image 'node:20' 
-          // เพิ่ม NODE_ENV=development เพื่อให้แน่ใจว่า install ครบ
           args '-u root:root -e BASE_API=${BASE_API} -e NODE_ENV=development'
         }
       }
@@ -28,26 +28,27 @@ pipeline {
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
 
-             # 2. Clean Install
-             echo "=== CLEAN & INSTALL ==="
+             # 2. Clean Environment แบบหมดจด
+             echo "=== CLEAN & PREPARE ==="
              rm -rf node_modules
              rm -rf .prisma
-             rm -rf node_modules/.prisma
              rm -f package-lock.json
              
-             # --- ส่วนที่แก้ไข (FIX) ---
-             # เปลี่ยนกลับเป็น Prisma 5 เพื่อให้รองรับ schema.prisma แบบเดิม
-             # และใช้ Node 20 (ที่คุณเพิ่งแก้ไป) รันได้โดยไม่มีปัญหา
-             echo "=== UPDATE PRISMA & INSTALL DEPENDENCIES ==="
-             
-             # แก้จาก @latest เป็น @5
+             # [FIX] ล้าง Cache เพื่อกัน npx เอ๋อ
+             npm cache clean --force
+
+             # [FIX] ลง Dependencies หลักทั้งหมดก่อน (Next, React, etc.)
+             echo "=== INSTALL ALL DEPENDENCIES ==="
+             npm install
+
+             # [FIX] บังคับลง Prisma v5 (ทับอีกรอบเพื่อความชัวร์)
+             echo "=== FORCE INSTALL PRISMA v5 ==="
              npm install prisma@5 @prisma/client@5 --save-exact
-             # ------------------------
 
              echo "=== GENERATE & BUILD ==="
              
-             # ใช้ npx ได้เลยเพราะเราเพิ่งลง version ล่าสุดไป
-             npx prisma generate --schema=./prisma/schema.prisma
+             # [FIX] เรียกใช้จาก bin โดยตรง ไม่ผ่าน npx (แก้ Maximum call stack exceeded)
+             ./node_modules/.bin/prisma generate --schema=./prisma/schema.prisma
 
              npm test || true
              
