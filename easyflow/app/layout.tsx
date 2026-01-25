@@ -1,20 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google"; // 1. เปลี่ยน import เป็น Inter
 import "./globals.css";
-import { Providers } from "./providers"; // ✅ import ตัวใหม่
+import { Providers } from "./providers";
 
-// กำหนดฟอนต์โดยไม่ให้เกิดผลกระทบต่อ hydration
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  display: "swap", // ช่วยให้ฟอนต์โหลดแบบไม่บล็อกการ render
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  display: "swap",
-});
+// 2. สร้าง instance ของ Inter
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -29,8 +19,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning // เพิ่มเพื่อซ่อน warning ชั่วคราวในการ debug
+        // 3. เรียกใช้ className ของ inter ตรงนี้แทน variable เดิม
+        className={inter.className}
+        suppressHydrationWarning
       >
         <Providers>{children}</Providers>
       </body>
