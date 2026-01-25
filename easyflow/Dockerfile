@@ -15,6 +15,10 @@ RUN npm ci
 # Stage 2: Builder
 FROM node:20-alpine AS builder
 WORKDIR /app
+
+# ✅ เพิ่มบรรทัดนี้ใน Stage Builder ด้วย! ไม่งั้น Prisma จะทำงานตอน Build ไม่ได้
+RUN apk add --no-cache openssl libc6-compat
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 

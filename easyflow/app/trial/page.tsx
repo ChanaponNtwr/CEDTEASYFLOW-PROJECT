@@ -1,13 +1,19 @@
 "use client";
+
 import React, { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image"; // ใช้ Image ของ Next.js (ถ้าต้องการเปลี่ยน img tag)
+
+// Components
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
-import Link from "next/link";
-// Update imports: ใช้ apiStartTrial แทน
-import { apiStartTrial, apiGetLab, apiGetTestcases } from "@/app/service/FlowchartService";
-import { useRouter, useSearchParams } from "next/navigation";
 
+// Services
+import { apiStartTrial, apiGetLab, apiGetTestcases } from "@/app/service/FlowchartService";
+
+// บังคับให้หน้านี้เป็น Dynamic Rendering เสมอ (เพื่อรองรับ Search Params)
 export const dynamic = "force-dynamic";
 
 // --- Interfaces ---
@@ -39,7 +45,8 @@ interface RemoteLab {
   [k: string]: any;
 }
 
-// Helper: Format Date
+// --- Helper Functions ---
+
 function formatDueDate(d?: string) {
   if (!d) return "No due date";
   try {
@@ -51,52 +58,60 @@ function formatDueDate(d?: string) {
   }
 }
 
+// --- Main Component ---
+
 function Trial() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // รับ labId จาก URL (Default 19)
+  // รับ labId จาก URL (Default เป็น 19 หากไม่มี)
   const labIdParam = searchParams?.get("labId") ?? "19";
 
+  // State Management
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [lab, setLab] = useState<RemoteLab | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // State สำหรับปุ่ม Do Lab (กันกดซ้ำ)
-  const [isStarting, setIsStarting] = useState(false);
+  const [isStarting, setIsStarting] = useState(false); // State กันกดปุ่มซ้ำ
 
-  // --- Data Fetching Logic (ดึงข้อมูล Lab มาแสดง) ---
+  // --- Data Fetching Logic ---
   useEffect(() => {
     let mounted = true;
+
     const fetchData = async () => {
       setLoading(true);
       setError(null);
+
       try {
+        // 1. ดึงข้อมูล Lab
         const resp = await apiGetLab(String(labIdParam));
         const remoteLab: RemoteLab = resp?.lab ?? resp ?? null;
 
         if (!mounted) return;
         setLab(remoteLab);
 
+        // 2. จัดการข้อมูล Testcases (รองรับโครงสร้างข้อมูลหลายแบบ)
         let list: any[] = [];
         if (remoteLab && (remoteLab.testcases || remoteLab.testCases)) {
           list = remoteLab.testcases ?? remoteLab.testCases ?? [];
         } else {
+          // ถ้าไม่มีใน Lab object ให้ลองดึงแยก
           const tcResp = await apiGetTestcases(String(labIdParam));
           list = Array.isArray(tcResp)
             ? tcResp
             : tcResp?.data ?? tcResp?.testcases ?? tcResp ?? [];
         }
 
-        // Helper parsers (เหมือนเดิม)
+        // --- Parsers Helpers ---
+        // ฟังก์ชันแปลงค่า Input/Output ที่อาจเป็น String ซ้อน JSON หรือ Array
         const parseVal = (val: any): any => {
           if (typeof val === "string") {
             const trimmed = val.trim();
             try {
               const parsed = JSON.parse(val);
-              return parseVal(parsed);
+              return parseVal(parsed); // Recursive parse
             } catch {
+              // กรณี parse JSON ไม่ได้ ลองเช็ค format แบบ Python List string '[a, b]'
               if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
                 const content = trimmed.slice(1, -1);
                 const items = content.split(",").map((part) => {
@@ -108,6 +123,7 @@ function Trial() {
                 });
                 return parseVal(items);
               }
+              // กรณีคั่นด้วย space หรือ comma
               const hasComma = trimmed.indexOf(",") !== -1;
               if (!hasComma && trimmed.indexOf(" ") !== -1) {
                 return trimmed.split(/\s+/).map((s) => s.trim()).filter(Boolean);
@@ -125,6 +141,7 @@ function Trial() {
           return arr.reduce((acc, val) => (Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val)), []);
         };
 
+        // Map ข้อมูลลง State TestCase
         const mapped = (list ?? []).map((tc: any, index: number) => {
           const rawInput = parseVal(tc.inputVal ?? tc.input ?? tc.inHiddenVal ?? tc.inHidden ?? []);
           const rawOutput = parseVal(tc.outputVal ?? tc.output ?? tc.outHiddenVal ?? tc.outHidden ?? []);
@@ -146,6 +163,7 @@ function Trial() {
 
         if (!mounted) return;
         setTestCases(mapped);
+
       } catch (err: any) {
         console.error("Failed to load lab/testcases", err);
         if (mounted) setError("Failed to load lab details.");
@@ -183,20 +201,17 @@ function Trial() {
   const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     
-    // 1. Set Loading State
-    setIsStarting(true);
+    setIsStarting(true); // เริ่ม Loading ปุ่ม
 
     try {
-      const currentLabId = labIdParam; // ใช้ ID จาก URL หรือ Default
+      const currentLabId = labIdParam;
 
-      // 2. Call API: POST /trial/start
-      // (Backend จะสร้าง Flowchart และ trialId ให้เอง)
+      // เรียก API: POST /trial/start
       const result = await apiStartTrial(currentLabId);
-
       console.log("Start Trial Response:", result);
 
       if (result && result.ok && result.trialId) {
-        // 3. Success: Redirect to /Dolab/[trialId]
+        // สำเร็จ: ไปยังหน้า Do Lab พร้อม trialId ที่ได้มา
         router.push(`/dolabtrial/${result.trialId}`);
       } else {
         throw new Error("Invalid response from server (missing trialId)");
@@ -206,8 +221,7 @@ function Trial() {
       console.error("Failed to start lab:", error);
       alert(`Failed to start lab: ${error.message || "Unknown error"}`);
     } finally {
-      // 4. Reset Loading State
-      setIsStarting(false);
+      setIsStarting(false); // หยุด Loading ปุ่ม
     }
   };
 
@@ -220,11 +234,11 @@ function Trial() {
           <div className="flex-1 flex justify-center p-6 md:p-10">
             <div className="w-full max-w-5xl bg-white p-6 rounded-lg shadow-md">
               
-              {/* Buttons */}
+              {/* Buttons Section */}
               <div className="flex justify-end mb-2 space-x-2">
                 <button
                   onClick={handleClick}
-                  disabled={loading || isStarting} // Disable ตอนโหลดหน้า หรือ ตอนกำลัง Start Trial
+                  disabled={loading || isStarting}
                   className={`px-4 py-2 rounded-full flex items-center justify-center w-28 text-white transition-colors
                     ${loading || isStarting 
                       ? 'bg-gray-400 cursor-not-allowed' 
@@ -245,6 +259,7 @@ function Trial() {
               <div className="flex justify-between items-center border-b-2 border-gray-300 pb-1 mb-6">
                 <div className="flex items-center">
                   <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mr-4">
+                    {/* ใช้ img tag ตามเดิมเพื่อให้ Style ไม่เพี้ยน */}
                     <img src="/images/lab.png" className="w-12 h-14" alt="Lab Icon" />
                   </div>
                   <h2 className="text-4xl font-semibold">
