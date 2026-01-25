@@ -217,7 +217,7 @@ export default function DoLabTrialPage({ params }: PageProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId={currentTrialId}
+              flowchartId={Number(currentTrialId)}
               selectedEdgeId={selectedEdge?.id}
               edge={selectedEdge}
               onAddNode={(type, label) => addNode(type, label)}
@@ -236,7 +236,7 @@ export default function DoLabTrialPage({ params }: PageProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <SymbolSection
-              flowchartId={currentTrialId}
+              flowchartId={Number(currentTrialId)}
               selectedEdgeId={undefined}
               nodeToEdit={selectedNode}
               onUpdateNode={handleUpdateNode}
