@@ -15,8 +15,8 @@ pipeline {
     stage('Install & Test & Build (node)') {
       agent {
         docker {
-          # ใช้ Node 18 เหมือนเดิมเพื่อให้ตรงกับ Dockerfile
           image 'node:18' 
+          // เพิ่ม NODE_ENV=development เพื่อให้แน่ใจว่า install ครบ
           args '-u root:root -e BASE_API=${BASE_API} -e NODE_ENV=development'
         }
       }
@@ -36,14 +36,15 @@ pipeline {
              rm -f package-lock.json
              
              # --- ส่วนที่แก้ไข (FIX) ---
-             # เราจะไม่ใช้ @latest (เพราะมันคือ v7 ที่ต้องใช้ Node 20)
-             # เราจะใช้ v5.22.0 (ตัวท็อปของรุ่น 5) ซึ่งรองรับ Node 18 และแก้บั๊ก Stack Overflow แล้ว
-             echo "=== UPDATE PRISMA (Safe Version) ==="
-             npm install prisma@5.22.0 @prisma/client@5.22.0 --save-exact
+             # เปลี่ยนจาก npm install ธรรมดา เป็นการบังคับลง Prisma เวอร์ชันล่าสุด
+             # เพื่อแก้ปัญหา Bug ของ Prisma 5.7.1 บน Node 18 Bookworm / Next.js 15
+             echo "=== UPDATE PRISMA & INSTALL DEPENDENCIES ==="
+             npm install prisma@latest @prisma/client@latest --save-exact
+             # ------------------------
 
              echo "=== GENERATE & BUILD ==="
              
-             # เรียกคำสั่ง generate
+             # ใช้ npx ได้เลยเพราะเราเพิ่งลง version ล่าสุดไป
              npx prisma generate --schema=./prisma/schema.prisma
 
              npm test || true
