@@ -2,7 +2,7 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]/options";
 import { prisma } from "@/lib/prisma";     // path ไป Prisma client ของคุณ
-
+export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     // ดึง session ของผู้ใช้

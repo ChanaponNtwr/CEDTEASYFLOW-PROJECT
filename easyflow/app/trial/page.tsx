@@ -8,6 +8,8 @@ import Link from "next/link";
 import { apiStartTrial, apiGetLab, apiGetTestcases } from "@/app/service/FlowchartService";
 import { useRouter, useSearchParams } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 // --- Interfaces ---
 
 interface TestCase {
