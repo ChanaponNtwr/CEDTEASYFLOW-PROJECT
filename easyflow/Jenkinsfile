@@ -15,7 +15,7 @@ pipeline {
     stage('Install & Test & Build (node)') {
       agent {
         docker {
-          // ใช้ Node 20 เพื่อความเสถียรกับ Next.js 15 และ Prisma
+          // ใช้ Node 20
           image 'node:20' 
           args '-u root:root -e BASE_API=${BASE_API} -e NODE_ENV=development'
         }
@@ -28,31 +28,32 @@ pipeline {
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
 
-             # 2. Clean Environment แบบหมดจด
+             # 2. Clean Environment
              echo "=== CLEAN & PREPARE ==="
              rm -rf node_modules
              rm -rf .prisma
              rm -f package-lock.json
              
-             # [FIX] ล้าง Cache เพื่อกัน npx เอ๋อ
+             # ล้าง Cache ป้องกันปัญหาแปลกๆ
              npm cache clean --force
 
-             # [FIX] ลง Dependencies หลักทั้งหมดก่อน (Next, React, etc.)
+             # 3. Install Dependencies
              echo "=== INSTALL ALL DEPENDENCIES ==="
              npm install
 
-             # [FIX] บังคับลง Prisma v5 (ทับอีกรอบเพื่อความชัวร์)
+             # บังคับลง Prisma v5 ล่าสุด
              echo "=== FORCE INSTALL PRISMA v5 ==="
              npm install prisma@5 @prisma/client@5 --save-exact
 
              echo "=== GENERATE & BUILD ==="
              
-             # [FIX: CRITICAL] เพิ่ม Stack Size เพื่อแก้ Error: Maximum call stack size exceeded
-             export NODE_OPTIONS="--stack-size=8192"
+             # [FIXED CODE HERE]
+             # ไม่ใช้ NODE_OPTIONS เพราะจะติด error code 9
+             # ใช้ node เรียกไฟล์ JS ของ Prisma โดยตรง พร้อมอัด Stack Size
+             
+             node --stack-size=8192 ./node_modules/prisma/build/index.js generate --schema=./prisma/schema.prisma
 
-             # [FIX] เรียกใช้จาก bin โดยตรง ไม่ผ่าน npx
-             ./node_modules/.bin/prisma generate --schema=./prisma/schema.prisma
-
+             # รัน Test (ถ้ามี)
              npm test || true
              
              echo "Checking BASE_API: $BASE_API"
