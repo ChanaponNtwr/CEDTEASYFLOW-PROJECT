@@ -1,199 +1,95 @@
 pipeline {
-  agent any
-
+  agent any                            // workspace อยู่บน host
   environment {
     IMAGE_NAME = "easyflow-frontend:${env.BUILD_NUMBER}"
-    PRISMA_PIN_VERSION = "5.7.1"
   }
 
   stages {
+
     stage('Checkout') {
-      steps { checkout scm }
+      steps {
+        checkout scm
+      }
     }
 
-    stage('Install & Test & Build (node)') {
+  stage('Install & Test & Build (node)') {
       agent {
         docker {
-          image 'node:18-bullseye'
-          // เพิ่ม --ulimit ให้ container ตั้งแต่รัน จะช่วยให้ ulimit -s ขยายได้จริง
-          args '-u root:root -e BASE_API=${BASE_API} --ulimit stack=65535:65535'
+          image 'node:18' 
+          // เพิ่ม -e BASE_API=${BASE_API} ตรงนี้
+          // หมายเหตุ: ต้องมั่นใจว่าคุณตั้งค่า BASE_API ไว้ใน Jenkins (Global Variable) แล้ว
+          // หรือถ้าไม่มี ให้ใส่ค่า URL จริงไปเลย เช่น -e BASE_API="http://10.240.xx.xx:xxxx"
+          args '-u root:root -e BASE_API=${BASE_API}'
         }
       }
-
       steps {
         dir('easyflow') {
           sh '''
-            set -euo pipefail
+             # ... (โค้ดส่วน copy prisma เหมือนเดิม ไม่ต้องแก้) ...
+             echo "=== SETUP SCHEMA FROM BACKEND ==="
+             mkdir -p prisma
+             cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
 
-            echo "=== SET ULIMIT (OS stack) EARLY ==="
-            # พยายามขยาย stack ของ shell/process ให้มากขึ้น (ถ้าสามารถได้)
-            ulimit -s 65535 || echo "Warning: ulimit -s failed or not permitted"
-
-            echo "=== SETUP SCHEMA FROM BACKEND ==="
-            mkdir -p prisma
-            cp ../backend/prisma/schema.prisma ./prisma/schema.prisma || true
-
-            echo "=== CLEAN & INSTALL ==="
-            rm -rf node_modules
-            rm -rf .prisma
-            rm -rf node_modules/.prisma
-
-            # ติดตั้ง dependencies ตาม package-lock.json
-            npm ci
-
-            echo "=== DEBUG VERSIONS ==="
-            node -v
-            npm -v
-            echo "ulimit -a after attempted change:"
-            ulimit -a || true
-
-            echo "=== SET NODE_OPTIONS (pass stack-size to Node) ==="
-            export NODE_OPTIONS="--stack-size=60000 --max-old-space-size=4096"
-            echo "NODE_OPTIONS=$NODE_OPTIONS"
-
-            echo "=== ATTEMPT PRISMA CLI (with several fallbacks) ==="
-
-            # 1) try local binary first
-            if [ -x "./node_modules/.bin/prisma" ]; then
-              echo "Trying local ./node_modules/.bin/prisma --version"
-              if ./node_modules/.bin/prisma --version; then
-                PRISMA_CMD="./node_modules/.bin/prisma"
-                echo "Using local prisma: $PRISMA_CMD"
-              else
-                echo "Local prisma binary exists but failed."
-              fi
-            else
-              echo "No local prisma binary found."
-            fi
-
-            # 2) If local binary not usable, try npx explicit package (this downloads and runs exact version)
-            if [ -z "${PRISMA_CMD:-}" ]; then
-              echo "Trying npx --package prisma@${PRISMA_PIN_VERSION} prisma --version"
-              if npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma --version; then
-                PRISMA_CMD="npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma"
-                echo "Using npx explicit package: $PRISMA_CMD"
-              else
-                echo "npx explicit-package prisma failed."
-              fi
-            fi
-
-            # 3) If still failing, try invoking node directly with --stack-size on the prisma index file
-            if [ -z "${PRISMA_CMD:-}" ]; then
-              if [ -f "./node_modules/prisma/build/index.js" ]; then
-                echo "Trying direct node invocation: node --stack-size=60000 ./node_modules/prisma/build/index.js --version"
-                if node --stack-size=60000 ./node_modules/prisma/build/index.js --version; then
-                  PRISMA_CMD="node --stack-size=60000 ./node_modules/prisma/build/index.js"
-                  echo "Using direct node invocation for prisma: $PRISMA_CMD"
-                else
-                  echo "Direct node invocation also failed."
-                fi
-              else
-                echo "No prisma build/index.js found to try direct node invocation."
-              fi
-            fi
-
-            # 4) If still not resolved, attempt reinstall pinned prisma locally (no-save) after cleaning npm cache
-            if [ -z "${PRISMA_CMD:-}" ]; then
-              echo "Cleaning npm cache and reinstalling pinned prisma @${PRISMA_PIN_VERSION} (no-save)..."
-              npm cache clean --force || true
-              npm install prisma@${PRISMA_PIN_VERSION} --no-save @prisma/client@${PRISMA_PIN_VERSION} --no-save
-
-              echo "Trying freshly installed local binary ./node_modules/.bin/prisma --version"
-              if [ -x "./node_modules/.bin/prisma" ]; then
-                if ./node_modules/.bin/prisma --version; then
-                  PRISMA_CMD="./node_modules/.bin/prisma"
-                  echo "Using freshly installed local prisma: $PRISMA_CMD"
-                else
-                  echo "Fresh local prisma binary still failed."
-                fi
-              fi
-
-              # try direct node invocation as well
-              if [ -z "${PRISMA_CMD:-}" ] && [ -f "./node_modules/prisma/build/index.js" ]; then
-                if node --stack-size=60000 ./node_modules/prisma/build/index.js --version; then
-                  PRISMA_CMD="node --stack-size=60000 ./node_modules/prisma/build/index.js"
-                  echo "Using direct node invocation after reinstall: $PRISMA_CMD"
-                fi
-              fi
-            fi
-
-            # Final check
-            if [ -z "${PRISMA_CMD:-}" ]; then
-              echo "ERROR: Could not obtain a working prisma CLI."
-              echo "Please pin prisma & @prisma/client in package.json to a stable version (e.g. ${PRISMA_PIN_VERSION}) and run npm ci."
-              echo "Diagnostics:"
-              npm list prisma --depth=0 || true
-              npm list @prisma/client --depth=0 || true
-              node -e "console.log('Node version:', process.version)"
-              echo "ulimit -a:"
-              ulimit -a || true
-              ls -la node_modules/prisma || true
-              exit 1
-            fi
-
-            echo "Resolved PRISMA_CMD: $PRISMA_CMD"
-
-            echo "=== PRISMA GENERATE ==="
-            export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
-            export PRISMA_CLIENT_ENGINE_TYPE=binary
-
-            if echo "$PRISMA_CMD" | grep -q '^node'; then
-              # PRISMA_CMD already includes node and stack-size
-              $PRISMA_CMD generate --schema=./prisma/schema.prisma
-            elif echo "$PRISMA_CMD" | grep -q '^npx'; then
-              $PRISMA_CMD generate --schema=./prisma/schema.prisma
-            else
-              "$PRISMA_CMD" generate --schema=./prisma/schema.prisma
-            fi
-
-            echo "=== TEST (continue on fail) ==="
-            npm test || true
-
-            echo "=== BUILD ==="
-            echo "Checking BASE_API: $BASE_API"
-            npm run build
+             echo "=== CLEAN & INSTALL ==="
+             rm -rf node_modules
+             rm -rf .prisma
+             rm -rf node_modules/.prisma
+             npm ci
+             
+             echo "=== GENERATE & BUILD ==="
+             npx prisma generate
+             npm test || true
+             
+             # เพิ่มบรรทัดนี้เพื่อ Debug ดูว่าค่ามาไหม (Optional)
+             echo "Checking BASE_API: $BASE_API"
+             
+             npm run build
           '''
         }
       }
     }
-
+    
     stage('Build Docker Image') {
       steps {
         sh '''
-          docker build -t easyflow-frontend:${BUILD_NUMBER} -f easyflow/Dockerfile .
+          docker build \
+            -t easyflow-frontend:${BUILD_NUMBER} \
+            -f easyflow/Dockerfile \
+            .
           docker tag easyflow-frontend:${BUILD_NUMBER} easyflow-frontend:latest
         '''
       }
     }
 
     stage('Deploy (local docker)') {
-      steps {
-        sh '''
-          docker stop easyflow-frontend || true
-          docker rm easyflow-frontend || true
-
-          docker run -d \
-            --name easyflow-frontend \
-            -p 3000:3000 \
-            --link postgres-db:postgres \
-            --link easyflow-backend:backend \
-            -e DATABASE_URL="postgresql://postgres:root@postgres:5432/postgres" \
-            -e BASE_API="http://easyflow-backend:9000" \
-            -e NEXTAUTH_URL="http://localhost:3000" \
-            -e NEXTAUTH_SECRET="change-me-to-secure-random-string" \
-            -e SERVER_HOST="0.0.0.0" \
-            -e GOOGLE_CLIENT_ID="" \
-            -e GOOGLE_CLIENT_SECRET="" \
-            easyflow-frontend:latest
-        '''
-      }
-    }
+          steps {
+            sh """
+              # 1. หยุดและลบ container เก่าเฉพาะตัว frontend (ไม่กระทบ backend/db)
+              docker stop easyflow-frontend || true
+              docker rm easyflow-frontend || true
+              
+              # 2. รัน container ใหม่ พร้อมส่งค่า config ของจริงเข้าไปทับค่าหลอก
+              docker run -d \\
+                --name easyflow-frontend \\
+                -p 3000:3000 \\
+                --link postgres-db:postgres \\
+                --link easyflow-backend:backend \\
+                -e DATABASE_URL="postgresql://postgres:root@postgres:5432/postgres" \\
+                -e BASE_API="http://easyflow-backend:9000" \\
+                -e NEXTAUTH_URL="http://localhost:3000" \\
+                -e NEXTAUTH_SECRET="change-me-to-secure-random-string" \\
+                -e SERVER_HOST="0.0.0.0" \\
+                -e GOOGLE_CLIENT_ID="your-real-id-or-leave-empty-if-not-used" \\
+                -e GOOGLE_CLIENT_SECRET="your-real-secret-or-leave-empty-if-not-used" \\
+                easyflow-frontend:latest
+            """
+          }
+        }
   }
 
   post {
     always {
       archiveArtifacts artifacts: 'easyflow/.next/**', allowEmptyArchive: true
-      cleanWs()
     }
   }
 }
