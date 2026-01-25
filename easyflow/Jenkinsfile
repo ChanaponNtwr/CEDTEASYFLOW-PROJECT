@@ -32,21 +32,41 @@ pipeline {
       }
     }
 
-    stage('Install') {
-      steps {
-        sh '''
-          echo "=== INSTALL DEPENDENCIES ==="
-          if [ -f package-lock.json ]; then
-            echo "Found package-lock.json -> npm ci"
-            npm ci
-          else
-            echo "No package-lock.json found -> create lockfile then npm ci"
-            npm install --package-lock-only
-            npm ci
-          fi
-        '''
-      }
-    }
+       stage('Install Dependencies') {
+            steps {
+                sh '''
+                    set -e
+
+                    echo "=== INSTALL DEPENDENCIES ==="
+
+                    echo "Current directory:"
+                    pwd
+                    echo "Workspace files:"
+                    ls -la
+
+                    # เข้าโฟลเดอร์ที่มี package.json
+                    cd frontend
+
+                    echo "After cd:"
+                    pwd
+                    ls -la
+
+                    if [ ! -f package.json ]; then
+                      echo "❌ ERROR: package.json not found"
+                      exit 1
+                    fi
+
+                    if [ -f package-lock.json ]; then
+                      echo "Found package-lock.json -> npm ci"
+                      npm ci
+                    else
+                      echo "No package-lock.json found -> create lockfile then npm ci"
+                      npm install --package-lock-only
+                      npm ci
+                    fi
+                '''
+            }
+        }
 
 
     stage('Generate Prisma') {
