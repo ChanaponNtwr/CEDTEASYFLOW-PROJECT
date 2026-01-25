@@ -2,34 +2,35 @@
 FROM node:20-slim AS deps
 WORKDIR /app
 
-# Install OpenSSL (จำเป็นสำหรับ Prisma บน Debian/Slim)
+# Install OpenSSL (จำเป็นสำหรับ Prisma)
 RUN apt-get update -y && apt-get install -y openssl ca-certificates
 
 # Copy package files
 COPY package.json ./
 
-# [FIX] ลบ package-lock.json และสั่ง install ใหม่
-# เพื่อให้มั่นใจว่าได้ Dependencies ที่รองรับ Linux (และ Next.js 15)
+# ลบ package-lock.json และสั่ง install ใหม่ (แก้ปัญหา Dependency OS ต่างกัน)
 RUN rm -f package-lock.json && npm install
 
 # Stage 2: Builder
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# [FIX] Copy Source Code เข้ามาก่อน
+# [FIX] ต้องลง OpenSSL ใน Stage นี้ด้วย เพื่อให้ Prisma Generate ตรวจจับ OS ถูกต้อง
+RUN apt-get update -y && apt-get install -y openssl ca-certificates
+
+# Copy Source Code เข้ามาก่อน
 COPY . .
 
-# [FIX] แล้วค่อย Copy node_modules จาก deps มาทับ
-# เพื่อป้องกัน node_modules จากเครื่อง Local (Windows/Mac) ที่อาจติดมาทำลายระบบ
+# Copy node_modules จาก deps มาทับ
 COPY --from=deps /app/node_modules ./node_modules
 
+# [FIX] ลบ ENV ที่เคยใส่ไว้ทิ้งไป (PRISMA_CLI_BINARY_TARGETS) 
+# ปล่อยให้ Prisma ตรวจจับเองว่าต้องใช้ debian-openssl-3.0.x
+
 # Generate Prisma Client
-# กำหนด ENV เพื่อลด Warning ของ Prisma
-ENV PRISMA_CLI_BINARY_TARGETS=native,debian-openssl-3.0.x
 RUN npx prisma generate
 
 # Build Next.js
-# หากแก้โค้ดหน้า page.tsx แล้ว คำสั่งนี้จะผ่านฉลุย
 RUN npm run build
 
 # Stage 3: Runner (Production Image)
