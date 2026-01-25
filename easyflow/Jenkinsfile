@@ -1,5 +1,5 @@
 pipeline {
-  agent any
+  agent any                            // workspace อยู่บน host
   environment {
     IMAGE_NAME = "easyflow-frontend:${env.BUILD_NUMBER}"
   }
@@ -16,6 +16,8 @@ pipeline {
       agent {
         docker {
           image 'node:18' 
+          // args: รันด้วย user root เพื่อให้มีสิทธิ์แก้ ulimit
+          // และส่งตัวแปร BASE_API เข้าไป
           args '-u root:root -e BASE_API=${BASE_API}'
         }
       }
@@ -25,17 +27,31 @@ pipeline {
              echo "=== SETUP SCHEMA FROM BACKEND ==="
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
+
              echo "=== CLEAN & INSTALL ==="
              rm -rf node_modules
              rm -rf .prisma
              rm -rf node_modules/.prisma
              npm ci
+             
              echo "=== GENERATE & BUILD ==="
+             
+             # --- ส่วนที่แก้ไข (V6: จัดหนัก 60MB) ---
+             
              export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
              export PRISMA_CLIENT_ENGINE_TYPE=binary
+             
+             # 1. ขยายเพดาน OS เป็น 64MB (65535 KB)
              ulimit -s 65535 || echo "Warning: Could not set ulimit"
-             node --stack-size=16384 ./node_modules/prisma/build/index.js generate
+             
+             # 2. สั่ง Node ให้ใช้ Stack 60MB (60000 KB) 
+             # (เพิ่มจาก 16384 เป็น 60000 เพื่อแก้ Maximum call stack size exceeded)
+             node --stack-size=60000 ./node_modules/prisma/build/index.js generate
+             
+             # -----------------------------------------------------
+
              npm test || true
+             
              echo "Checking BASE_API: $BASE_API"
              npm run build
           '''
@@ -58,9 +74,11 @@ pipeline {
     stage('Deploy (local docker)') {
           steps {
             sh """
+              # 1. หยุดและลบ container เก่า
               docker stop easyflow-frontend || true
               docker rm easyflow-frontend || true
               
+              # 2. รัน container ใหม่
               docker run -d \\
                 --name easyflow-frontend \\
                 -p 3000:3000 \\
