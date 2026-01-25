@@ -29,15 +29,15 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-# [Fix] Use key=value format for ENV to fix warnings
+# [Fix] Use key=value format (แก้ Warning แล้ว)
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# สร้าง user เพื่อความปลอดภัย (Optional แต่แนะนำ)
+# สร้าง user เพื่อความปลอดภัย
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy ไฟล์จำเป็นจาก Builder (โหมด Standalone)
+# Copy ไฟล์จำเป็นจาก Builder
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
