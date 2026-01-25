@@ -2,33 +2,32 @@
 FROM node:20-slim AS deps
 WORKDIR /app
 
-# Install OpenSSL (จำเป็นสำหรับ Prisma)
+# Install OpenSSL (จำเป็นสำหรับ Prisma บน Debian/Slim)
 RUN apt-get update -y && apt-get install -y openssl ca-certificates
 
 # Copy package files
-COPY package.json package-lock.json* ./
+COPY package.json ./
 
-# Copy prisma schema directory
-COPY prisma ./prisma/
-
-# [FIX] ใช้ npm install แทน npm ci
-# เพื่อบังคับให้โหลด Binary สำหรับ Linux (lightningcss-linux-x64-gnu)
-# ที่อาจจะไม่มีใน package-lock.json ของ Windows/Mac
-RUN npm install
+# [FIX 1] ลบ package-lock.json (ถ้ามีติดมา) แล้วสั่ง install ใหม่
+# เพื่อแก้ปัญหาไฟล์ lock จาก Windows/Mac ไม่มี dependency ของ Linux
+RUN rm -f package-lock.json && npm install
 
 # Stage 2: Builder
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Copy node_modules ที่ install มาใหม่ๆ จาก stage deps
-COPY --from=deps /app/node_modules ./node_modules
+# [FIX 2] สลับลำดับ: Copy Source Code เข้ามาก่อน
 COPY . .
 
-# Generate Prisma Client
+# [FIX 2] แล้วค่อย Copy node_modules ที่ถูกต้อง (Linux) จาก deps มาทับ
+# วิธีนี้จะกันไม่ให้ node_modules จากเครื่อง local (Windows/Mac) หลุดเข้ามาทำลายระบบ
+COPY --from=deps /app/node_modules ./node_modules
+
+# Generate Prisma Client (ตอนนี้จะเจอ engine ของ linux แน่นอน)
 RUN npx prisma generate
 
 # Build Next.js
-# ตอนนี้จะมีไฟล์ lightningcss ครบแล้ว จะไม่ error
+# ตอนนี้ lightningcss จะทำงานได้แล้ว เพราะใช้ไฟล์ของ Linux แท้ๆ
 RUN npm run build
 
 # Stage 3: Runner (Production Image)
