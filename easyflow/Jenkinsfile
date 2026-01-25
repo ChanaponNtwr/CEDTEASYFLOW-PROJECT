@@ -16,16 +16,13 @@ pipeline {
       agent {
         docker {
           image 'node:18' 
-          // เพิ่ม -e BASE_API=${BASE_API} ตรงนี้
-          // หมายเหตุ: ต้องมั่นใจว่าคุณตั้งค่า BASE_API ไว้ใน Jenkins (Global Variable) แล้ว
-          // หรือถ้าไม่มี ให้ใส่ค่า URL จริงไปเลย เช่น -e BASE_API="http://10.240.xx.xx:xxxx"
+          // หมายเหตุ: ต้องมั่นใจว่าตั้งค่า BASE_API ใน Jenkins หรือใส่ค่าจริงตรงนี้
           args '-u root:root -e BASE_API=${BASE_API}'
         }
       }
       steps {
         dir('easyflow') {
           sh '''
-             # ... (โค้ดส่วน copy prisma เหมือนเดิม) ...
              echo "=== SETUP SCHEMA FROM BACKEND ==="
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
@@ -37,15 +34,17 @@ pipeline {
              npm ci
              
              echo "=== GENERATE & BUILD ==="
-             # --- ส่วนที่แก้ไข: เพิ่ม Stack Size แก้ Error: Maximum call stack size exceeded ---
-             export NODE_OPTIONS="--stack-size=4096"
              
-             # ใช้ --no-install เพื่อให้แน่ใจว่าใช้ package จาก node_modules
-             npx --no-install prisma generate
+             # --- ส่วนที่แก้ไข (แก้ปัญหา exit code 9 และ stack size) ---
+             # เราไม่ใช้ export NODE_OPTIONS และไม่ใช้ npx เพราะติด permission และ overhead
+             # แต่เราเรียก node binary โดยตรงไปที่ script ของ prisma เพื่อส่ง --stack-size ได้
+             
+             node --stack-size=4096 ./node_modules/.bin/prisma generate
+             
+             # -----------------------------------------------------
              
              npm test || true
              
-             # เพิ่มบรรทัดนี้เพื่อ Debug ดูว่าค่ามาไหม (Optional)
              echo "Checking BASE_API: $BASE_API"
              
              npm run build
@@ -69,11 +68,11 @@ pipeline {
     stage('Deploy (local docker)') {
           steps {
             sh """
-              # 1. หยุดและลบ container เก่าเฉพาะตัว frontend (ไม่กระทบ backend/db)
+              # 1. หยุดและลบ container เก่า
               docker stop easyflow-frontend || true
               docker rm easyflow-frontend || true
               
-              # 2. รัน container ใหม่ พร้อมส่งค่า config ของจริงเข้าไปทับค่าหลอก
+              # 2. รัน container ใหม่
               docker run -d \\
                 --name easyflow-frontend \\
                 -p 3000:3000 \\
