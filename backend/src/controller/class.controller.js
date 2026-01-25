@@ -249,6 +249,7 @@ router.delete("/:classId/users/:userId", async (req, res) => {
   }
 });
 
+
 /**
  * PATCH /classes/:classId/labs/:labId
  * body: { dueDate }
@@ -328,6 +329,82 @@ router.get("/:classId/packages", async (req, res) => {
   } catch (err) {
     console.error("LIST PACKAGES ERROR:", err);
     return res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+/**
+ * POST /classes/:classId/leave
+ * header: x-user-id (actor)
+ */
+router.post("/:classId/leave", async (req, res) => {
+  try {
+    const actorUserId = getActorUserId(req);
+    if (!actorUserId) {
+      return res.status(403).json({ ok: false, message: "x-user-id required" });
+    }
+
+    const result = await classService.leaveClass(
+      req.params.classId,
+      actorUserId
+    );
+
+    return res.json({ ok: true, result });
+  } catch (err) {
+    console.error("LEAVE CLASS ERROR:", err);
+    const status =
+      err.code === "FORBIDDEN" ? 403 :
+      err.code === "NOT_FOUND" ? 404 : 400;
+
+    return res.status(status).json({ ok: false, message: err.message });
+  }
+});
+
+/**
+ * DELETE /classes/:classId/labs/:labId
+ * header: x-user-id
+ */
+router.delete("/:classId/labs/:labId", async (req, res) => {
+  try {
+    const actorUserId = getActorUserId(req);
+
+    const result = await classService.removeLabFromClass(
+      req.params.classId,
+      req.params.labId,
+      actorUserId
+    );
+
+    return res.json({ ok: true, result });
+  } catch (err) {
+    console.error("REMOVE LAB ERROR:", err);
+    const status =
+      err.code === "FORBIDDEN" ? 403 :
+      err.code === "NOT_FOUND" ? 404 : 400;
+
+    return res.status(status).json({ ok: false, message: err.message });
+  }
+});
+
+/**
+ * DELETE /classes/:classId
+ * header: x-user-id (owner)
+ */
+router.delete("/:classId", async (req, res) => {
+  try {
+    const actorUserId = getActorUserId(req);
+
+    const result = await classService.deleteClass(
+      req.params.classId,
+      actorUserId
+    );
+
+    return res.json({ ok: true, result });
+  } catch (err) {
+    console.error("DELETE CLASS ERROR:", err);
+    const status =
+      err.code === "FORBIDDEN" ? 403 :
+      err.code === "NOT_FOUND" ? 404 : 400;
+
+    return res.status(status).json({ ok: false, message: err.message });
   }
 });
 

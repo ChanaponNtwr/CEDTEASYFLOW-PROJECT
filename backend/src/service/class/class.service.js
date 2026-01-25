@@ -73,33 +73,60 @@ class ClassService {
       throw e;
     }
 
-    if (!currentUserId) {
+    const actorId = Number(currentUserId);
+    if (!Number.isInteger(actorId) || actorId <= 0) {
       throw Object.assign(
-        new Error("currentUserId is required"),
+        new Error("Invalid currentUserId"),
         { code: "FORBIDDEN" }
       );
     }
 
-    const created = await classRepo.createClass({
-      classname: String(payload.classname).trim(),
-      createAt: payload.createAt ? new Date(payload.createAt) : undefined
+    // เช็กว่ามี user จริง
+    const userExists = await prisma.user.findUnique({
+      where: { id: actorId },
+      select: { id: true }
     });
 
-    let ownerRole = await prisma.role.findFirst({ where: { roleName: "owner" } });
-    if (!ownerRole) {
-      ownerRole = await prisma.role.create({ data: { roleName: "owner" } });
+    if (!userExists) {
+      throw Object.assign(
+        new Error("Actor user not found"),
+        { code: "FORBIDDEN" }
+      );
     }
 
-    await prisma.userClass.create({
-      data: {
-        userId: Number(currentUserId),
-        classId: created.classId,
-        roleId: ownerRole.roleId
+    // ใช้ transaction กันครึ่ง ๆ กลาง ๆ
+    const result = await prisma.$transaction(async (tx) => {
+      const created = await tx.class.create({
+        data: {
+          classname: String(payload.classname).trim(),
+          createAt: payload.createAt ? new Date(payload.createAt) : undefined
+        }
+      });
+
+      let ownerRole = await tx.role.findFirst({
+        where: { roleName: "owner" }
+      });
+
+      if (!ownerRole) {
+        ownerRole = await tx.role.create({
+          data: { roleName: "owner" }
+        });
       }
+
+      await tx.userClass.create({
+        data: {
+          userId: actorId,
+          classId: created.classId,
+          roleId: ownerRole.roleId
+        }
+      });
+
+      return created;
     });
 
-    return classRepo.findById(created.classId);
+    return classRepo.findById(result.classId);
   }
+
 
   async getClass(classId) {
     // validate param
@@ -191,22 +218,88 @@ class ClassService {
   }
 
   async removeLabFromClass(classId, labId, actorUserId) {
-    if (!actorUserId) throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
+    if (!actorUserId) {
+      throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
+    }
 
+    const cId = Number(classId);
+    const lId = Number(labId);
+    const aId = Number(actorUserId);
+
+    // 1) ตรวจ actor อยู่ในคลาส + role
     const actorUC = await prisma.userClass.findUnique({
       where: {
         userId_classId: {
-          userId: Number(actorUserId),
-          classId: Number(classId)
+          userId: aId,
+          classId: cId
         }
       },
       include: { role: true }
     });
 
-    assertClassRole(actorUC, ["owner", "teacher"]);
+    if (!actorUC) {
+      throw Object.assign(
+        new Error("You are not in this class"),
+        { code: "FORBIDDEN" }
+      );
+    }
 
-    return classRepo.removeLabFromClass(classId, labId);
+    const roleName = actorUC.role?.roleName;
+
+    // 2) หา record class–lab
+    const classLab = await prisma.classLabs.findUnique({
+      where: {
+        classId_labId: {
+          classId: cId,
+          labId: lId
+        }
+      },
+      include: {
+        lab: true   // << เอา ownerUserId ของแลปมาด้วย
+      }
+    });
+
+    if (!classLab) {
+      throw Object.assign(
+        new Error("Lab not found in this class"),
+        { code: "NOT_FOUND" }
+      );
+    }
+
+    // 3) เช็คสิทธิ์
+    if (roleName === "owner") {
+      // owner ลบได้ทุกแลป
+    } 
+    else if (["teacher", "ta"].includes(roleName)) {
+      // teacher / ta ลบได้เฉพาะแลปที่ตัวเองสร้าง
+      if (Number(classLab.lab.ownerUserId) !== aId) {
+        throw Object.assign(
+          new Error("Forbidden: you can only remove labs you created"),
+          { code: "FORBIDDEN" }
+        );
+      }
+    } 
+    else {
+      // student หรือ role อื่น
+      throw Object.assign(
+        new Error("Forbidden: insufficient role"),
+        { code: "FORBIDDEN" }
+      );
+    }
+
+    // 4) ลบจริง
+    await prisma.classLabs.delete({
+      where: {
+        classId_labId: {
+          classId: cId,
+          labId: lId
+        }
+      }
+    });
+
+    return { ok: true };
   }
+
 
   async listLabsInClass(classId) {
     return classRepo.listLabs(classId);
@@ -409,6 +502,90 @@ class ClassService {
   });
 
   return users;
+  }
+
+  async leaveClass(classId, actorUserId) {
+    if (!actorUserId) {
+      throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
+    }
+
+    const uc = await prisma.userClass.findUnique({
+      where: {
+        userId_classId: {
+          userId: Number(actorUserId),
+          classId: Number(classId)
+        }
+      },
+      include: { role: true }
+    });
+
+    if (!uc) {
+      throw Object.assign(new Error("You are not in this class"), { code: "NOT_FOUND" });
+    }
+
+    if (uc.role?.roleName === "owner") {
+      throw Object.assign(
+        new Error("Owner cannot leave their own class"),
+        { code: "FORBIDDEN" }
+      );
+    }
+
+    await prisma.userClass.delete({
+      where: {
+        userId_classId: {
+          userId: Number(actorUserId),
+          classId: Number(classId)
+        }
+      }
+    });
+
+    return { message: "Left class successfully" };
+  }
+  
+  async deleteClass(classId, actorUserId) {
+    if (!actorUserId) {
+      throw Object.assign(new Error("actorUserId required"), { code: "FORBIDDEN" });
+    }
+
+    const cId = Number(classId);
+
+    const actorUC = await prisma.userClass.findUnique({
+      where: {
+        userId_classId: { userId: Number(actorUserId), classId: cId }
+      },
+      include: { role: true }
+    });
+
+    if (!actorUC) {
+      throw Object.assign(new Error("You are not in this class"), { code: "FORBIDDEN" });
+    }
+
+    assertClassRole(actorUC, ["owner"]);
+
+    const exists = await classRepo.existsClass(cId);
+    if (!exists) {
+      throw Object.assign(new Error("Class not found"), { code: "NOT_FOUND" });
+    }
+
+    // ลบ relations ทั้งหมดก่อน
+    await prisma.userClass.deleteMany({
+      where: { classId: cId }
+    });
+
+    await prisma.classLabs.deleteMany({
+      where: { classId: cId }
+    });
+
+    await prisma.packageClass.deleteMany({   // ✅ ชื่อ model ถูกต้อง
+      where: { classId: cId }
+    });
+
+    // ลบ class จริง
+    await prisma.class.delete({
+      where: { classId: cId }
+    });
+
+    return { message: "Class deleted successfully" };
   }
 
 }

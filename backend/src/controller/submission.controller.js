@@ -148,6 +148,50 @@ router.post("/api/submission/lab/:labId/user/:userId/confirm", async (req, res) 
 });
 
 /**
+ * POST /api/submission/lab/:labId/user/:userId/cancel
+ * - นักเรียนยกเลิกการส่งงานของ lab นี้ทั้งหมด
+ */
+router.post("/api/submission/lab/:labId/user/:userId/cancel", async (req, res) => {
+  try {
+    const { labId, userId } = req.params;
+    if (!labId || !userId) {
+      return res.status(400).json({ ok: false, message: "labId & userId required" });
+    }
+
+    // 1) เช็คว่าเคย confirm แล้วหรือยัง
+    const alreadyConfirmed = await SubmissionService.isConfirmed({
+      userId: Number(userId),
+      labId: Number(labId),
+    });
+
+    if (alreadyConfirmed) {
+      return res.status(403).json({
+        ok: false,
+        message: "This lab has already been CONFIRMED. Cancel is not allowed.",
+      });
+    }
+
+    // 2) ลบ submissions ทั้งหมดของ user + lab นี้
+    const deleted = await prisma.submission.deleteMany({
+      where: {
+        userId: Number(userId),
+        labId: Number(labId),
+      },
+    });
+
+    return res.json({
+      ok: true,
+      message: "Submission cancelled",
+      deletedCount: deleted.count,
+    });
+  } catch (err) {
+    console.error("cancel submission error:", err);
+    return res.status(500).json({ ok: false, message: String(err.message ?? err) });
+  }
+});
+
+
+/**
  * POST /api/submission/lab/:labId/user/:userId/reject
  * body: { reviewerId? }
  */
