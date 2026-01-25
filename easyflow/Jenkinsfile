@@ -16,19 +16,18 @@ pipeline {
       agent {
         docker {
           image 'node:18' 
-          // เพิ่ม Environment Variable ที่จำเป็นสำหรับ Build Time
           args '-u root:root -e BASE_API=${BASE_API}'
         }
       }
       steps {
         dir('easyflow') {
           sh '''
-             # 1. เตรียม Schema จาก Backend
+             # 1. เตรียม Schema
              echo "=== SETUP SCHEMA FROM BACKEND ==="
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
 
-             # 2. ลบของเก่าและลง Package ใหม่ (Clean Install)
+             # 2. Clean Install
              echo "=== CLEAN & INSTALL ==="
              rm -rf node_modules
              rm -rf .prisma
@@ -37,19 +36,19 @@ pipeline {
              
              echo "=== GENERATE & BUILD ==="
              
-             # --- ส่วนที่แก้ไข (FIX START) ---
-             # เพิ่ม Stack Size ให้ Node.js เพื่อแก้ Error: Maximum call stack size exceeded
-             export NODE_OPTIONS="--stack-size=4096"
+             # --- ส่วนที่แก้ไข (FIX) ---
+             # ลบ export NODE_OPTIONS เดิมออก เพราะใช้ไม่ได้กับ --stack-size ใน Node 18
+             # เปลี่ยนมาใช้ node เรียกไฟล์ execute ของ prisma โดยตรงเพื่อส่งค่า stack-size
              
-             # ระบุ Path ของ Schema ให้ชัดเจน
-             npx prisma generate --schema=./prisma/schema.prisma
-             # --- ส่วนที่แก้ไข (FIX END) ---
+             node --stack-size=8192 ./node_modules/prisma/build/index.js generate --schema=./prisma/schema.prisma
+             
+             # หมายเหตุ: หากยัง error เดิม ให้ตรวจสอบ version ของ "prisma" และ "@prisma/client" 
+             # ใน package.json ว่าเป็นเวอร์ชันเดียวกันเป๊ะหรือไม่ (เช่น 4.14.0 ทั้งคู่)
+             # ------------------------
 
              npm test || true
              
-             # Debug ค่า (Optional)
              echo "Checking BASE_API: $BASE_API"
-             
              npm run build
           '''
         }
@@ -71,11 +70,9 @@ pipeline {
     stage('Deploy (local docker)') {
       steps {
         sh """
-          # 1. หยุดและลบ container เก่า
           docker stop easyflow-frontend || true
           docker rm easyflow-frontend || true
           
-          # 2. รัน container ใหม่
           docker run -d \\
             --name easyflow-frontend \\
             -p 3000:3000 \\
