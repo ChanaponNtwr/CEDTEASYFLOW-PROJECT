@@ -6,7 +6,7 @@ import TestcaseModel from "../testcase/testcase_model.js";
 import { hydrateFlowchart } from "../../controller/flowchart.controller.js";
 import TestcaseRepository from "../testcase/testcaseRepository.js";
 import OutputSplitter from "../testcase/outputSplitter.js";
-
+import { sendMail } from "../../lib/mailer.js";
 // executor factory (same as testcase.controller)
 function executorFactory(flowchart, opts = {}) {
   return new Executor(flowchart, opts);

@@ -94,35 +94,38 @@ router.get("/", async (req, res) => {
 
 /**
  * POST /classes/:classId/labs
- * body: { labId }
+ * body: { labId, dueDate }
  * header: x-user-id (owner | teacher)
  */
 router.post("/:classId/labs", async (req, res) => {
   try {
     const actorUserId = getActorUserId(req);
-    const { labId, dueDate } = req.body; // <-- ต้องรับค่า dueDate
+    const { labId, dueDate } = req.body;
 
     const r = await classService.addLabToClass(
       req.params.classId,
       labId,
       actorUserId,
-      dueDate  // <-- ส่งเข้าไปด้วย
+      dueDate
     );
 
     return res.status(201).json({ ok: true, result: r });
   } catch (err) {
     console.error("ADD LAB TO CLASS ERROR:", err);
+
     const status =
       err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "NOT_FOUND" ? 404 :
+      err.code === "CONFLICT"  ? 409 :   // ✅ แลปซ้ำในคลาส
+      err.code === "BAD_REQUEST" ? 400 :
+      400;
 
-    return res.status(status).json({ ok: false, message: err.message });
+    return res.status(status).json({
+      ok: false,
+      message: err.message
+    });
   }
 });
-/**
- * GET /classes/:classId/labs
- */
-// src/controller/class.controller.js
 
 /**
  * GET /classes/:classId/labs
