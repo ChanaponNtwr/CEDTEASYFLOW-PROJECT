@@ -27,7 +27,6 @@ function rand(a: number, b: number) {
   return a + Math.random() * (b - a);
 }
 
-// ✅ แก้ไข: ลบ export ออก ให้เป็น function ธรรมดาภายในไฟล์
 function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -50,6 +49,9 @@ function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanvasProps)
     let cy = 0;
 
     function resize() {
+      // ✅ เพิ่มบรรทัดนี้: เช็คซ้ำอีกรอบเพื่อให้ TypeScript มั่นใจใน Scope นี้
+      if (!canvas) return;
+
       const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
       w = canvas.clientWidth || 0;
       h = canvas.clientHeight || 0;
@@ -57,7 +59,9 @@ function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanvasProps)
       cy = h / 2;
       canvas.width = Math.max(1, Math.floor(w * dpr));
       canvas.height = Math.max(1, Math.floor(h * dpr));
-      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+      
+      // ใช้ ctx! หรือ check if (!ctx) return ก็ได้
+      if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
     function initParticles() {
@@ -99,7 +103,7 @@ function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanvasProps)
       pointer.current.x += (pointerTarget.current.x - pointer.current.x) * 0.05;
       pointer.current.y += (pointerTarget.current.y - pointer.current.y) * 0.05;
 
-      ctx!.clearRect(0, 0, w, h);
+      if (ctx) ctx.clearRect(0, 0, w, h);
 
       const tiltX = pointer.current.y * 0.45; 
       const tiltY = pointer.current.x * -0.6; 
@@ -139,22 +143,24 @@ function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanvasProps)
         const s = Math.max(0.14, scale) * p.size * 1.0;
         const alpha = Math.max(0.045, Math.min(1, (1 - (p.z + 600) / 1200) * 1.0));
 
-        ctx!.beginPath();
-        ctx!.globalAlpha = alpha;
-        ctx!.fillStyle = `rgba(255,255,255,${alpha})`;
-        ctx!.arc(p.x, p.y, s, 0, Math.PI * 2);
-        ctx!.fill();
+        if (ctx) {
+          ctx.beginPath();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+          ctx.arc(p.x, p.y, s, 0, Math.PI * 2);
+          ctx.fill();
 
-        if (alpha > 0.08) {
-          ctx!.beginPath();
-          ctx!.globalAlpha = alpha * 0.06;
-          ctx!.fillStyle = `rgba(255,255,255,1)`;
-          ctx!.arc(p.x, p.y, s * 6, 0, Math.PI * 2);
-          ctx!.fill();
+          if (alpha > 0.08) {
+            ctx.beginPath();
+            ctx.globalAlpha = alpha * 0.06;
+            ctx.fillStyle = `rgba(255,255,255,1)`;
+            ctx.arc(p.x, p.y, s * 6, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
 
-      ctx!.globalAlpha = 1;
+      if (ctx) ctx.globalAlpha = 1;
       rafRef.current = requestAnimationFrame(step);
     }
 
