@@ -52,58 +52,57 @@ const nodeTypes = {
 };
 
 type Props = { 
-  flowchartId?: string;
+  flowchartId?: string | number; // รองรับทั้ง string และ number
+  labId?: number; // รับ labId เข้ามาโดยตรงได้ (Optional)
 };
 
-const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
-  // 1. ดึง Params ผ่าน Hook
+const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId, labId: propLabId }) => {
+  // 1. ดึง Params ผ่าน Hook (Fallback กรณีไม่ได้ส่ง Prop มา)
   const paramsHook = useParams();
-  const searchParams = useSearchParams(); // ✅ เพิ่ม: ดึง Query Params (?labId=...)
+  const searchParams = useSearchParams(); 
 
-  // ✅ เพิ่ม State สำหรับเก็บ labId
-  const [labId, setLabId] = useState<number | null>(null);
+  // ✅ State สำหรับเก็บ labId
+  const [labId, setLabId] = useState<number | null>(propLabId ? Number(propLabId) : null);
 
-  // 2. คำนวณ ID ของ Flowchart
+  // 2. คำนวณ ID ของ Flowchart (Priority: Prop > URL Param > Hook)
   const resolvedFlowchartId = useMemo(() => {
-    if (propId) return propId;
-    if (!paramsHook) return "";
+    // ถ้ามี Prop ส่งมาจาก Server Component ให้ใช้ก่อน (Best Practice Next.js 15)
+    if (propId) return String(propId);
 
-    const findIdInObject = (obj: any) => {
-      if (!obj) return null;
-      if (obj.id) return obj.id;
-      if (obj.flowchartId) return obj.flowchartId;
-      if (obj.labId) return obj.labId; // ระวัง: บางที route อาจจะเป็น [labId] แทน [flowchartId] ต้องเช็คดีๆ
-      
-      const keys = Object.keys(obj);
-      if (keys.length > 0) return obj[keys[0]]; 
-      return null;
-    };
-
-    const fromHook = findIdInObject(paramsHook);
-    return Array.isArray(fromHook) ? fromHook[0] : fromHook || "";
+    // ถ้าไม่มี Prop ให้พยายามหาจาก Hook useParams (Client Side)
+    if (paramsHook) {
+      if (paramsHook.flowchartId) return String(paramsHook.flowchartId);
+      if (paramsHook.labId) return String(paramsHook.labId); // กรณี URL เป็น /Dolab/[labId]
+    }
+    
+    return "";
   }, [propId, paramsHook]);
 
-  // ✅ Effect ใหม่: พยายามหา Lab ID จาก URL หรือ API
+  // ✅ Effect: พยายามหา Lab ID 
   useEffect(() => {
-    // 1. ถ้ามี ?labId=xx มากับ URL ให้ใช้เลย (เร็วสุด)
+    // ถ้ามีค่าจาก Prop แล้ว ไม่ต้องทำอะไร
+    if (propLabId) {
+      setLabId(Number(propLabId));
+      return;
+    }
+
+    // 1. ลองดูจาก Query Params (?labId=...)
     const paramLabId = searchParams?.get("labId");
     if (paramLabId) {
       setLabId(Number(paramLabId));
       return;
     }
 
-    // 2. ถ้าไม่มีใน URL ให้ลองดึงข้อมูล Flowchart มาดูว่าผูกกับ Lab ไหน
+    // 2. ถ้ายังไม่มี ให้ลองดึงข้อมูล Flowchart มาดู
     if (resolvedFlowchartId) {
       apiGetFlowchart(String(resolvedFlowchartId))
         .then((resp) => {
-          // หา Lab ID จาก Response (เช็คหลายๆ property เผื่อโครงสร้างต่างกัน)
           const foundLabId = 
             resp?.labId ?? 
             resp?.lab_id ?? 
             resp?.assignmentId ?? 
             resp?.assignment_id ??
             resp?.flowchart?.labId ??
-            resp?.flowchart?.lab_id ??
             resp?.data?.labId;
 
           if (foundLabId) {
@@ -113,7 +112,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
         })
         .catch((err) => console.warn("Could not fetch metadata for labId:", err));
     }
-  }, [resolvedFlowchartId, searchParams]);
+  }, [resolvedFlowchartId, searchParams, propLabId]);
 
   // Debug Flowchart ID
   useEffect(() => {
@@ -146,7 +145,6 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
     try {
       const payload = await apiGetFlowchart(String(resolvedFlowchartId));
       
-      // ✅ อัปเดต Lab ID ด้วยเผื่อมีการเปลี่ยนแปลง หรือยังไม่ได้ค่า
       const foundLabId = payload?.labId ?? payload?.lab_id ?? payload?.flowchart?.labId;
       if (foundLabId) setLabId(Number(foundLabId));
 
@@ -222,7 +220,6 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
       <div className="mt-20 ml-4 z-10 relative">
         <TopBarControls 
           flowchartId={Number(resolvedFlowchartId)} 
-          // ✅ ส่ง labId เข้าไป (ถ้ามีค่า)
           labId={labId}
           onHighlightNode={highlightNode} 
         />
