@@ -2,85 +2,71 @@ pipeline {
     agent any
 
     environment {
-        // ตั้งชื่อ Image
         IMAGE_NAME = "easyflow-frontend"
         TAG = "${env.BUILD_NUMBER}"
     }
 
     stages {
-        
-        // 1. เตรียมไฟล์ Schema จาก Backend เข้ามาใน Frontend
-        stage('Prepare Schema') {
+        stage('Checkout') {
             steps {
-                script {
-                    echo "=== COPYING SCHEMA FROM BACKEND ==="
-                    // สร้างโฟลเดอร์ prisma ใน easyflow
-                    sh 'mkdir -p easyflow/prisma'
-                    // Copy ไฟล์ข้ามโฟลเดอร์
-                    sh 'cp backend/prisma/schema.prisma easyflow/prisma/schema.prisma'
-                }
+                checkout scm
             }
         }
 
-        // 2. Install & Test (รัน Unit Test / Lint)
-        // ขั้นตอนนี้ Optional: ถ้าไม่มี Test ให้ข้ามไป stage Build Image ได้เลย
-        stage('Install & Test (Node)') {
+        // ยุบรวมขั้นตอนเตรียมไฟล์ + Install ไว้ใน Docker ที่เป็น Root
+        // เพื่อแก้ปัญหา Permission Denied
+        stage('Prepare & Build Context') {
             agent {
                 docker {
-                    image 'node:20-alpine' // แนะนำใช้ node 20 ให้ตรงกับ Dockerfile
-                    args '-u root:root'
+                    image 'node:20-alpine'
+                    // ใช้ root user เพื่อให้มีสิทธิ์เขียนไฟล์ทับได้แน่นอน
+                    args '-u root:root' 
                 }
             }
             steps {
                 dir('easyflow') {
                     sh '''
-                        echo "=== INSTALL DEPENDENCIES ==="
-                        npm ci
-
-                        echo "=== PRISMA GENERATE ==="
-                        // จำเป็นต้อง generate client เพื่อให้ code ที่เรียกใช้ prisma ไม่ error
-                        npx prisma generate
-
-                        echo "=== RUN TEST & LINT ==="
-                        // ใส่คำสั่ง test หรือ lint ตรงนี้ (ถ้ามี)
-                        // npm run lint
-                        // npm test || true
+                        echo "=== 1. PREPARE SCHEMA ==="
+                        # สร้าง folder (ถ้ายังไม่มี)
+                        mkdir -p prisma
                         
-                        echo "Skipping 'npm run build' here because Dockerfile will handle it."
+                        # Copy ไฟล์จาก backend (path ถอยกลับไป 1 ชั้น)
+                        # ทำในนี้ได้เลย เพราะ container mount workspace เข้ามาแล้ว
+                        cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
+                        
+                        echo "=== 2. INSTALL & GENERATE ==="
+                        # ลบ node_modules เก่าทิ้งก่อน เพื่อความชัวร์ (แก้ปัญหา permission เก่า)
+                        rm -rf node_modules
+                        
+                        npm ci
+                        npx prisma generate
+                        
+                        # (Optional) Test
+                        # npm test || true
                     '''
                 }
             }
         }
 
-        // 3. Build Docker Image (ของจริง)
         stage('Build Docker Image') {
             steps {
-                dir('easyflow') { // เข้าไปทำงานในโฟลเดอร์ easyflow
+                dir('easyflow') {
                     sh """
                         echo "=== DOCKER BUILD ==="
-                        // สังเกต: เรา build ที่ context ปัจจุบัน (.) ซึ่งคือ easyflow/
-                        // เพราะเรา copy schema เข้ามาเตรียมไว้แล้วใน step แรก
+                        # ตอนนี้ใน folder easyflow มี prisma/schema.prisma แล้ว
                         docker build -t ${IMAGE_NAME}:${TAG} .
-                        
-                        // Tag เป็น latest ด้วย
                         docker tag ${IMAGE_NAME}:${TAG} ${IMAGE_NAME}:latest
                     """
                 }
             }
         }
 
-        // 4. Deploy (Local Docker)
         stage('Deploy (local docker)') {
             steps {
                 sh """
-                    echo "=== DEPLOYING ==="
-                    
-                    # 1. ลบ Container เก่า (ถ้ามี)
                     docker stop ${IMAGE_NAME} || true
                     docker rm ${IMAGE_NAME} || true
-
-                    # 2. รัน Container ใหม่
-                    # หมายเหตุ: การใช้ --link เป็นวิธีเก่า แนะนำให้ใช้ Docker Network ในอนาคต
+                    
                     docker run -d \\
                         --name ${IMAGE_NAME} \\
                         --restart unless-stopped \\
@@ -92,7 +78,6 @@ pipeline {
                         -e NEXTAUTH_URL="http://localhost:3000" \\
                         -e NEXTAUTH_SECRET="change-me-to-secure-random-string" \\
                         -e SERVER_HOST="0.0.0.0" \\
-                        -e PORT="3000" \\
                         ${IMAGE_NAME}:latest
                 """
             }
@@ -101,14 +86,15 @@ pipeline {
 
     post {
         always {
-            // ลบ Workspace เพื่อประหยัดพื้นที่ (ไม่ต้อง archive artifact เพราะเป็น docker image แล้ว)
-            cleanWs()
-        }
-        success {
-            echo 'Pipeline executed successfully!'
-        }
-        failure {
-            echo 'Pipeline failed!'
+            // ใช้ Docker ช่วยลบไฟล์ เพื่อแก้ปัญหา Jenkins ลบไฟล์ที่สร้างโดย root ไม่ได้
+            script {
+                try {
+                     sh 'docker run --rm -v "${WORKSPACE}:/app" -w /app alpine rm -rf *'
+                } catch (err) {
+                     echo "Failed to clean via docker, trying standard clean..."
+                     cleanWs()
+                }
+            }
         }
     }
 }
