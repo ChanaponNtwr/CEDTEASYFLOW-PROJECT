@@ -1,95 +1,114 @@
 pipeline {
-  agent any                            // workspace อยู่บน host
-  environment {
-    IMAGE_NAME = "easyflow-frontend:${env.BUILD_NUMBER}"
-  }
+    agent any
 
-  stages {
-
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
+    environment {
+        // ตั้งชื่อ Image
+        IMAGE_NAME = "easyflow-frontend"
+        TAG = "${env.BUILD_NUMBER}"
     }
 
-  stage('Install & Test & Build (node)') {
-      agent {
-        docker {
-          image 'node:18' 
-          // เพิ่ม -e BASE_API=${BASE_API} ตรงนี้
-          // หมายเหตุ: ต้องมั่นใจว่าคุณตั้งค่า BASE_API ไว้ใน Jenkins (Global Variable) แล้ว
-          // หรือถ้าไม่มี ให้ใส่ค่า URL จริงไปเลย เช่น -e BASE_API="http://10.240.xx.xx:xxxx"
-          args '-u root:root -e BASE_API=${BASE_API}'
+    stages {
+        
+        // 1. เตรียมไฟล์ Schema จาก Backend เข้ามาใน Frontend
+        stage('Prepare Schema') {
+            steps {
+                script {
+                    echo "=== COPYING SCHEMA FROM BACKEND ==="
+                    // สร้างโฟลเดอร์ prisma ใน easyflow
+                    sh 'mkdir -p easyflow/prisma'
+                    // Copy ไฟล์ข้ามโฟลเดอร์
+                    sh 'cp backend/prisma/schema.prisma easyflow/prisma/schema.prisma'
+                }
+            }
         }
-      }
-      steps {
-        dir('easyflow') {
-          sh '''
-             # ... (โค้ดส่วน copy prisma เหมือนเดิม ไม่ต้องแก้) ...
-             echo "=== SETUP SCHEMA FROM BACKEND ==="
-             mkdir -p prisma
-             cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
 
-             echo "=== CLEAN & INSTALL ==="
-             rm -rf node_modules
-             rm -rf .prisma
-             rm -rf node_modules/.prisma
-             npm ci
-             
-             echo "=== GENERATE & BUILD ==="
-             npx prisma generate
-             npm test || true
-             
-             # เพิ่มบรรทัดนี้เพื่อ Debug ดูว่าค่ามาไหม (Optional)
-             echo "Checking BASE_API: $BASE_API"
-             
-             npm run build
-          '''
+        // 2. Install & Test (รัน Unit Test / Lint)
+        // ขั้นตอนนี้ Optional: ถ้าไม่มี Test ให้ข้ามไป stage Build Image ได้เลย
+        stage('Install & Test (Node)') {
+            agent {
+                docker {
+                    image 'node:20-alpine' // แนะนำใช้ node 20 ให้ตรงกับ Dockerfile
+                    args '-u root:root'
+                }
+            }
+            steps {
+                dir('easyflow') {
+                    sh '''
+                        echo "=== INSTALL DEPENDENCIES ==="
+                        npm ci
+
+                        echo "=== PRISMA GENERATE ==="
+                        // จำเป็นต้อง generate client เพื่อให้ code ที่เรียกใช้ prisma ไม่ error
+                        npx prisma generate
+
+                        echo "=== RUN TEST & LINT ==="
+                        // ใส่คำสั่ง test หรือ lint ตรงนี้ (ถ้ามี)
+                        // npm run lint
+                        // npm test || true
+                        
+                        echo "Skipping 'npm run build' here because Dockerfile will handle it."
+                    '''
+                }
+            }
         }
-      }
-    }
-    
-    stage('Build Docker Image') {
-      steps {
-        sh '''
-          docker build \
-            -t easyflow-frontend:${BUILD_NUMBER} \
-            -f easyflow/Dockerfile \
-            .
-          docker tag easyflow-frontend:${BUILD_NUMBER} easyflow-frontend:latest
-        '''
-      }
-    }
 
-    stage('Deploy (local docker)') {
-          steps {
-            sh """
-              # 1. หยุดและลบ container เก่าเฉพาะตัว frontend (ไม่กระทบ backend/db)
-              docker stop easyflow-frontend || true
-              docker rm easyflow-frontend || true
-              
-              # 2. รัน container ใหม่ พร้อมส่งค่า config ของจริงเข้าไปทับค่าหลอก
-              docker run -d \\
-                --name easyflow-frontend \\
-                -p 3000:3000 \\
-                --link postgres-db:postgres \\
-                --link easyflow-backend:backend \\
-                -e DATABASE_URL="postgresql://postgres:root@postgres:5432/postgres" \\
-                -e BASE_API="http://easyflow-backend:9000" \\
-                -e NEXTAUTH_URL="http://localhost:3000" \\
-                -e NEXTAUTH_SECRET="change-me-to-secure-random-string" \\
-                -e SERVER_HOST="0.0.0.0" \\
-                -e GOOGLE_CLIENT_ID="your-real-id-or-leave-empty-if-not-used" \\
-                -e GOOGLE_CLIENT_SECRET="your-real-secret-or-leave-empty-if-not-used" \\
-                easyflow-frontend:latest
-            """
-          }
+        // 3. Build Docker Image (ของจริง)
+        stage('Build Docker Image') {
+            steps {
+                dir('easyflow') { // เข้าไปทำงานในโฟลเดอร์ easyflow
+                    sh """
+                        echo "=== DOCKER BUILD ==="
+                        // สังเกต: เรา build ที่ context ปัจจุบัน (.) ซึ่งคือ easyflow/
+                        // เพราะเรา copy schema เข้ามาเตรียมไว้แล้วใน step แรก
+                        docker build -t ${IMAGE_NAME}:${TAG} .
+                        
+                        // Tag เป็น latest ด้วย
+                        docker tag ${IMAGE_NAME}:${TAG} ${IMAGE_NAME}:latest
+                    """
+                }
+            }
         }
-  }
 
-  post {
-    always {
-      archiveArtifacts artifacts: 'easyflow/.next/**', allowEmptyArchive: true
+        // 4. Deploy (Local Docker)
+        stage('Deploy (local docker)') {
+            steps {
+                sh """
+                    echo "=== DEPLOYING ==="
+                    
+                    # 1. ลบ Container เก่า (ถ้ามี)
+                    docker stop ${IMAGE_NAME} || true
+                    docker rm ${IMAGE_NAME} || true
+
+                    # 2. รัน Container ใหม่
+                    # หมายเหตุ: การใช้ --link เป็นวิธีเก่า แนะนำให้ใช้ Docker Network ในอนาคต
+                    docker run -d \\
+                        --name ${IMAGE_NAME} \\
+                        --restart unless-stopped \\
+                        -p 3000:3000 \\
+                        --link postgres-db:postgres \\
+                        --link easyflow-backend:backend \\
+                        -e DATABASE_URL="postgresql://postgres:root@postgres:5432/postgres" \\
+                        -e BASE_API="http://easyflow-backend:9000" \\
+                        -e NEXTAUTH_URL="http://localhost:3000" \\
+                        -e NEXTAUTH_SECRET="change-me-to-secure-random-string" \\
+                        -e SERVER_HOST="0.0.0.0" \\
+                        -e PORT="3000" \\
+                        ${IMAGE_NAME}:latest
+                """
+            }
+        }
     }
-  }
+
+    post {
+        always {
+            // ลบ Workspace เพื่อประหยัดพื้นที่ (ไม่ต้อง archive artifact เพราะเป็น docker image แล้ว)
+            cleanWs()
+        }
+        success {
+            echo 'Pipeline executed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
 }

@@ -1,30 +1,47 @@
-# Dockerfile
-FROM node:20-slim
+# Stage 1: Install Dependencies
+FROM node:20-alpine AS deps
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
 
-# ตั้งค่า working dir
-WORKDIR /usr/src/app
+# Copy package files
+COPY package.json package-lock.json* ./
 
-# ติดตั้งโปรเจกต์ dependencies แบบ deterministic
-# คัดลอกไฟล์ package.json และ package-lock.json ก่อนเพื่อลด layer rebuild
-COPY package.json package-lock.json ./
+# Copy prisma schema directory (เราจะเตรียมไฟล์นี้ในขั้นตอน Jenkins)
+COPY prisma ./prisma/
 
-# ถ้าใช้ npm ci ให้แน่ใจว่า lockfile อยู่ด้วย
-RUN npm ci --production=false
+# Install dependencies
+RUN npm ci
 
-# คัดลอกโค้ดโปรเจกต์ทั้งหมด (ปรับตามโครงสร้าง repo ของคุณ)
+# Stage 2: Builder
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# ถ้า schema.prisma อยู่ใน ../backend/prisma ใน log เดิม — ให้คัดลอกมาที่ prisma/
-# (ปรับเส้นทางตามจริงของ repo)
-RUN mkdir -p ./prisma \
- && if [ -f ./backend/prisma/schema.prisma ]; then cp ./backend/prisma/schema.prisma ./prisma/schema.prisma; fi
+# Generate Prisma Client ก่อน Build
+RUN npx prisma generate
 
-# สร้าง Prisma client (ใช้ npx เพื่อให้ CLI จัดการแพลตฟอร์มให้ถูกต้อง)
-RUN npx prisma generate --schema=./prisma/schema.prisma
+# Build Next.js
+RUN npm run build
 
-# สั่ง build ที่จำเป็น (เช่น next build หรือ build คอนเทนเนอร์อื่นๆ)
-# ตัวอย่าง: ถ้าเป็น Next.js
-# RUN npm run build
+# Stage 3: Runner (Production Image)
+FROM node:20-alpine AS runner
+WORKDIR /app
 
-# ระบุคำสั่งเริ่มต้น (ปรับตามแอปของคุณ)
+ENV NODE_ENV production
+ENV PORT 3000
+
+# สร้าง user เพื่อความปลอดภัย (Optional แต่แนะนำ)
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy ไฟล์จำเป็นจาก Builder (โหมด Standalone)
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+
+EXPOSE 3000
+
 CMD ["node", "server.js"]
