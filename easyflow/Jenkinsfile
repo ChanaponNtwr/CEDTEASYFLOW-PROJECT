@@ -1,6 +1,5 @@
 pipeline {
   agent any
-
   environment {
     IMAGE_NAME = "easyflow-frontend:${env.BUILD_NUMBER}"
     PRISMA_PIN_VERSION = "5.7.1"
@@ -8,9 +7,7 @@ pipeline {
 
   stages {
     stage('Checkout') {
-      steps {
-        checkout scm
-      }
+      steps { checkout scm }
     }
 
     stage('Install & Test & Build (node)') {
@@ -24,7 +21,6 @@ pipeline {
         dir('easyflow') {
           sh '''
             set -e
-
             echo "=== SETUP SCHEMA FROM BACKEND ==="
             mkdir -p prisma
             cp ../backend/prisma/schema.prisma ./prisma/schema.prisma || true
@@ -41,17 +37,100 @@ pipeline {
             node -v
             npm -v
 
-            echo "=== CHECK PRISMA CLI ==="
-            # ถ้า npx prisma ใช้ไม่ได้ ให้ติดตั้ง pinned version แบบ no-save ชั่วคราว
-            if npx prisma --version; then
-              echo "npx prisma OK"
+            echo "=== ATTEMPT PRISMA CLI RESOLUTION (multiple fallbacks) ==="
+
+            PRISMA_CMD=""
+
+            # 1) try local bin (fast)
+            if [ -x "./node_modules/.bin/prisma" ]; then
+              echo "Trying local ./node_modules/.bin/prisma --version"
+              if ./node_modules/.bin/prisma --version; then
+                PRISMA_CMD="./node_modules/.bin/prisma"
+                echo "Using local prisma: $PRISMA_CMD"
+              else
+                echo "Local prisma binary exists but failed."
+              fi
             else
-              echo "npx prisma failed — installing pinned prisma@${PRISMA_PIN_VERSION} (no-save)"
-              # ติดตั้งแบบไม่แก้ package.json / package-lock.json
-              npm install prisma@${PRISMA_PIN_VERSION} --no-save @prisma/client@${PRISMA_PIN_VERSION} --no-save
-              echo "After installing pinned prisma:"
-              npx prisma --version
+              echo "No local prisma binary found."
             fi
+
+            # 2) If local failed, try npx with explicit package (forces npx to fetch exact package and run it)
+            if [ -z "$PRISMA_CMD" ]; then
+              echo "Trying npx --package prisma@${PRISMA_PIN_VERSION} prisma --version"
+              if npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma --version; then
+                PRISMA_CMD="npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma"
+                echo "Using npx explicit package: $PRISMA_CMD"
+              else
+                echo "npx explicit-package prisma failed."
+              fi
+            fi
+
+            # 3) If still no PRISMA_CMD, inspect installed prisma package files to debug
+            if [ -z "$PRISMA_CMD" ]; then
+              echo "Diagnosing local prisma package..."
+              echo "ls node_modules/prisma (if exists):"
+              ls -la node_modules/prisma || true
+              echo "Attempt to read package.json of local prisma (no code execution):"
+              node -e "try { console.log('local prisma package.json version:', require('./node_modules/prisma/package.json').version) } catch (e) { console.error('read package.json failed:', e && e.stack ? e.stack.split('\\n')[0] : e) }" || true
+
+              echo "Try direct require of @prisma/client package.json:"
+              node -e "try { console.log('local @prisma/client package.json version:', require('./node_modules/@prisma/client/package.json').version) } catch (e) { console.error('read @prisma/client package.json failed:', e && e.stack ? e.stack.split('\\n')[0] : e) }" || true
+            fi
+
+            # 4) If still failiing -> clear npm cache and install pinned prisma locally (no-save),
+            #    then try local binary again.
+            if [ -z "$PRISMA_CMD" ]; then
+              echo "Cleaning npm cache and reinstalling pinned prisma @${PRISMA_PIN_VERSION} (no-save)..."
+              npm cache clean --force || true
+              npm install prisma@${PRISMA_PIN_VERSION} --no-save @prisma/client@${PRISMA_PIN_VERSION} --no-save
+
+              echo "After reinstall, list prisma files:"
+              ls -la node_modules/prisma || true
+              ls -la node_modules/.bin || true
+
+              # try local binary again
+              if [ -x "./node_modules/.bin/prisma" ]; then
+                echo "Trying freshly installed local binary ./node_modules/.bin/prisma --version"
+                if ./node_modules/.bin/prisma --version; then
+                  PRISMA_CMD="./node_modules/.bin/prisma"
+                  echo "Using freshly installed local prisma: $PRISMA_CMD"
+                else
+                  echo "Fresh local prisma binary still failed."
+                fi
+              fi
+
+              # try npx explicit package as final fallback
+              if [ -z "$PRISMA_CMD" ]; then
+                echo "Trying final fallback: npx --package prisma@${PRISMA_PIN_VERSION} prisma --version"
+                if npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma --version; then
+                  PRISMA_CMD="npx --package prisma@${PRISMA_PIN_VERSION} --package @prisma/client@${PRISMA_PIN_VERSION} prisma"
+                  echo "Using final fallback prisma via npx: $PRISMA_CMD"
+                fi
+              fi
+            fi
+
+            # If still not resolved, fail with helpful diagnostics
+            if [ -z "$PRISMA_CMD" ]; then
+              echo "ERROR: Could not obtain a working prisma CLI."
+              echo "Please pin prisma & @prisma/client in package.json to a stable version (e.g. 5.7.1) and run npm ci."
+              echo "Diagnostic files:"
+              ls -la . || true
+              echo "node_modules tree (top):"
+              ls -la node_modules | head -n 200 || true
+              # show npm list for prisma
+              echo "npm list prisma --depth=0"
+              npm list prisma --depth=0 || true
+              echo "npm list @prisma/client --depth=0"
+              npm list @prisma/client --depth=0 || true
+
+              # print some environment info
+              echo "ulimit -a"
+              ulimit -a || true
+
+              exit 1
+            fi
+
+            echo "Resolved PRISMA_CMD: $PRISMA_CMD"
 
             echo "=== PRISMA GENERATE ==="
             export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
@@ -59,8 +138,12 @@ pipeline {
             export NODE_OPTIONS="--stack-size=60000 --max-old-space-size=4096"
             ulimit -s 65535 || true
 
-            # รัน generate (จะใช้ prisma ที่ติดตั้งใน node_modules หรือ npx จะโหลดตาม local)
-            npx prisma generate --schema=./prisma/schema.prisma
+            # run generate using resolved command
+            if echo "$PRISMA_CMD" | grep -q '^npx'; then
+              $PRISMA_CMD generate --schema=./prisma/schema.prisma
+            else
+              "$PRISMA_CMD" generate --schema=./prisma/schema.prisma
+            fi
 
             echo "=== TEST (continue on fail) ==="
             npm test || true
@@ -76,10 +159,7 @@ pipeline {
     stage('Build Docker Image') {
       steps {
         sh '''
-          docker build \
-            -t easyflow-frontend:${BUILD_NUMBER} \
-            -f easyflow/Dockerfile \
-            .
+          docker build -t easyflow-frontend:${BUILD_NUMBER} -f easyflow/Dockerfile .
           docker tag easyflow-frontend:${BUILD_NUMBER} easyflow-frontend:latest
         '''
       }
