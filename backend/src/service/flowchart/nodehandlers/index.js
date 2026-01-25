@@ -1,15 +1,14 @@
 // src/service/flowchart/nodeHandlers/index.js
-import StartHandler from "./StartHandler.js";
-import StopHandler from "./StopHandler.js";
+import StartHandler from "./starthandler.js";
+import StopHandler from "./stophandler.js";
 import InputHandler from "./InputHandler.js";
-import OutputHandler from "./OutputHandler.js";
-import IfHandler from "./IfHandler.js";
-import AssignHandler from "./AssignHandler.js";
-import WHHandler from "./WHHandler.js";
-import FRHandler from "./FRHandler.js";
-import DeclareHandler from "./DeclareHandler.js";
-import BPHandler from "./BPHandler.js";
-
+import OutputHandler from "./outputhandler.js";
+import IfHandler from "./ifhandler.js";
+import AssignHandler from "./assignhandler.js";
+import WHHandler from "./whhandler.js";
+import FRHandler from "./frhandler.js";
+import DeclareHandler from "./declarehandler.js";
+import BPHandler from "./bphandler.js";
 // ✅ DEBUG: confirm handlers are loaded
 console.log("✅ nodeHandlers/index.js loaded");
 
