@@ -230,7 +230,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
         newEdgesToAdd.push(
           createArrowEdge(sourceNode.id, whileNode.id, { sourceHandle: sourceHandle ?? undefined, targetHandle: "top" }),
           createArrowEdge(whileNode.id, targetNode.id, { label: "False", sourceHandle: "false", targetHandle: targetHandle ?? undefined }),
-          { ...createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }), type: "smoothstep", pathOptions: { offset: 60 } }
+          { ...createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }), type: "smoothstep", pathOptions: { offset: 60 } } as any
         );
       } else if (type === "for") {
         const forNode = createNode("for", label, newPosX, sourceNode.position.y + stepY + 60);
@@ -238,7 +238,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
         newEdgesToAdd.push(
           createArrowEdge(sourceNode.id, forNode.id, { sourceHandle: sourceHandle ?? undefined, targetHandle: "top" }),
           createArrowEdge(forNode.id, targetNode.id, { label: "False", sourceHandle: "next", targetHandle: targetHandle ?? undefined }),
-          { ...createArrowEdge(forNode.id, forNode.id, { label: "True", sourceHandle: "loop_body", targetHandle: "loop_return" }), type: "smoothstep", pathOptions: { offset: 60 } }
+          { ...createArrowEdge(forNode.id, forNode.id, { label: "True", sourceHandle: "loop_body", targetHandle: "loop_return" }), type: "smoothstep", pathOptions: { offset: 60 } } as any
         );
       } else {
         const createdType = mapTypeForNode(type) as string;
@@ -286,7 +286,8 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
         newEdges.push(createArrowEdge(anchorId, loopNode.id, { targetHandle: "top" }));
         if (outgoing.length === 0) newEdges.push(createArrowEdge(loopNode.id, endNode.id, { label: "False", sourceHandle: type === "while" ? "false" : "next" }));
         else outgoing.forEach((o) => newEdges.push(createArrowEdge(loopNode.id, o.target, { label: "False", sourceHandle: type === "while" ? "false" : "next", targetHandle: o.targetHandle ?? undefined })));
-        newEdges.push({ ...createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }), type: "smoothstep", animated: true, pathOptions: { offset: 60 } });
+        newEdges.push({ ...createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }), type: "smoothstep", animated: true, pathOptions: { offset: 60 } } as any);
+        
 
         setEdges((eds) => [...eds.filter((e) => !(e.source === anchorId && outgoing.some((o) => o.target === e.target))), ...newEdges]);
         insertAfter(anchorId, [loopNode], newEdges, undefined, undefined, stepY);
@@ -328,7 +329,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
         const newEdges: Edge[] = [
             createArrowEdge(previousNode.id, loopNode.id, { targetHandle: "top" }),
             createArrowEdge(loopNode.id, endNode.id, { label: "False", sourceHandle: type === "while" ? "false" : "next" }),
-            { ...createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }), type: "smoothstep", animated: true, pathOptions: { offset: 60 } }
+            { ...createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }), type: "smoothstep", animated: true, pathOptions: { offset: 60 } } as any
         ];
         const updatedNodes = [...nodes.filter(n => n.id !== 'end'), loopNode, {...endNode, position: {x: 300, y: computeEndY([...nodes, loopNode]) + stepY}}];
         setNodes(updatedNodes);
