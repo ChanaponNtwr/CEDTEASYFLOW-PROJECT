@@ -15,10 +15,8 @@ pipeline {
     stage('Install & Test & Build (node)') {
       agent {
         docker {
-          # --- ส่วนที่แก้ไข (FIX) ---
-          # เปลี่ยนจาก node:18 เป็น node:20 เพื่อให้รองรับ Prisma 7.x และ Next.js 15 ได้เต็มประสิทธิภาพ
-          image 'node:20' 
-          # ------------------------
+          # ใช้ Node 18 เหมือนเดิมเพื่อให้ตรงกับ Dockerfile
+          image 'node:18' 
           args '-u root:root -e BASE_API=${BASE_API} -e NODE_ENV=development'
         }
       }
@@ -37,14 +35,15 @@ pipeline {
              rm -rf node_modules/.prisma
              rm -f package-lock.json
              
-             # 3. Update Prisma เป็นเวอร์ชันล่าสุด (ตอนนี้จะผ่านแล้วเพราะใช้ Node 20)
-             echo "=== UPDATE PRISMA & INSTALL DEPENDENCIES ==="
-             # ติดตั้ง dependencies และบังคับใช้ Prisma ล่าสุด
-             npm install prisma@latest @prisma/client@latest --save-exact
+             # --- ส่วนที่แก้ไข (FIX) ---
+             # เราจะไม่ใช้ @latest (เพราะมันคือ v7 ที่ต้องใช้ Node 20)
+             # เราจะใช้ v5.22.0 (ตัวท็อปของรุ่น 5) ซึ่งรองรับ Node 18 และแก้บั๊ก Stack Overflow แล้ว
+             echo "=== UPDATE PRISMA (Safe Version) ==="
+             npm install prisma@5.22.0 @prisma/client@5.22.0 --save-exact
 
              echo "=== GENERATE & BUILD ==="
              
-             # Generate Client
+             # เรียกคำสั่ง generate
              npx prisma generate --schema=./prisma/schema.prisma
 
              npm test || true
@@ -59,10 +58,6 @@ pipeline {
     stage('Build Docker Image') {
       steps {
         sh '''
-          # ตอน Build Docker Image จริง ก็ควรเปลี่ยนเป็น node:20 ด้วยเพื่อให้ Environment ตรงกัน
-          # แต่ถ้า Dockerfile ของคุณ fix ไว้ที่ 18 อาจจะแก้ในนี้ไม่ได้ทันที (แต่ production รันได้)
-          # แนะนำให้ไปแก้ไฟล์ Dockerfile ในโปรเจกต์ด้วยถ้าทำได้ แต่ถ้าไม่ได้ ให้ใช้บรรทัดนี้ไปก่อน
-          
           docker build \
             -t easyflow-frontend:${BUILD_NUMBER} \
             -f easyflow/Dockerfile \
