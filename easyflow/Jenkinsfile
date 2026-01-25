@@ -25,32 +25,17 @@ pipeline {
              echo "=== SETUP SCHEMA FROM BACKEND ==="
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
-
              echo "=== CLEAN & INSTALL ==="
              rm -rf node_modules
              rm -rf .prisma
              rm -rf node_modules/.prisma
              npm ci
-             
              echo "=== GENERATE & BUILD ==="
-             
-             # --- ส่วนที่แก้ไข (V5: The Ultimate Fix) ---
              export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
              export PRISMA_CLIENT_ENGINE_TYPE=binary
-             
-             # 1. พยายามขยาย limit ของ OS (Linux) ให้รองรับ Stack ใหญ่ๆ ได้ 
-             # (ปกติ Docker บางที limit ไว้ที่ 8MB ถ้าเราขอ 10MB เลย Segfault)
-             # ใส่ || true ไว้เผื่อ docker ไม่ยอม แต่ปกติ root ทำได้
              ulimit -s 65535 || echo "Warning: Could not set ulimit"
-             
-             # 2. สั่ง Node ให้ใช้ Stack Size 16MB (เยอะกว่าเดิม 4 เท่า)
-             # ตอนนี้ OS limit ขยายแล้ว น่าจะไม่ Segfault
              node --stack-size=16384 ./node_modules/prisma/build/index.js generate
-             
-             # -----------------------------------------------------
-
              npm test || true
-             
              echo "Checking BASE_API: $BASE_API"
              npm run build
           '''
@@ -97,6 +82,7 @@ pipeline {
   post {
     always {
       archiveArtifacts artifacts: 'easyflow/.next/**', allowEmptyArchive: true
+      cleanWs() 
     }
   }
 }
