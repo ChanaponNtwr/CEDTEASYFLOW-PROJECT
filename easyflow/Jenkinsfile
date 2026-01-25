@@ -32,6 +32,7 @@ pipeline {
       }
     }
 
+
         stage('Install Dependencies') {
             steps {
                 sh '''
@@ -39,28 +40,25 @@ pipeline {
 
                     echo "=== INSTALL DEPENDENCIES ==="
 
-                    echo "Current directory:"
-                    pwd
-                    echo "Workspace files:"
-                    ls -la
-
-                    echo "Enter frontend directory (easyflow)"
                     cd easyflow
 
-                    echo "After cd:"
+                    echo "Workspace:"
                     pwd
                     ls -la
 
                     if [ ! -f package.json ]; then
-                      echo "❌ ERROR: package.json not found in easyflow"
+                      echo "❌ package.json not found"
                       exit 1
                     fi
 
+                    echo "🧹 Remove old node_modules (permission safe)"
+                    rm -rf node_modules
+
                     if [ -f package-lock.json ]; then
-                      echo "Found package-lock.json -> npm ci"
+                      echo "📦 Using npm ci"
                       npm ci
                     else
-                      echo "No package-lock.json found -> create lockfile then npm ci"
+                      echo "📦 Generate lockfile then npm ci"
                       npm install --package-lock-only
                       npm ci
                     fi
