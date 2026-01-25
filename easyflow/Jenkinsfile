@@ -34,13 +34,21 @@ pipeline {
              
              echo "=== GENERATE & BUILD ==="
              
-             # --- แก้ไขจุดนี้ ---
+             # --- ส่วนที่แก้ไข (V5: The Ultimate Fix) ---
              export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
              export PRISMA_CLIENT_ENGINE_TYPE=binary
              
-             # ใช้ค่า 4096 (4MB) และเรียกไฟล์ JS ตรงๆ
-             node --stack-size=4096 ./node_modules/prisma/build/index.js generate
+             # 1. พยายามขยาย limit ของ OS (Linux) ให้รองรับ Stack ใหญ่ๆ ได้ 
+             # (ปกติ Docker บางที limit ไว้ที่ 8MB ถ้าเราขอ 10MB เลย Segfault)
+             # ใส่ || true ไว้เผื่อ docker ไม่ยอม แต่ปกติ root ทำได้
+             ulimit -s 65535 || echo "Warning: Could not set ulimit"
              
+             # 2. สั่ง Node ให้ใช้ Stack Size 16MB (เยอะกว่าเดิม 4 เท่า)
+             # ตอนนี้ OS limit ขยายแล้ว น่าจะไม่ Segfault
+             node --stack-size=16384 ./node_modules/prisma/build/index.js generate
+             
+             # -----------------------------------------------------
+
              npm test || true
              
              echo "Checking BASE_API: $BASE_API"
