@@ -6,7 +6,8 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Copy prisma schema directory (เราจะเตรียมไฟล์นี้ในขั้นตอน Jenkins)
+# Copy prisma schema directory
+# [NOTE] ขั้นตอนนี้จะผ่านได้ก็ต่อเมื่อ Jenkins เตรียมไฟล์ prisma ไว้ให้และไม่ติด .dockerignore
 COPY prisma ./prisma/
 
 # Install dependencies
@@ -31,11 +32,11 @@ WORKDIR /app
 ENV NODE_ENV production
 ENV PORT 3000
 
-# สร้าง user เพื่อความปลอดภัย (Optional แต่แนะนำ)
+# สร้าง user เพื่อความปลอดภัย
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy ไฟล์จำเป็นจาก Builder (โหมด Standalone)
+# Copy ไฟล์จำเป็นจาก Builder
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static

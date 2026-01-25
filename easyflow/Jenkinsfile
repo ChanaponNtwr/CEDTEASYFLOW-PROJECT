@@ -13,13 +13,11 @@ pipeline {
             }
         }
 
-        // ยุบรวมขั้นตอนเตรียมไฟล์ + Install ไว้ใน Docker ที่เป็น Root
-        // เพื่อแก้ปัญหา Permission Denied
         stage('Prepare & Build Context') {
             agent {
                 docker {
                     image 'node:20-alpine'
-                    // ใช้ root user เพื่อให้มีสิทธิ์เขียนไฟล์ทับได้แน่นอน
+                    // ใช้ root เพื่อจัดการไฟล์ แต่ต้องระวังเรื่อง permission ตอนจบ
                     args '-u root:root' 
                 }
             }
@@ -27,22 +25,22 @@ pipeline {
                 dir('easyflow') {
                     sh '''
                         echo "=== 1. PREPARE SCHEMA ==="
-                        # สร้าง folder (ถ้ายังไม่มี)
                         mkdir -p prisma
                         
-                        # Copy ไฟล์จาก backend (path ถอยกลับไป 1 ชั้น)
-                        # ทำในนี้ได้เลย เพราะ container mount workspace เข้ามาแล้ว
+                        # Copy schema จาก backend (ตรวจสอบ path ให้แน่ใจว่าถูกต้อง)
                         cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
                         
                         echo "=== 2. INSTALL & GENERATE ==="
-                        # ลบ node_modules เก่าทิ้งก่อน เพื่อความชัวร์ (แก้ปัญหา permission เก่า)
+                        # ลบของเก่าเพื่อความสะอาด
                         rm -rf node_modules
                         
                         npm ci
                         npx prisma generate
                         
-                        # (Optional) Test
-                        # npm test || true
+                        # [FIX] แก้ Permission ให้ user ภายนอก (Jenkins) อ่าน/เขียนได้
+                        # ป้องกันปัญหา Permission Denied ตอน Build stage
+                        chmod -R 777 prisma
+                        chmod -R 777 node_modules
                     '''
                 }
             }
@@ -52,15 +50,20 @@ pipeline {
             steps {
                 dir('easyflow') {
                     sh """
-                        echo "=== DEBUG: CHECKING FILES BEFORE BUILD ==="
-                        ls -la
-                        ls -la prisma || echo "Prisma folder missing!"
+                        echo "=== DOCKER BUILD SETUP ==="
+                        
+                        # [FIX] ตรวจสอบว่า folder มีอยู่จริง
+                        ls -la prisma || echo "WARNING: prisma folder missing"
+                        
+                        # [FIX] บังคับแก้ไข .dockerignore เพื่อไม่ให้ข้าม prisma
+                        # ถ้าไฟล์ .dockerignore มีอยู่ ให้เพิ่มกฎ whitelist
+                        if [ -f .dockerignore ]; then
+                            echo "Found .dockerignore, appending !prisma rule..."
+                            echo "!prisma" >> .dockerignore
+                            echo "!node_modules" >> .dockerignore
+                        fi
 
-                        # Fix permissions: Ensure current user owns the files created by root in the previous stage
-                        # This prevents permission denied errors when Docker tries to read the context
-                        sudo chown -R \$(id -u):\$(id -g) . || true
-
-                        echo "=== DOCKER BUILD ==="
+                        echo "=== START BUILD ==="
                         docker build -t ${IMAGE_NAME}:${TAG} .
                         docker tag ${IMAGE_NAME}:${TAG} ${IMAGE_NAME}:latest
                     """
@@ -93,9 +96,9 @@ pipeline {
 
     post {
         always {
-            // ใช้ Docker ช่วยลบไฟล์ เพื่อแก้ปัญหา Jenkins ลบไฟล์ที่สร้างโดย root ไม่ได้
             script {
                 try {
+                     // ใช้ Docker ช่วยลบไฟล์ที่สร้างโดย root
                      sh 'docker run --rm -v "${WORKSPACE}:/app" -w /app alpine rm -rf *'
                 } catch (err) {
                      echo "Failed to clean via docker, trying standard clean..."
