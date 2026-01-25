@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useEffect, useState } from "react";
+import React, { useMemo, useEffect, useState, useCallback, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -8,8 +8,13 @@ import {
   MiniMap,
   Node,
   Edge,
+  useNodesState,
+  useEdgesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+
+// --- Next.js Navigation ---
+import { useParams, useSearchParams } from "next/navigation";
 
 // --- Components ---
 import Navbar from "@/components/Navbar";
@@ -35,9 +40,7 @@ import { useNodeMutations } from "../hooks/useNodeMutations";
 import { apiGetFlowchart } from "@/app/service/FlowchartService";
 import { convertBackendFlowchart } from "../utils/backendConverter";
 
-// ✅ Import useParams และ useSearchParams
-import { useParams, useSearchParams } from "next/navigation";
-
+// Define nodeTypes outside component to prevent re-creation on render
 const nodeTypes = {
   if: IfNodeComponent,
   breakpoint: BreakpointNodeComponent,
@@ -51,58 +54,66 @@ const nodeTypes = {
   for: ForNodeComponent,
 };
 
-type Props = { 
-  flowchartId?: string | number; // รองรับทั้ง string และ number
-  labId?: number; // รับ labId เข้ามาโดยตรงได้ (Optional)
+type Props = {
+  flowchartId?: string;
 };
 
-const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId, labId: propLabId }) => {
-  // 1. ดึง Params ผ่าน Hook (Fallback กรณีไม่ได้ส่ง Prop มา)
+const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
+  // 1. Next.js Hooks
   const paramsHook = useParams();
-  const searchParams = useSearchParams(); 
+  const searchParams = useSearchParams();
 
-  // ✅ State สำหรับเก็บ labId
-  const [labId, setLabId] = useState<number | null>(propLabId ? Number(propLabId) : null);
+  // 2. Local State
+  const [labId, setLabId] = useState<number | null>(null);
 
-  // 2. คำนวณ ID ของ Flowchart (Priority: Prop > URL Param > Hook)
+  // 3. Resolve Flowchart ID
   const resolvedFlowchartId = useMemo(() => {
-    // ถ้ามี Prop ส่งมาจาก Server Component ให้ใช้ก่อน (Best Practice Next.js 15)
-    if (propId) return String(propId);
-
-    // ถ้าไม่มี Prop ให้พยายามหาจาก Hook useParams (Client Side)
-    if (paramsHook) {
-      if (paramsHook.flowchartId) return String(paramsHook.flowchartId);
-      if (paramsHook.labId) return String(paramsHook.labId); // กรณี URL เป็น /Dolab/[labId]
-    }
+    // Priority 1: Passed via props
+    if (propId) return propId;
     
-    return "";
+    // Priority 2: From URL Params (useParams)
+    if (!paramsHook) return "";
+
+    // Helper to extract ID safely
+    // Prioritize specific keys: 'flowchartId', 'id', then fallback to first key
+    const extractId = (obj: any) => {
+      if (obj.flowchartId) return obj.flowchartId;
+      if (obj.id) return obj.id;
+      // Fallback: grab the first available value if it's a generic route like [slug]
+      const keys = Object.keys(obj);
+      if (keys.length > 0) return obj[keys[0]];
+      return null;
+    };
+
+    const fromHook = extractId(paramsHook);
+    return Array.isArray(fromHook) ? fromHook[0] : fromHook || "";
   }, [propId, paramsHook]);
 
-  // ✅ Effect: พยายามหา Lab ID 
+  // 4. Fetch Lab ID Logic (Optimized)
   useEffect(() => {
-    // ถ้ามีค่าจาก Prop แล้ว ไม่ต้องทำอะไร
-    if (propLabId) {
-      setLabId(Number(propLabId));
-      return;
-    }
+    let isMounted = true;
 
-    // 1. ลองดูจาก Query Params (?labId=...)
+    // Case A: Found in Query Params (?labId=...)
     const paramLabId = searchParams?.get("labId");
     if (paramLabId) {
       setLabId(Number(paramLabId));
       return;
     }
 
-    // 2. ถ้ายังไม่มี ให้ลองดึงข้อมูล Flowchart มาดู
+    // Case B: Fetch from API using Flowchart ID
     if (resolvedFlowchartId) {
       apiGetFlowchart(String(resolvedFlowchartId))
         .then((resp) => {
-          const foundLabId = 
-            resp?.labId ?? 
-            resp?.lab_id ?? 
-            resp?.assignmentId ?? 
+          if (!isMounted) return;
+
+          // Attempt to find Lab ID in various response structures
+          const foundLabId =
+            resp?.labId ??
+            resp?.lab_id ??
+            resp?.assignmentId ??
             resp?.assignment_id ??
             resp?.flowchart?.labId ??
+            resp?.flowchart?.lab_id ??
             resp?.data?.labId;
 
           if (foundLabId) {
@@ -110,16 +121,24 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId, labId: propLabI
             setLabId(Number(foundLabId));
           }
         })
-        .catch((err) => console.warn("Could not fetch metadata for labId:", err));
+        .catch((err) => {
+          if (isMounted) console.warn("Could not fetch metadata for labId:", err);
+        });
     }
-  }, [resolvedFlowchartId, searchParams, propLabId]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [resolvedFlowchartId, searchParams]);
 
   // Debug Flowchart ID
   useEffect(() => {
-    console.log(`✅ [FlowchartEditor] Resolved ID: "${resolvedFlowchartId}"`);
+    if (resolvedFlowchartId) {
+      console.log(`✅ [FlowchartEditor] Using Flowchart ID: "${resolvedFlowchartId}"`);
+    }
   }, [resolvedFlowchartId]);
 
-  // --- Logic เดิม ---
+  // --- React Flow Logic ---
   const {
     nodes, setNodes, onNodesChange,
     edges, setEdges, onEdgesChange,
@@ -130,33 +149,40 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId, labId: propLabI
     closeModal, closeNodeModal,
   } = useFlowchartState();
 
-  const { loading, error } = useFlowchartApi({ 
-    flowchartId: String(resolvedFlowchartId), 
-    setNodes, 
-    setEdges 
+  // Initial Load Hook
+  const { loading, error } = useFlowchartApi({
+    flowchartId: String(resolvedFlowchartId),
+    setNodes,
+    setEdges,
   });
 
+  // Mutation Hooks (Connect, Update, Delete)
   const { onConnect, handleUpdateNode, deleteNodeAndReconnect, addNode } = useNodeMutations({
     nodes, setNodes, edges, setEdges, selectedEdge, closeModal, closeNodeModal,
   });
 
-  const refreshFlowchart = React.useCallback(async () => {
+  // Refresh Logic (Manual Reload)
+  const refreshFlowchart = useCallback(async () => {
     if (!resolvedFlowchartId) return;
     try {
       const payload = await apiGetFlowchart(String(resolvedFlowchartId));
-      
+
+      // Update Lab ID if found during refresh
       const foundLabId = payload?.labId ?? payload?.lab_id ?? payload?.flowchart?.labId;
       if (foundLabId) setLabId(Number(foundLabId));
 
       const converted = convertBackendFlowchart(payload);
       setNodes(converted.nodes);
       setEdges(converted.edges);
-      
+
+      // Reset Highlights logic after refresh
       setNodes((nds) =>
         nds.map((n) => {
           const data = { ...(n.data ?? {}) };
           if (data && data.__highlight) delete data.__highlight;
-          const cls = n.className ? n.className.split(" ").filter((c) => c !== "my-node-highlight").join(" ") : undefined;
+          const cls = n.className
+            ? n.className.split(" ").filter((c) => c !== "my-node-highlight").join(" ")
+            : undefined;
           return { ...n, data, className: cls, selected: false };
         })
       );
@@ -165,41 +191,50 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId, labId: propLabI
     }
   }, [setNodes, setEdges, resolvedFlowchartId]);
 
-  // Highlight Logic
-  const highlightedIdRef = React.useRef<string | null>(null);
-  const clearHighlights = React.useCallback(() => {
+  // --- Highlight Logic ---
+  const highlightedIdRef = useRef<string | null>(null);
+  
+  const clearHighlights = useCallback(() => {
     highlightedIdRef.current = null;
     setNodes((prev) =>
       prev.map((n) => {
         const data = { ...(n.data ?? {}) };
         if (data && data.__highlight) delete data.__highlight;
-        const cls = n.className ? n.className.split(" ").filter((c) => c !== "my-node-highlight").join(" ") : undefined;
+        const cls = n.className
+          ? n.className.split(" ").filter((c) => c !== "my-node-highlight").join(" ")
+          : undefined;
         return { ...n, data, className: cls, selected: false };
       })
     );
   }, [setNodes]);
 
-  const highlightNode = React.useCallback((nodeId: string | number | null) => {
-      if (!nodeId) { clearHighlights(); return; }
-      const strId = String(nodeId);
-      if (String(highlightedIdRef.current) === strId) return;
+  const highlightNode = useCallback((nodeId: string | number | null) => {
+    if (!nodeId) {
       clearHighlights();
-      highlightedIdRef.current = strId;
-      setTimeout(() => {
-        setNodes((prev) =>
-          prev.map((n) => {
-            if (String(n.id) === strId) {
-              const data = { ...(n.data ?? {}), __highlight: true };
-              const cls = n.className ? `${n.className} my-node-highlight` : "my-node-highlight";
-              return { ...n, data, className: cls, selected: true };
-            }
-            return n;
-          })
-        );
-      }, 0);
-    }, [clearHighlights, setNodes]);
+      return;
+    }
+    const strId = String(nodeId);
+    if (String(highlightedIdRef.current) === strId) return;
 
-  // Events
+    clearHighlights();
+    highlightedIdRef.current = strId;
+
+    // Use slight timeout to ensure state is clean before applying highlight
+    setTimeout(() => {
+      setNodes((prev) =>
+        prev.map((n) => {
+          if (String(n.id) === strId) {
+            const data = { ...(n.data ?? {}), __highlight: true };
+            const cls = n.className ? `${n.className} my-node-highlight` : "my-node-highlight";
+            return { ...n, data, className: cls, selected: true };
+          }
+          return n;
+        })
+      );
+    }, 0);
+  }, [clearHighlights, setNodes]);
+
+  // --- Events Handlers ---
   const onEdgeClick = (event: React.MouseEvent, edge: Edge) => {
     event.stopPropagation();
     setSelectedEdge(edge);
@@ -213,18 +248,27 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId, labId: propLabI
     setNodeModalPosition({ x: window.innerWidth / 2, y: 150 });
   };
 
+  // --- Render ---
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-white">
       <Navbar />
-      
+
       <div className="mt-20 ml-4 z-10 relative">
-        <TopBarControls 
-          flowchartId={Number(resolvedFlowchartId)} 
+        <TopBarControls
+          flowchartId={Number(resolvedFlowchartId)}
           labId={labId}
-          onHighlightNode={highlightNode} 
+          onHighlightNode={highlightNode}
         />
-        {loading && <div className="mt-2 text-sm text-blue-600">Loading flowchart ID: {resolvedFlowchartId}...</div>}
-        {error && <div className="mt-2 text-sm text-red-600">Error: {String(error)}</div>}
+        {loading && (
+          <div className="mt-2 text-sm text-blue-600">
+            Loading flowchart ID: {resolvedFlowchartId}...
+          </div>
+        )}
+        {error && (
+          <div className="mt-2 text-sm text-red-600">
+            Error: {String(error)}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 w-full h-full relative">
@@ -246,7 +290,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId, labId: propLabI
         </ReactFlow>
       </div>
 
-      {/* Edge Modal */}
+      {/* Edge Action Modal */}
       {selectedEdge && modalPosition && (
         <div className="fixed inset-0 z-50" onClick={closeModal}>
           <div
@@ -268,7 +312,10 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId, labId: propLabI
 
       {/* Node Edit Modal */}
       {selectedNode && nodeModalPosition && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center" onClick={closeNodeModal}>
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center"
+          onClick={closeNodeModal}
+        >
           <div
             style={{ marginTop: nodeModalPosition.y }}
             className="relative"
@@ -281,7 +328,9 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId, labId: propLabI
               onUpdateNode={handleUpdateNode}
               onDeleteNode={deleteNodeAndReconnect}
               onCloseModal={closeNodeModal}
-              onAddNode={(type, label) => addNode(type, label, selectedNode?.id)}
+              onAddNode={(type, label) =>
+                addNode(type, label, selectedNode?.id)
+              }
               onRefresh={refreshFlowchart}
             />
           </div>
