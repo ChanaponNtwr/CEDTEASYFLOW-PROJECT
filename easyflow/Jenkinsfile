@@ -1,5 +1,5 @@
 pipeline {
-  agent any                            // workspace อยู่บน host
+  agent any
   environment {
     IMAGE_NAME = "easyflow-frontend:${env.BUILD_NUMBER}"
   }
@@ -16,7 +16,6 @@ pipeline {
       agent {
         docker {
           image 'node:18' 
-          // args: รันด้วย user root เพื่อให้มีสิทธิ์เขียนไฟล์ และส่งตัวแปร BASE_API เข้าไป
           args '-u root:root -e BASE_API=${BASE_API}'
         }
       }
@@ -35,15 +34,13 @@ pipeline {
              
              echo "=== GENERATE & BUILD ==="
              
-             # --- ส่วนที่แก้ไขล่าสุด (V4) ---
-             # 1. เพิ่ม Stack Size เป็น 10000 (ประมาณ 10MB) ซึ่งเยอะกว่า 4096
-             # 2. เรียกไปที่ไฟล์ ./node_modules/prisma/build/index.js โดยตรง 
-             #    เพื่อให้แน่ใจว่า node process นี้คือตัวที่รัน prisma จริงๆ ไม่ใช่แค่ shell wrapper
+             # --- แก้ไขล่าสุด: ใช้ Binary Engine เพื่อความเสถียรใน Docker ---
+             export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
+             export PRISMA_CLIENT_ENGINE_TYPE=binary
              
-             node --stack-size=10000 ./node_modules/prisma/build/index.js generate
+             # เรียก prisma generate โดยตรง
+             ./node_modules/.bin/prisma generate
              
-             # -----------------------------------------------------
-
              npm test || true
              
              echo "Checking BASE_API: $BASE_API"
@@ -68,11 +65,9 @@ pipeline {
     stage('Deploy (local docker)') {
           steps {
             sh """
-              # 1. หยุดและลบ container เก่า
               docker stop easyflow-frontend || true
               docker rm easyflow-frontend || true
               
-              # 2. รัน container ใหม่
               docker run -d \\
                 --name easyflow-frontend \\
                 -p 3000:3000 \\
