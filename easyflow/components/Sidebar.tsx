@@ -1,13 +1,15 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { FaUser, FaBook } from "react-icons/fa";
-import { motion } from "framer-motion";
+// 1. นำเข้า Variants type จาก framer-motion
+import { motion, Variants } from "framer-motion"; 
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { apiGetClasses } from "@/app/service/FlowchartService"; 
 
 // --- Animation Variants ---
-const itemVariants = {
+// 2. กำหนด Type : Variants ให้ตัวแปรนี้
+const itemVariants: Variants = {
   hover: { 
     scale: 1.03,
     background: "linear-gradient(90deg, rgba(59,130,246,0.15), rgba(59,130,246,0.1))",
@@ -17,7 +19,8 @@ const itemVariants = {
   },
 };
 
-const iconVariants = {
+// 3. กำหนด Type : Variants ให้ตัวแปรนี้ด้วย
+const iconVariants: Variants = {
   hover: { rotate: 20, transition: { type: "spring", stiffness: 300 } },
 };
 
@@ -42,7 +45,7 @@ function Sidebar() {
         const currentUserId = user.id || user.userId || user.sub;
 
         const data = await apiGetClasses();
-        console.log("Sidebar API Data:", data); // 🔍 ดู Log ตรงนี้ใน Console (F12)
+        console.log("Sidebar API Data:", data); 
         
         const teach: any[] = [];
         const enroll: any[] = [];
