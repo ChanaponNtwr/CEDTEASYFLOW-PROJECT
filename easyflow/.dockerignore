@@ -1,8 +1,26 @@
+# Dependency directories
 node_modules
-.next
+.pnp
+.pnp.js
+
+# Testing
+coverage
+
+# Next.js build output
+.next/
+
+# Misc
+.DS_Store
+*.pem
+
+# Environment files (สำคัญมาก ห้ามหลุดไปใน Image)
+.env
+.env*.local
+
+# Version Control
 .git
+.gitignore
 
-# ... other ignores ...
-
-# Ensure this is NOT ignored (or add this line if you have a whitelist)
-!prisma
+# Prisma
+# อย่าใส่ prisma ลงในนี้ เพราะเราต้อง Copy ไปใช้ตอน build
+# prisma

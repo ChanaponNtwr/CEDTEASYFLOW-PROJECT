@@ -6,7 +6,8 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Copy prisma schema directory (เราจะเตรียมไฟล์นี้ในขั้นตอน Jenkins)
+# Copy prisma schema directory
+# [Note] Ensure 'prisma' is NOT in your .dockerignore file
 COPY prisma ./prisma/
 
 # Install dependencies
@@ -28,8 +29,9 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-ENV NODE_ENV production
-ENV PORT 3000
+# [Fix] Use key=value format for ENV to fix warnings
+ENV NODE_ENV=production
+ENV PORT=3000
 
 # สร้าง user เพื่อความปลอดภัย (Optional แต่แนะนำ)
 RUN addgroup --system --gid 1001 nodejs
