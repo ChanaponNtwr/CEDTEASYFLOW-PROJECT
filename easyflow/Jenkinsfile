@@ -5,11 +5,8 @@ pipeline {
   }
 
   stages {
-
     stage('Checkout') {
-      steps {
-        checkout scm
-      }
+      steps { checkout scm }
     }
 
     stage('Install & Test & Build (node)') {
@@ -32,31 +29,24 @@ pipeline {
              rm -rf node_modules/.prisma
              rm -f package-lock.json
              
-             # ติดตั้ง dependencies ใหม่
+             # ติดตั้งใหม่ (dependencies สะอาดแน่นอน)
              npm install
              
              echo "=== GENERATE & BUILD ==="
              
-             # --- แก้ไข V7: ใช้ NODE_OPTIONS (ไม้ตาย) ---
-             
-             # 1. ตั้งค่า Engine เป็น Binary (เสถียรสุดใน Docker)
              export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
              export PRISMA_CLIENT_ENGINE_TYPE=binary
              
-             # 2. ขยายเพดาน OS (เหมือนเดิม)
+             # 1. ขยายเพดาน OS
              ulimit -s 65535 || echo "Warning: Could not set ulimit"
              
-             # 3. *** จุดสำคัญ *** # ใช้ NODE_OPTIONS เพื่อบังคับ Stack Size 10MB ไปยัง "ทุก Process" 
-             # (ทั้งตัวแม่และตัวลูกที่ Prisma สร้างขึ้นมา)
-             export NODE_OPTIONS="--stack-size=10240"
-             
-             # 4. รันคำสั่งปกติ (ไม่ต้องใส่ flag แล้ว เพราะมันอยู่ใน NODE_OPTIONS)
-             npx prisma generate
+             # 2. เรียก Node โดยตรงและอัด Stack ไป 16MB (16384 KB)
+             # (รอบนี้ dependencies ถูกต้องแล้ว 16MB ควรจะเหลือเฟือครับ)
+             node --stack-size=16384 ./node_modules/prisma/build/index.js generate
              
              # -----------------------------------------------------
 
              npm test || true
-             
              echo "Checking BASE_API: $BASE_API"
              npm run build
           '''
@@ -64,6 +54,7 @@ pipeline {
       }
     }
     
+    // ... stages อื่นๆ เหมือนเดิม ...
     stage('Build Docker Image') {
       steps {
         sh '''
@@ -81,7 +72,6 @@ pipeline {
             sh """
               docker stop easyflow-frontend || true
               docker rm easyflow-frontend || true
-              
               docker run -d \\
                 --name easyflow-frontend \\
                 -p 3000:3000 \\
