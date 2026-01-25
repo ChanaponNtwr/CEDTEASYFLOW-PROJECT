@@ -1,13 +1,12 @@
 pipeline {
-
   agent any
 
   environment {
     IMAGE_NAME = "easyflow-frontend:${env.BUILD_NUMBER}"
+    PRISMA_PIN_VERSION = "5.7.1"
   }
 
   stages {
-
     stage('Checkout') {
       steps {
         checkout scm
@@ -21,7 +20,6 @@ pipeline {
           args '-u root:root -e BASE_API=${BASE_API}'
         }
       }
-
       steps {
         dir('easyflow') {
           sh '''
@@ -29,39 +27,46 @@ pipeline {
 
             echo "=== SETUP SCHEMA FROM BACKEND ==="
             mkdir -p prisma
-            cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
+            cp ../backend/prisma/schema.prisma ./prisma/schema.prisma || true
 
             echo "=== CLEAN & INSTALL ==="
             rm -rf node_modules
             rm -rf .prisma
             rm -rf node_modules/.prisma
+
+            # ใช้ npm ci ตาม lockfile ถ้ามี
             npm ci
 
             echo "=== DEBUG VERSIONS ==="
             node -v
             npm -v
-            npx prisma --version
+
+            echo "=== CHECK PRISMA CLI ==="
+            # ถ้า npx prisma ใช้ไม่ได้ ให้ติดตั้ง pinned version แบบ no-save ชั่วคราว
+            if npx prisma --version; then
+              echo "npx prisma OK"
+            else
+              echo "npx prisma failed — installing pinned prisma@${PRISMA_PIN_VERSION} (no-save)"
+              # ติดตั้งแบบไม่แก้ package.json / package-lock.json
+              npm install prisma@${PRISMA_PIN_VERSION} --no-save @prisma/client@${PRISMA_PIN_VERSION} --no-save
+              echo "After installing pinned prisma:"
+              npx prisma --version
+            fi
 
             echo "=== PRISMA GENERATE ==="
-
-            # บังคับ Prisma ใช้ binary engine
             export PRISMA_CLI_QUERY_ENGINE_TYPE=binary
             export PRISMA_CLIENT_ENGINE_TYPE=binary
-
-            # ส่ง stack-size ไปยัง child node process
             export NODE_OPTIONS="--stack-size=60000 --max-old-space-size=4096"
-
-            # เพิ่ม OS stack (ถ้าทำไม่ได้ไม่ให้ fail)
             ulimit -s 65535 || true
 
-            # ใช้วิธีที่ถูกต้อง
+            # รัน generate (จะใช้ prisma ที่ติดตั้งใน node_modules หรือ npx จะโหลดตาม local)
             npx prisma generate --schema=./prisma/schema.prisma
 
-            echo "=== TEST ==="
+            echo "=== TEST (continue on fail) ==="
             npm test || true
 
             echo "=== BUILD ==="
-            echo "BASE_API = $BASE_API"
+            echo "Checking BASE_API: $BASE_API"
             npm run build
           '''
         }
@@ -75,7 +80,6 @@ pipeline {
             -t easyflow-frontend:${BUILD_NUMBER} \
             -f easyflow/Dockerfile \
             .
-
           docker tag easyflow-frontend:${BUILD_NUMBER} easyflow-frontend:latest
         '''
       }
