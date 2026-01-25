@@ -1,5 +1,5 @@
 pipeline {
-  agent any                            // workspace อยู่บน host
+  agent any
   environment {
     IMAGE_NAME = "easyflow-frontend:${env.BUILD_NUMBER}"
   }
@@ -12,24 +12,23 @@ pipeline {
       }
     }
 
-  stage('Install & Test & Build (node)') {
+    stage('Install & Test & Build (node)') {
       agent {
         docker {
           image 'node:18' 
-          // เพิ่ม -e BASE_API=${BASE_API} ตรงนี้
-          // หมายเหตุ: ต้องมั่นใจว่าคุณตั้งค่า BASE_API ไว้ใน Jenkins (Global Variable) แล้ว
-          // หรือถ้าไม่มี ให้ใส่ค่า URL จริงไปเลย เช่น -e BASE_API="http://10.240.xx.xx:xxxx"
+          // เพิ่ม Environment Variable ที่จำเป็นสำหรับ Build Time
           args '-u root:root -e BASE_API=${BASE_API}'
         }
       }
       steps {
         dir('easyflow') {
           sh '''
-             # ... (โค้ดส่วน copy prisma เหมือนเดิม ไม่ต้องแก้) ...
+             # 1. เตรียม Schema จาก Backend
              echo "=== SETUP SCHEMA FROM BACKEND ==="
              mkdir -p prisma
              cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
 
+             # 2. ลบของเก่าและลง Package ใหม่ (Clean Install)
              echo "=== CLEAN & INSTALL ==="
              rm -rf node_modules
              rm -rf .prisma
@@ -37,10 +36,18 @@ pipeline {
              npm ci
              
              echo "=== GENERATE & BUILD ==="
-             npx prisma generate
+             
+             # --- ส่วนที่แก้ไข (FIX START) ---
+             # เพิ่ม Stack Size ให้ Node.js เพื่อแก้ Error: Maximum call stack size exceeded
+             export NODE_OPTIONS="--stack-size=4096"
+             
+             # ระบุ Path ของ Schema ให้ชัดเจน
+             npx prisma generate --schema=./prisma/schema.prisma
+             # --- ส่วนที่แก้ไข (FIX END) ---
+
              npm test || true
              
-             # เพิ่มบรรทัดนี้เพื่อ Debug ดูว่าค่ามาไหม (Optional)
+             # Debug ค่า (Optional)
              echo "Checking BASE_API: $BASE_API"
              
              npm run build
@@ -62,29 +69,29 @@ pipeline {
     }
 
     stage('Deploy (local docker)') {
-          steps {
-            sh """
-              # 1. หยุดและลบ container เก่าเฉพาะตัว frontend (ไม่กระทบ backend/db)
-              docker stop easyflow-frontend || true
-              docker rm easyflow-frontend || true
-              
-              # 2. รัน container ใหม่ พร้อมส่งค่า config ของจริงเข้าไปทับค่าหลอก
-              docker run -d \\
-                --name easyflow-frontend \\
-                -p 3000:3000 \\
-                --link postgres-db:postgres \\
-                --link easyflow-backend:backend \\
-                -e DATABASE_URL="postgresql://postgres:root@postgres:5432/postgres" \\
-                -e BASE_API="http://easyflow-backend:9000" \\
-                -e NEXTAUTH_URL="http://localhost:3000" \\
-                -e NEXTAUTH_SECRET="change-me-to-secure-random-string" \\
-                -e SERVER_HOST="0.0.0.0" \\
-                -e GOOGLE_CLIENT_ID="your-real-id-or-leave-empty-if-not-used" \\
-                -e GOOGLE_CLIENT_SECRET="your-real-secret-or-leave-empty-if-not-used" \\
-                easyflow-frontend:latest
-            """
-          }
-        }
+      steps {
+        sh """
+          # 1. หยุดและลบ container เก่า
+          docker stop easyflow-frontend || true
+          docker rm easyflow-frontend || true
+          
+          # 2. รัน container ใหม่
+          docker run -d \\
+            --name easyflow-frontend \\
+            -p 3000:3000 \\
+            --link postgres-db:postgres \\
+            --link easyflow-backend:backend \\
+            -e DATABASE_URL="postgresql://postgres:root@postgres:5432/postgres" \\
+            -e BASE_API="http://easyflow-backend:9000" \\
+            -e NEXTAUTH_URL="http://localhost:3000" \\
+            -e NEXTAUTH_SECRET="change-me-to-secure-random-string" \\
+            -e SERVER_HOST="0.0.0.0" \\
+            -e GOOGLE_CLIENT_ID="your-real-id-or-leave-empty-if-not-used" \\
+            -e GOOGLE_CLIENT_SECRET="your-real-secret-or-leave-empty-if-not-used" \\
+            easyflow-frontend:latest
+        """
+      }
+    }
   }
 
   post {
