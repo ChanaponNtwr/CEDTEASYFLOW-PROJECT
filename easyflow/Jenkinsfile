@@ -52,8 +52,15 @@ pipeline {
             steps {
                 dir('easyflow') {
                     sh """
+                        echo "=== DEBUG: CHECKING FILES BEFORE BUILD ==="
+                        ls -la
+                        ls -la prisma || echo "Prisma folder missing!"
+
+                        # Fix permissions: Ensure current user owns the files created by root in the previous stage
+                        # This prevents permission denied errors when Docker tries to read the context
+                        sudo chown -R \$(id -u):\$(id -g) . || true
+
                         echo "=== DOCKER BUILD ==="
-                        # ตอนนี้ใน folder easyflow มี prisma/schema.prisma แล้ว
                         docker build -t ${IMAGE_NAME}:${TAG} .
                         docker tag ${IMAGE_NAME}:${TAG} ${IMAGE_NAME}:latest
                     """

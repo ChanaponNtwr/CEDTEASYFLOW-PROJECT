@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+
+# ... other ignores ...
+
+# Ensure this is NOT ignored (or add this line if you have a whitelist)
+!prisma
