@@ -18,23 +18,17 @@ pipeline {
                 dir('easyflow') {
                     sh """
                         echo "=== 1. PREPARE PRISMA SCHEMA ==="
-                        # สร้าง folder prisma รอไว้
                         mkdir -p prisma
 
-                        # ตรวจสอบและ copy schema จาก backend
+                        # Copy Schema (ตรวจสอบเผื่อ path ผิด)
                         if [ -f ../backend/prisma/schema.prisma ]; then
                             echo "Found backend schema, copying..."
                             cp ../backend/prisma/schema.prisma ./prisma/schema.prisma
                         else
                             echo "WARNING: Backend schema not found at ../backend/prisma/schema.prisma"
-                            echo "Build might fail if schema is required."
-                            ls -la .. || true
                         fi
 
-                        echo "=== 2. CHECK FILES ==="
-                        ls -la prisma
-
-                        echo "=== 3. DOCKER BUILD ==="
+                        echo "=== 2. DOCKER BUILD ==="
                         # Build Image
                         docker build -t ${IMAGE_NAME}:${TAG} .
                         docker tag ${IMAGE_NAME}:${TAG} ${IMAGE_NAME}:latest
