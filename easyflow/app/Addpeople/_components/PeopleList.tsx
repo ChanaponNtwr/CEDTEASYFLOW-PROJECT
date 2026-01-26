@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { FaTrash, FaEllipsisV, FaUserPlus, FaChalkboardTeacher, FaUserGraduate, FaUserTie } from "react-icons/fa";
+import { FaTrash, FaEllipsisV, FaUserPlus, FaChalkboardTeacher, FaUserGraduate, FaUserTie, FaSignOutAlt } from "react-icons/fa";
 
 type Person = { 
   id: number; 
@@ -106,11 +106,23 @@ const PeopleList: React.FC<PeopleListProps> = ({
                     <div className="w-1/6 flex justify-end items-center space-x-4 relative">
                         {/* ✅ ปุ่มลบ (Kick หรือ Leave) */}
                         {showTrash && onRemove && (
-                            <FaTrash 
-                                className="text-red-400 cursor-pointer hover:text-red-600 transition-colors" 
-                                title={isMe ? "Leave Class" : "Remove User"} 
-                                onClick={() => onRemove(person.id)}
-                            />
+                            <>
+                              {isMe ? (
+                                // ถ้าเป็นตัวเอง — ให้แสดงไอคอนออก (Sign out / Leave)
+                                <FaSignOutAlt
+                                  className="text-yellow-600 cursor-pointer hover:text-yellow-800 transition-colors"
+                                  title="Leave Class"
+                                  onClick={() => onRemove(person.id)}
+                                />
+                              ) : (
+                                // ถ้าไม่ใช่ตัวเอง — ให้แสดงถังขยะ (Remove)
+                                <FaTrash 
+                                  className="text-red-400 cursor-pointer hover:text-red-600 transition-colors" 
+                                  title="Remove User" 
+                                  onClick={() => onRemove(person.id)}
+                                />
+                              )}
+                            </>
                         )}
                         
                         {/* ✅ ปุ่มเปลี่ยน Role (3 จุด) */}

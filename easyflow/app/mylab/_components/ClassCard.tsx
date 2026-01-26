@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { FaTrash } from "react-icons/fa";
 
 type ClassCardProps = {
   code?: string | number;
@@ -8,6 +9,9 @@ type ClassCardProps = {
   teacher?: string;
   score?: string | number;
   due?: string;
+
+  // ✅ เพิ่ม optional สำหรับลบ (ไม่กระทบที่อื่น)
+  onDeleteClick?: () => void;
 };
 
 function ClassCard({
@@ -16,13 +20,15 @@ function ClassCard({
   problem = "",
   teacher = "",
   score,
-  due = ""
+  due = "",
+  onDeleteClick,
 }: ClassCardProps) {
   const headerTitle = title || (code ? `Lab ${code}` : "No Title");
 
   return (
     <div
       className="
+        relative
         bg-white rounded-lg overflow-hidden
         shadow-md hover:shadow-lg
         hover:scale-[1.02]
@@ -32,6 +38,22 @@ function ClassCard({
       role="button"
       tabIndex={0}
     >
+      {/* ✅ ปุ่มลบ (แสดงเฉพาะถ้ามี onDeleteClick) */}
+      {onDeleteClick && (
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation(); // กันไม่ให้ Link ทำงาน
+            onDeleteClick();
+          }}
+          title="Delete Lab"
+          className="absolute top-2 right-2 z-10 bg-white text-red-500 hover:text-red-700 p-2 rounded-full shadow"
+          aria-label="delete-lab"
+        >
+          <FaTrash size={14} />
+        </button>
+      )}
+
       {/* Header */}
       <div className="bg-orange-500 text-white p-4 flex items-center gap-4">
         <div className="w-12 h-12 bg-white/80 rounded-full flex items-center justify-center">
@@ -70,12 +92,14 @@ function ClassCard({
             </p>
           )}
 
-          {/* <p>
+          {/* (ซ่อนไว้ตามโค้ดเดิม)
+          <p>
             กำหนดส่ง:{" "}
             <span className="font-medium text-gray-700">
               {due || "ไม่ระบุ"}
             </span>
-          </p> */}
+          </p>
+          */}
         </div>
       </div>
     </div>

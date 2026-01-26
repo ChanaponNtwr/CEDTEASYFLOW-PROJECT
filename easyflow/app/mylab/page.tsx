@@ -4,7 +4,7 @@ import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import ClassCard from "./_components/ClassCard";
-import { apiGetLab } from "@/app/service/FlowchartService";
+import { apiGetLab, apiDeleteLab } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
 
 /* =======================
@@ -68,15 +68,14 @@ function Mylab() {
   useEffect(() => {
     if (status === "loading") return;
     if (!currentUserEmail) {
-        setLabs([]);
-        return;
+      setLabs([]);
+      return;
     }
 
     const stored = localStorage.getItem("labs");
     const allLabs: LocalLab[] = stored ? JSON.parse(stored) : [];
 
     const myLabs = allLabs.filter(lab => lab.authorEmail === currentUserEmail);
-
     setLabs(myLabs);
 
     const remoteLabs = myLabs.filter(
@@ -109,20 +108,24 @@ function Mylab() {
         let anyUpdated = false;
 
         const updatedAllLabs = currentLocalStorageAll.map((localLab: LocalLab) => {
-            const matchResult = results.find(r => r.ok && String(r.labId) === String(localLab.labId));
-            
-            if (matchResult && matchResult.remoteLab) {
-                anyUpdated = true;
-                return {
-                    ...localLab,
-                    ...matchResult.remoteLab
-                };
-            }
-            return localLab;
+          const matchResult = results.find(
+            r => r.ok && String(r.labId) === String(localLab.labId)
+          );
+          
+          if (matchResult && matchResult.remoteLab) {
+            anyUpdated = true;
+            return {
+              ...localLab,
+              ...matchResult.remoteLab
+            };
+          }
+          return localLab;
         });
 
         if (anyUpdated) {
-          const updatedMyLabs = updatedAllLabs.filter((l: LocalLab) => l.authorEmail === currentUserEmail);
+          const updatedMyLabs = updatedAllLabs.filter(
+            (l: LocalLab) => l.authorEmail === currentUserEmail
+          );
           setLabs(updatedMyLabs);
           localStorage.setItem("labs", JSON.stringify(updatedAllLabs));
         }
@@ -151,8 +154,50 @@ function Mylab() {
     return db - da;
   });
 
+  /* =======================
+       Delete Lab (My Lab)
+   ======================= */
+  const handleDeleteLab = async (labId: string | number) => {
+    const userId =
+      (session?.user as any)?.id ||
+      (session?.user as any)?.userId;
+
+    if (!userId) {
+      alert("ไม่พบข้อมูลผู้ใช้ กรุณา Login ใหม่");
+      return;
+    }
+
+    const confirmed = confirm(
+      "คุณต้องการลบ Lab นี้ถาวรใช่หรือไม่?\nการกระทำนี้ไม่สามารถย้อนกลับได้"
+    );
+    if (!confirmed) return;
+
+    try {
+      await apiDeleteLab(String(labId), userId);
+
+      // ✅ ลบออกจาก state ทันที
+      setLabs((prev) =>
+        prev.filter(
+          (l) => String(l.labId ?? l.id) !== String(labId)
+        )
+      );
+
+      // ✅ ลบออกจาก localStorage ด้วย
+      const stored = localStorage.getItem("labs");
+      const allLabs: LocalLab[] = stored ? JSON.parse(stored) : [];
+      const updatedAll = allLabs.filter(
+        (l) => String(l.labId ?? l.id) !== String(labId)
+      );
+      localStorage.setItem("labs", JSON.stringify(updatedAll));
+
+    } catch (err: any) {
+      console.error("Delete lab failed:", err);
+      alert(err?.message || "ลบ Lab ไม่สำเร็จ");
+    }
+  };
+
   if (status === "loading") {
-      return <div className="p-20 text-center">Loading session...</div>;
+    return <div className="p-20 text-center">Loading session...</div>;
   }
 
   return (
@@ -173,7 +218,10 @@ function Mylab() {
             </div>
 
             <h2 className="text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-4">
-              My Labs <span className="text-base text-gray-500 font-normal">(User: {session?.user?.name})</span>
+              My Labs{" "}
+              <span className="text-base text-gray-500 font-normal">
+                (User: {session?.user?.name})
+              </span>
             </h2>
 
             {loading && (
@@ -212,7 +260,6 @@ function Mylab() {
                     "Unknown Teacher";
 
                   return (
-                    // ✅ แก้ไขตรงนี้: เปลี่ยน href ให้เป็น Dynamic Route
                     <Link
                       key={String(labId)}
                       href={`/labinfo/${labId}`} 
@@ -225,6 +272,8 @@ function Mylab() {
                         score={totalScore}
                         due={due}
                         problem={problem || "—"}
+                        // ✅ ส่ง handler ลบเข้าไป
+                        onDeleteClick={() => handleDeleteLab(labId)}
                       />
                     </Link>
                   );

@@ -1,6 +1,7 @@
+// AssignmentItem.tsx
 "use client"; // Mark as client component for Next.js App Router
 
-import { FaFileAlt } from "react-icons/fa";
+import { FaFileAlt, FaEdit, FaTrash } from "react-icons/fa";
 
 // Define prop types using TypeScript
 interface AssignmentItemProps {
@@ -8,6 +9,7 @@ interface AssignmentItemProps {
   due?: string;
   description?: string; // ✅ เพิ่ม prop นี้
   onEditClick?: () => void; // Optional handler for Edit button
+  onDeleteClick?: () => void; // Optional handler for Delete button
 }
 
 function AssignmentItem({
@@ -15,6 +17,7 @@ function AssignmentItem({
   due = "No due date",
   description,
   onEditClick,
+  onDeleteClick,
 }: AssignmentItemProps) {
   return (
     <div className="relative h-32 bg-white p-4 rounded-lg shadow-md hover:bg-gray-100 transition-all cursor-pointer flex items-center justify-between">
@@ -44,19 +47,38 @@ function AssignmentItem({
         </div>
       </div>
 
-      {/* Right Edit Button */}
-      {onEditClick && (
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onEditClick();
-          }}
-          className="ml-4 text-gray-500 hover:text-gray-700"
-        >
-          
-        </button>
-      )}
+      {/* Right Edit/Delete Buttons */}
+      <div className="ml-4 flex items-center space-x-2">
+        {onEditClick && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEditClick();
+            }}
+            title="Edit"
+            className="text-gray-500 hover:text-gray-700 p-2 rounded"
+            aria-label="edit-assignment"
+          >
+            <FaEdit />
+          </button>
+        )}
+
+        {onDeleteClick && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDeleteClick();
+            }}
+            title="Delete"
+            className="text-red-500 hover:text-red-700 p-2 rounded"
+            aria-label="delete-assignment"
+          >
+            <FaTrash />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

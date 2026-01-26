@@ -42,23 +42,18 @@ interface RemoteLab {
   ifSymVal?: number;
   forSymVal?: number;
   whileSymVal?: number;
-  // Fields สำหรับเช็คสถานะการส่ง
-  isSubmitted?: boolean;
-  submission?: any;
-  submissions?: any[];
-  status?: string;
   [k: string]: any;
 }
 
-// Interface สำหรับผลลัพธ์ราย Testcase
 interface SubmissionResult {
   testcaseId?: number;
-  status: string; // "PASS", "FAIL", "ERROR"
+  status: string;
   output?: string;
   score?: number;
+  userId?: number;
 }
 
-// --- Helper Functions ---
+// --- Helpers ---
 function formatDueDate(d?: string | null) { 
   if (!d) return "No due date";
   try {
@@ -85,13 +80,7 @@ const parseVal = (val: any): any => {
     } catch {
       if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
         const content = trimmed.slice(1, -1);
-        const items = content.split(",").map((part) => {
-          const p = part.trim();
-          if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
-            return p.slice(1, -1);
-          }
-          return p;
-        });
+        const items = content.split(",").map((part) => part.trim());
         return parseVal(items);
       }
       if (!trimmed.includes(",") && trimmed.includes(" ")) {
@@ -107,7 +96,7 @@ const parseVal = (val: any): any => {
 const flattenDeep = (arr: any[]): any[] =>
   arr.reduce((acc, v) => (Array.isArray(v) ? acc.concat(flattenDeep(v)) : acc.concat(v)), []);
 
-// --- Main Component ---
+// --- Main ---
 export default function StudentLabPage() {
   const params = useParams();
   const router = useRouter();
@@ -121,9 +110,9 @@ export default function StudentLabPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [isStarting, setIsStarting] = useState(false);
+
+  // ✅ ของ user คนปัจจุบันเท่านั้น
   const [isSubmitted, setIsSubmitted] = useState(false);
-  
-  // เก็บผลลัพธ์การส่งล่าสุด
   const [tcResults, setTcResults] = useState<SubmissionResult[]>([]);
 
   // --- Fetch Data ---
@@ -135,31 +124,16 @@ export default function StudentLabPage() {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
+      setIsSubmitted(false);
+      setTcResults([]);
+
       try {
-        console.log(`📌 DEBUG: Fetching Lab ID: ${labIdResolved}`);
-        
-        // 1. ดึงข้อมูล Lab
         const labResp = await apiGetLab(labIdResolved);
         const remoteLab: RemoteLab = labResp?.lab ?? labResp ?? null;
-
         if (!mounted) return;
+
         setLab(remoteLab);
 
-        // 2. เช็คสถานะ isSubmitted เบื้องต้น (จากข้อมูล Lab)
-        let submittedFlag = false;
-        if (remoteLab) {
-            const hasSubmissionsArray = Array.isArray(remoteLab.submissions) && remoteLab.submissions.length > 0;
-            submittedFlag = 
-                remoteLab.isSubmitted === true || 
-                remoteLab.status === "SUBMITTED" || 
-                remoteLab.status === "completed" ||
-                hasSubmissionsArray ||
-                (remoteLab.submission && Object.keys(remoteLab.submission).length > 0);
-            
-            setIsSubmitted(submittedFlag);
-        }
-
-        // 3. จัดการ Testcases
         let list: any[] = [];
         if (remoteLab && (remoteLab.testcases || remoteLab.testCases)) {
           list = remoteLab.testcases ?? remoteLab.testCases ?? [];
@@ -169,15 +143,14 @@ export default function StudentLabPage() {
             list = Array.isArray(tcResp)
               ? tcResp
               : tcResp?.data ?? tcResp?.testcases ?? tcResp ?? [];
-          } catch (tcErr) {
-            console.warn("Could not fetch separate testcases", tcErr);
+          } catch {
             list = [];
           }
         }
 
         const mappedTC = (list ?? []).map((tc: any, idx: number) => {
-          const rawInput = parseVal(tc.inputVal ?? tc.input ?? tc.inHiddenVal ?? tc.inHidden ?? tc.stdin ?? tc.args ?? []);
-          const rawOutput = parseVal(tc.outputVal ?? tc.output ?? tc.outHiddenVal ?? tc.outHidden ?? tc.stdout ?? tc.expected ?? []);
+          const rawInput = parseVal(tc.inputVal ?? tc.input ?? []);
+          const rawOutput = parseVal(tc.outputVal ?? tc.output ?? []);
           const format = (v: any) => (Array.isArray(v) ? flattenDeep(v).join(", ") : String(v ?? ""));
 
           return {
@@ -189,47 +162,41 @@ export default function StudentLabPage() {
           } as TestCase;
         });
 
-        if (mounted) {
-          setTestCases(mappedTC);
-        }
+        if (mounted) setTestCases(mappedTC);
 
-        // 4. 🔥🔥 ดึงข้อมูล Submission History 🔥🔥
+        // ================================
+        // ✅ FIX สำคัญ: เช็ค submission เฉพาะ user คนนี้
+        // ================================
         if (session?.user) {
-            try {
-                // ✅ ส่งแค่ labId ตามที่ API ต้องการ
-                const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
-                console.log("📌 DEBUG: Submissions Response:", apiResponse);
+          const user = session.user as any;
+          const currentUserId = Number(user.id || user.userId || user.sub);
 
-                // ✅ เจาะข้อมูลตามโครงสร้าง: { ok: true, data: [ { submissions: [...] } ] }
-                if (apiResponse && apiResponse.data && Array.isArray(apiResponse.data) && apiResponse.data.length > 0) {
-                    
-                    // เลือกรายการแรก (User คนนี้)
-                    const userRecord = apiResponse.data[0];
-                    console.log("📌 DEBUG: User Record found:", userRecord);
+          try {
+            const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
 
-                    if (userRecord && Array.isArray(userRecord.submissions)) {
-                        console.log("📌 DEBUG: Found Results:", userRecord.submissions);
-                        
-                        // Set ผลลัพธ์รายข้อ
-                        setTcResults(userRecord.submissions);
-                        
-                        // ยืนยันว่าส่งแล้ว
-                        setIsSubmitted(true);
-                    }
-                } else if (Array.isArray(apiResponse)) {
-                    // Fallback เผื่อโครงสร้างไม่ซับซ้อน
-                    setTcResults(apiResponse);
-                }
+            const allSubs = apiResponse?.data?.[0]?.submissions || [];
 
-            } catch (subErr) {
-                console.warn("Failed to fetch submissions:", subErr);
+            // 🔥 FILTER ด้วย userId
+            const mySubs = allSubs.filter(
+              (s: any) => Number(s.userId) === currentUserId
+            );
+
+            if (mySubs.length > 0) {
+              setTcResults(mySubs);
+              setIsSubmitted(true);   // เฉพาะถ้าคนนี้เคยส่ง
+            } else {
+              setTcResults([]);
+              setIsSubmitted(false);
             }
+          } catch {
+            setIsSubmitted(false);
+            setTcResults([]);
+          }
         }
 
         if (mounted) setLoading(false);
 
       } catch (err: any) {
-        console.error("Fetch error:", err);
         if (mounted) {
           setError(err?.message ?? "Failed to load lab data.");
           setLoading(false);
@@ -238,25 +205,33 @@ export default function StudentLabPage() {
     };
 
     fetchData();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [labIdResolved, session]);
 
-  // --- Handlers ---
+  // --- Do lab ---
   const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (!session?.user) { alert("Please login first!"); return; }
+
     setIsStarting(true);
     try {
       const user = session.user as any;
-      const userId = user.id || user.userId || user.sub; 
-      const payload = { userId: Number(userId), labId: Number(labIdResolved) };
+      const userId = user.id || user.userId || user.sub;
+
+      const payload = { 
+        userId: Number(userId), 
+        labId: Number(labIdResolved),
+        clientRequestId: `${userId}-${Date.now()}`
+      };
+
       const result = await apiPostFlowchart(payload);
       const targetId = result.id || result.flowchartId || result.trialId;
-      if (targetId) router.push(`/Dolab/${targetId}`);
-      else throw new Error("API did not return a valid flowchart ID");
+
+      if (targetId) {
+        router.push(`/Dolab/${targetId}`);
+      } else {
+        throw new Error("API did not return a valid flowchart ID");
+      }
     } catch (error: any) {
       alert(`Failed to start lab: ${error.message || "Unknown error"}`);
     } finally {
@@ -273,7 +248,7 @@ export default function StudentLabPage() {
   const totalPoints = testCases.reduce((s, t) => s + (t.score ?? 0), 0);
   const labTitle = lab?.labname ?? lab?.name ?? `Lab ${labIdResolved}`;
   const labProblem = lab?.problemSolving ?? lab?.problem ?? "";
-  const dueText = lab?.dueDate ?? lab?.dateline ?? undefined; // แก้ null เป็น undefined
+  const dueText = lab?.dueDate ?? lab?.dateline ?? undefined;
 
   const symbolLabData = lab
     ? {
