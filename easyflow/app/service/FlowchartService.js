@@ -869,3 +869,120 @@ export const apiRejectSubmission = async (labId, studentUserId, reviewerId) => {
     throw err;
   }
 };
+
+
+export const apiLeaveClass = async (classId, userId) => {
+  if (!classId || !userId) {
+    throw new Error("apiLeaveClass: Missing classId or userId");
+  }
+
+  try {
+    const resp = await axios.post(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/leave`,
+      {}, // Body ว่าง
+      {
+        headers: { "x-user-id": String(userId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiLeaveClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * Owner ลบ User ออกจากคลาส (Kick user)
+ * DELETE /classes/:classId/users/:userId
+ * Header: x-user-id (Actor/Owner)
+ */
+export const apiRemoveUserFromClass = async (classId, targetUserId, actorId) => {
+  if (!classId || !targetUserId || !actorId) {
+    throw new Error("apiRemoveUserFromClass: Missing required parameters");
+  }
+
+  try {
+    const resp = await axios.delete(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/users/${encodeURIComponent(targetUserId)}`,
+      {
+        headers: { "x-user-id": String(actorId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiRemoveUserFromClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ลบ Lab ออกจาก Class (Owner ลบได้หมด, Teacher/TA ลบได้เฉพาะที่สร้าง)
+ * DELETE /classes/:classId/labs/:labId
+ * Header: x-user-id (Actor)
+ */
+export const apiRemoveLabFromClass = async (classId, labId, actorId) => {
+  if (!classId || !labId || !actorId) {
+    throw new Error("apiRemoveLabFromClass: Missing required parameters");
+  }
+
+  try {
+    const resp = await axios.delete(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs/${encodeURIComponent(labId)}`,
+      {
+        headers: { "x-user-id": String(actorId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiRemoveLabFromClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * Owner ลบ Class ทิ้งถาวร
+ * DELETE /classes/:classId
+ * Header: x-user-id (Owner)
+ */
+export const apiDeleteClass = async (classId, actorId) => {
+  if (!classId || !actorId) {
+    throw new Error("apiDeleteClass: Missing classId or actorId");
+  }
+
+  try {
+    const resp = await axios.delete(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}`,
+      {
+        headers: { "x-user-id": String(actorId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiDeleteClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ผู้ใช้ลบ Lab ของตัวเอง (My Lab)
+ * DELETE /labs/:labId
+ * Header: x-user-id
+ */
+export const apiDeleteLab = async (labId, userId) => {
+  if (!labId || !userId) {
+    throw new Error("apiDeleteLab: Missing labId or userId");
+  }
+
+  try {
+    const resp = await axios.delete(
+      `${BASE_URL}/labs/${encodeURIComponent(labId)}`,
+      {
+        headers: { "x-user-id": String(userId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiDeleteLab error:", err?.response ?? err);
+    throw err;
+  }
+};

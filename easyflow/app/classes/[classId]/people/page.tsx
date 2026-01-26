@@ -6,20 +6,26 @@ import Navbar from "@/components/Navbar";
 import Tabs from "../../../Addpeople/_components/Tabs";
 import AddPersonModal from "../../../Addpeople/_components/AddPersonModal";
 import PeopleList from "../../../Addpeople/_components/PeopleList";
-import { useSearchParams, usePathname } from "next/navigation";
-import { apiGetClassUsers, apiUpdateUserRole } from "@/app/service/FlowchartService"; // ✅ Import apiUpdateUserRole
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
+import { 
+  apiGetClassUsers, 
+  apiUpdateUserRole, 
+  apiRemoveUserFromClass, 
+  apiLeaveClass 
+} from "@/app/service/FlowchartService"; 
 import { useSession } from "next-auth/react";
 
 interface UIUser {
   name: string;
   email: string;
   position?: string;
-  id: number; // ✅ ต้องมี id เสมอ
+  id: number; 
 }
 
 function Addpeople() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const router = useRouter(); // ✅ Import router
   const { data: session, status } = useSession();
 
   const currentUserId = session?.user 
@@ -48,7 +54,9 @@ function Addpeople() {
   const [students, setStudents] = useState<UIUser[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  
   const [canManage, setCanManage] = useState<boolean>(false);
+  const [amIOwner, setAmIOwner] = useState<boolean>(false); // ✅ เพิ่ม state เพื่อเช็คว่าเป็น Owner ไหม
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRole, setModalRole] = useState<"Teacher" | "TA" | "Students">("Teacher");
@@ -99,8 +107,11 @@ function Addpeople() {
         setTAs(newTAs);
         setStudents(newStudents);
 
-        const hasPermission = myRole === "owner" || myRole === "teacher";
-        setCanManage(hasPermission);
+        const isOwner = myRole === "owner";
+        const isTeacher = myRole === "teacher";
+        
+        setAmIOwner(isOwner);
+        setCanManage(isOwner || isTeacher);
       }
     } catch (err: any) {
       console.error("Error fetching class users:", err);
@@ -121,12 +132,9 @@ function Addpeople() {
   };
   const closeModal = () => setModalOpen(false);
 
-
-  // ✅ เพิ่มฟังก์ชันเปลี่ยน Role
   const handleRoleChange = async (targetUserId: number, newRoleStr: "Teacher" | "TA" | "Students") => {
     if(!classId || !currentUserId) return;
     
-    // แปลง String เป็น ID ตาม Database
     let roleId = 2; // Default Student
     if (newRoleStr === "Teacher") roleId = 1;
     else if (newRoleStr === "TA") roleId = 3;
@@ -139,14 +147,56 @@ function Addpeople() {
         setLoading(true);
         await apiUpdateUserRole(classId, targetUserId, roleId, currentUserId);
         alert(`User role updated to ${newRoleStr}`);
-        fetchData(); // โหลดข้อมูลใหม่เพื่อย้ายชื่อไปอยู่ถูกกลุ่ม
+        fetchData(); 
     } catch (error) {
         console.error("Change role failed", error);
         alert("Failed to update role.");
-        setLoading(false); // ถ้า error ให้หยุด load (ถ้า success fetchData จะปิด load ให้)
+        setLoading(false);
     }
   };
 
+  // ✅ ฟังก์ชันจัดการการลบ User หรือ การออกจาก Class
+  const handleRemoveUser = async (targetUserId: number) => {
+    if (!classId || !currentUserId) return;
+
+    // กรณีที่ 1: ลบตัวเอง (Leave Class)
+    if (targetUserId === currentUserId) {
+        if (amIOwner) {
+            alert("Owner cannot leave the class. You must delete the class or transfer ownership.");
+            return;
+        }
+
+        if (!confirm("Are you sure you want to LEAVE this class?")) return;
+
+        try {
+            setLoading(true);
+            await apiLeaveClass(classId, currentUserId);
+            alert("You have left the class.");
+            router.push("/myclass"); // กลับไปหน้า Dashboard หรือหน้าอื่น
+        } catch (error) {
+            console.error("Leave class failed:", error);
+            alert("Failed to leave class.");
+            setLoading(false);
+        }
+    } 
+    // กรณีที่ 2: ลบคนอื่น (Kick User) - ต้องมีสิทธิ์ canManage
+    else {
+        if (!canManage) return; 
+
+        if (!confirm("Are you sure you want to remove this user from the class?")) return;
+
+        try {
+            setLoading(true);
+            await apiRemoveUserFromClass(classId, targetUserId, currentUserId);
+            // alert("User removed successfully.");
+            fetchData(); // โหลดข้อมูลใหม่
+        } catch (error) {
+            console.error("Remove user failed:", error);
+            alert("Failed to remove user.");
+            setLoading(false);
+        }
+    }
+  };
 
   if (!classId) return <div className="pt-20 text-center">Missing Class ID</div>;
 
@@ -166,26 +216,33 @@ function Addpeople() {
 
             {!loading && !error && (
               <>
+                {/* ✅ ส่ง Props เพิ่ม: onRemove, canManage, currentUserId */}
                 <PeopleList 
                     title="Teacher" 
                     people={teachers} 
                     onAdd={canManage ? () => openModal("Teacher") : undefined} 
-                    // ✅ ส่ง Props onRoleChange
                     onRoleChange={canManage ? handleRoleChange : undefined}
+                    onRemove={handleRemoveUser} 
+                    canManage={canManage}
+                    currentUserId={currentUserId}
                 />
                 <PeopleList 
                     title="TA" 
                     people={tas} 
                     onAdd={canManage ? () => openModal("TA") : undefined} 
-                    // ✅ ส่ง Props onRoleChange
                     onRoleChange={canManage ? handleRoleChange : undefined}
+                    onRemove={handleRemoveUser}
+                    canManage={canManage}
+                    currentUserId={currentUserId}
                 />
                 <PeopleList 
                     title="Students" 
                     people={students} 
                     onAdd={canManage ? () => openModal("Students") : undefined} 
-                    // ✅ ส่ง Props onRoleChange
                     onRoleChange={canManage ? handleRoleChange : undefined}
+                    onRemove={handleRemoveUser}
+                    canManage={canManage}
+                    currentUserId={currentUserId}
                 />
               </>
             )}
