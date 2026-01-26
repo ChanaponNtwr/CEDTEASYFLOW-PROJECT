@@ -1,3 +1,4 @@
+// page.tsx
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
@@ -10,7 +11,7 @@ import ClassHeader from "./_components/ClassHeader";
 import FilterActions from "./_components/FilterActions";
 import AssignmentItem from "./_components/AssignmentItem";
 import ImportLabModal from "./_components/ImportLabModal";
-import { apiGetClass } from "@/app/service/FlowchartService";
+import { apiGetClass, apiRemoveLabFromClass } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
 
 function Classwork({ classId: propClassId }: { classId?: string }) {
@@ -112,7 +113,37 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
     setIsModalOpen(true);
   };
 
-const assignments = useMemo(() => {
+  // ✅ ฟังก์ชันเมื่อกดปุ่ม Delete ที่ AssignmentItem
+  const handleDeleteLab = async (labId: string) => {
+    if (!finalClassId) return;
+    if (!currentUserId) {
+      alert("Cannot determine current user. Please login.");
+      return;
+    }
+
+    const confirmed = confirm("ลบ Lab นี้จาก Class ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้");
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // เรียกใช้ API ที่คุณให้ไว้ (ต้อง export จาก FlowchartService)
+      await apiRemoveLabFromClass(finalClassId, labId, currentUserId);
+
+      // รีเฟรชข้อมูล class หลังลบ
+      await fetchClass(finalClassId);
+    } catch (err: any) {
+      console.error("Failed to remove lab from class:", err);
+      // แสดง error เล็กน้อยให้ผู้ใช้
+      alert(err?.message || "ลบ Lab ไม่สำเร็จ");
+      setError(err?.message || "Failed to remove lab");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const assignments = useMemo(() => {
     if (!classDetail?.classLabs?.length) return [];
     return classDetail.classLabs.map((cl: any) => {
       const lab = cl.lab || {};
@@ -209,6 +240,12 @@ const assignments = useMemo(() => {
                         onEditClick={
                           canEdit
                             ? () => handleEditLab(a.labId, a.rawDueDate, a.title)
+                            : undefined
+                        }
+                        // ✅ เชื่อมต่อปุ่ม Delete ให้เรียก handleDeleteLab
+                        onDeleteClick={
+                          canEdit
+                            ? () => handleDeleteLab(a.labId)
                             : undefined
                         }
                       />
