@@ -351,9 +351,33 @@ export default function TopBarControls({
 
       if (!resp) return;
 
+      // <-- NEW: เพิ่มการตรวจจับแบบครอบคลุมสำหรับกรณี backend คืน node.type = "IN" -->
+      // backend บางตัวส่งชนิด node ที่ top-level: resp.node.type
+      const possibleNodeType =
+        (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.nextNodeType ?? resp?.result?.node?.type ?? null) as
+          | string
+          | number
+          | null;
+      const nodeTypeStr = possibleNodeType ? String(possibleNodeType).toUpperCase().trim() : null;
+
       setLastResponse(resp);
       setVariablesSent(true);
       setStepCount((s) => s + 1);
+
+      if (nodeTypeStr && (nodeTypeStr === "IN" || nodeTypeStr === "INPUT" || nodeTypeStr.includes("INPUT") || resp?.paused === true)) {
+        // if backend indicates current node is input, stop and prompt user
+        const inputNodeIdRaw = resp?.node?.id ?? resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
+        const inputNodeIdResolved = inputNodeIdRaw !== null && typeof inputNodeIdRaw !== "undefined" ? String(inputNodeIdRaw) : null;
+        const resolvedVarName = await getFirstVarNameForNode(inputNodeIdResolved ?? null);
+        setInputNodeId(inputNodeIdResolved ?? null);
+        setInputVarName(resolvedVarName ?? null);
+        setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
+        setInputValue("");
+        setExpectingInput(true);
+        // หยุด progression — ผู้ใช้ต้องกรอกข้อมูลใน chat panel
+        return;
+      }
+      // <-- จบการตรวจจับพิเศษ -->
 
       const backendDone = Boolean(resp?.result?.done ?? resp?.done ?? false);
       const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
@@ -425,6 +449,7 @@ export default function TopBarControls({
   };
 
   // --- Run All (with input-missing handling & pause/resume) ---
+  // **ส่วนนี้คงเดิมตามที่คุณขอ — ไม่เปลี่ยนแปลงพฤติกรรม runAll**
   const handleRunAll = async () => {
     if (isLoading) return;
     setIsLoading(true);
