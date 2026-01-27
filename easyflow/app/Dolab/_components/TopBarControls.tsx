@@ -12,7 +12,7 @@ import {
   apiSubmitFlowchart,
 } from "@/app/service/FlowchartService";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react"; // <--- 1. เพิ่ม import นี้
+import { useSession } from "next-auth/react";
 
 type Variable = { name: string; value: any };
 
@@ -63,7 +63,6 @@ export default function TopBarControls({
   autoPlayInputs = false,
   classId = null,
 }: TopBarControlsProps) {
-  // --- 2. เรียกใช้ Hook session ---
   const { data: session } = useSession();
 
   // --- standard UI state ---
@@ -88,7 +87,8 @@ export default function TopBarControls({
   const [pendingHighlightAfterOutput, setPendingHighlightAfterOutput] = useState<string | number | null>(null);
 
   const runAllActiveRef = useRef(false);
-  const runAllWaitingForInputRef = useRef<(() => void) | null>(null);
+  // แก้ไข Type ให้รับ response กลับมาได้
+  const runAllWaitingForInputRef = useRef<((resp?: any) => void) | null>(null);
 
   // --- New State for Robust Lab ID Handling ---
   const [detectedLabId, setDetectedLabId] = useState<string | number | null>(null);
@@ -398,6 +398,9 @@ export default function TopBarControls({
     setErrorMsg(null);
     runAllActiveRef.current = true;
 
+    // ตัวแปรสำหรับเก็บ Response ที่ได้จากการ Submit Input (เพื่อเอาไปใช้ต่อในลูป)
+    let pushedResponse: ExecuteResponse | null = null;
+
     try {
       const resolvedInitialVars = initialVariables ?? fetchedVariables ?? [];
       let firstCallVars = variablesSent ? [] : resolvedInitialVars;
@@ -449,34 +452,36 @@ export default function TopBarControls({
           setInputValue("");
           setExpectingInput(true);
 
-          await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+          // รอ Input และรับค่า Response กลับมา
+          const resumedRes = await new Promise<any>((resolve) => (runAllWaitingForInputRef.current = resolve));
           runAllWaitingForInputRef.current = null;
+          
+          // ถ้ามี Response กลับมาจาก Input Handler ให้ใช้ค่าใหม่นี้เลย (ไม่ต้อง Fetch ใหม่)
+          if (resumedRes) {
+             pushedResponse = resumedRes;
+             resp = resumedRes;
+          } else {
+             resp = lastResponse ?? resp;
+          }
 
-          resp = lastResponse ?? resp;
           nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
           finalDone = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextType);
         }
       }
 
       if (finalDone) {
+        // ... (Logic จบการทำงานเหมือนเดิม) ...
         try {
           const endId = await pickEndNodeId();
           if (endId) safeHighlight(endId);
         } catch (err) {
           console.warn("runAll done: failed to pick end node", err);
         }
-
         try {
           if (flowchartId) await apiResetFlowchart(flowchartId);
         } catch (err) {
-          console.warn("reset without advance failed (runAll)", err);
-          try {
-            await executeStepNode(flowchartId ?? null, [], false);
-          } catch (e) {
-            console.warn("fallback reset also failed (runAll)", e);
-          }
+            console.warn("reset error", err);
         }
-
         setLastResponse(null);
         setStepCount(0);
         setDone(false);
@@ -493,7 +498,16 @@ export default function TopBarControls({
       while (runAllActiveRef.current) {
         await new Promise((r) => setTimeout(r, 180));
 
-        resp = (await executeStepNode(flowchartId ?? null, [], forceAdvanceBP)) as ExecuteResponse;
+        // แก้ไขจุดสำคัญ: เช็คว่ามี pushedResponse จาก Input ก่อนหน้าหรือไม่
+        if (pushedResponse) {
+             // ถ้ามีให้ใช้ค่านี้เลย และเคลียร์ทิ้ง (เท่ากับข้ามการ Execute ซ้ำ)
+             resp = pushedResponse;
+             pushedResponse = null;
+        } else {
+             // ถ้าไม่มี ค่อย Execute ตามปกติ
+             resp = (await executeStepNode(flowchartId ?? null, [], forceAdvanceBP)) as ExecuteResponse;
+        }
+        
         setLastResponse(resp);
         setStepCount((s) => s + 1);
         setVariablesSent(true);
@@ -540,10 +554,18 @@ export default function TopBarControls({
             setInputValue("");
             setExpectingInput(true);
 
-            await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+            // รอ Input และรับค่า Response กลับมา
+            const resumedResLoop = await new Promise<any>((resolve) => (runAllWaitingForInputRef.current = resolve));
             runAllWaitingForInputRef.current = null;
+            
+            // ถ้ามีค่ากลับมา ให้เก็บไว้ใน pushedResponse เพื่อใช้ในรอบถัดไปของ Loop
+            if (resumedResLoop) {
+                pushedResponse = resumedResLoop;
+                resp = resumedResLoop; // อัปเดตตัวแปร local เพื่อเช็ค condition ด้านล่าง
+            } else {
+                resp = lastResponse ?? resp;
+            }
 
-            resp = lastResponse ?? resp;
             nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
             const finishedNow = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextTypeLoop);
             if (finishedNow) {
@@ -666,9 +688,10 @@ export default function TopBarControls({
         }
       }
 
+      // แก้ไข: ส่งค่า resp กลับไปให้ runAllWaitingForInputRef เพื่อให้ Loop ใช้ต่อได้เลย
       if (runAllWaitingForInputRef.current) {
         try {
-          runAllWaitingForInputRef.current();
+          runAllWaitingForInputRef.current(resp);
         } catch {}
         runAllWaitingForInputRef.current = null;
       }
@@ -757,7 +780,7 @@ export default function TopBarControls({
   }, [chatMessages]);
 
   // -------------------
-  // Test UI state & handler (ปรับปรุงการดึงโจทย์ด้วย apiGetLab)
+  // Test UI state & handler
   // -------------------
   type TestLevel = "error" | "warning" | "info" | "success";
   const [testResults, setTestResults] = useState<Record<string, { level: TestLevel; text: string }[]>>({});
@@ -767,7 +790,6 @@ export default function TopBarControls({
   const [loadingProblem, setLoadingProblem] = useState(false);
   const [loadingTestcases, setLoadingTestcases] = useState(false);
 
-  // helper: deep search for possible lab/assignment id keys
   const findLabLikeId = (obj: any): number | string | null => {
     const seen = new WeakSet();
     const queue: any[] = [obj];
@@ -779,13 +801,9 @@ export default function TopBarControls({
 
       for (const key of Object.keys(cur)) {
         const val = cur[key];
-
-        // direct keys we care about
         if (/(lab|assignment).?id$/i.test(key) && (typeof val === "number" || (typeof val === "string" && /^\d+$/.test(val)))) {
           return typeof val === "string" ? Number(val) : val;
         }
-
-        // if container named lab or assignment with id inside
         if (/^lab$/i.test(key) && val && (val.id || val.labId || val.lab_id)) {
           const candidate = val.id ?? val.labId ?? val.lab_id;
           if (typeof candidate === "number" || (typeof candidate === "string" && /^\d+$/.test(candidate))) {
@@ -798,16 +816,13 @@ export default function TopBarControls({
             return typeof candidate === "string" ? Number(candidate) : candidate;
           }
         }
-
         if (typeof val === "object") queue.push(val);
       }
     }
     return null;
   };
 
-  // ดึงรายละเอียดโจทย์และ Testcases ตาม flowchartId หรือ labId
   useEffect(() => {
-    // ถ้าไม่มี ID อะไรเลยให้ Reset
     if (!flowchartId && !labId && !detectedLabId) {
       setProblemDetail(null);
       setLabTestcases([]);
@@ -823,7 +838,6 @@ export default function TopBarControls({
         let fullResp: any = null;
         let nestedFlow: any = null;
 
-        // 1. ถ้ามี flowchartId ให้ดึงข้อมูล Flowchart ก่อน เผื่อมีรายละเอียด Lab ติดมา
         if (flowchartId) {
             try {
                 fullResp = await apiGetFlowchart(flowchartId);
@@ -833,7 +847,6 @@ export default function TopBarControls({
             }
         }
 
-        // 2. Resolve Target Lab ID
         let targetLabId = detectedLabId ?? labId ??
           fullResp?.labId ??
           fullResp?.lab_id ??
@@ -855,7 +868,6 @@ export default function TopBarControls({
           nestedFlow?.raw?.labId ??
           null;
 
-        // Try parsing 'raw' if it is a string JSON
         if (!targetLabId && fullResp?.raw && typeof fullResp.raw === 'string') {
              try {
                 const parsedRaw = JSON.parse(fullResp.raw);
@@ -863,13 +875,11 @@ export default function TopBarControls({
              } catch {}
         }
 
-        // If still null, do a deeper scan
         if (!targetLabId && fullResp) {
           const found = findLabLikeId(fullResp) ?? findLabLikeId(nestedFlow);
           if (found) targetLabId = found;
         }
 
-        // 3. เริ่มต้นค่า Title/Desc จากข้อมูล Flowchart ที่มีอยู่แล้ว (Fallback)
         let title =
           nestedFlow?.assignment?.title ??
           nestedFlow?.lab?.title ??
@@ -899,34 +909,26 @@ export default function TopBarControls({
              setDetectedLabId(targetLabId);
         }
 
-        // 4. ถ้ามี Lab ID: ใช้ apiGetLab เพื่อดึงข้อมูล Lab เต็มๆ (ชื่อ, โจทย์, Testcases)
         if (targetLabId) {
           try {
             const normalizedLabId =
               typeof targetLabId === "string" && /^\d+$/.test(String(targetLabId)) ? Number(String(targetLabId)) : targetLabId;
             
             const resp = await apiGetLab(normalizedLabId);
-            
-            // ข้อมูลมักจะอยู่ในรูปแบบ { lab: { ... } } หรือ raw object
-            // พยายามดึง lab object ออกมาก่อน
             const labObj = resp?.lab ?? resp?.data ?? resp;
 
-            // --- แก้ไข: Update Title/Description ให้ครอบคลุมทุก case ---
             if (labObj) {
-                // เช็ค title ในหลายๆ จุด
                 if (labObj.title) title = labObj.title;
                 else if (labObj.assignment?.title) title = labObj.assignment.title;
                 else if (labObj.name) title = labObj.name;
-                else if (resp?.title) title = resp.title; // บางทีอยู่นอกสุด
+                else if (resp?.title) title = resp.title;
 
-                // เช็ค description ในหลายๆ จุด
                 if (labObj.description) desc = labObj.description;
                 else if (labObj.detail) desc = labObj.detail;
                 else if (labObj.assignment?.description) desc = labObj.assignment.description;
-                else if (resp?.description) desc = resp.description; // บางทีอยู่นอกสุด
+                else if (resp?.description) desc = resp.description;
             }
 
-            // Extract Testcases
             let tcs: any[] = [];
             if (labObj && Array.isArray(labObj.testcases)) {
                 tcs = labObj.testcases;
@@ -942,7 +944,6 @@ export default function TopBarControls({
             if (mounted) setLabTestcases([]);
           }
         } else {
-          // ถ้าไม่เจอ Lab ID: ลองดึง testcases จาก flowResp (Legacy)
           const embeddedTcs =
             nestedFlow?.testcases ??
             nestedFlow?.lab?.testcases ??
@@ -980,7 +981,6 @@ export default function TopBarControls({
     };
   }, [flowchartId, labId, detectedLabId]);
 
-  // --- Run tests handler ---
   const handleRunTests = async () => {
     if (!flowchartId) return;
     setRunningTests(true);
@@ -1218,12 +1218,7 @@ export default function TopBarControls({
     return arr.reduce((acc, val) => (Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val)), []);
   };
 
-  // ---------------------------
-  // NEW: Submit flowchart handler (Updated)
-  // ---------------------------
-
   const readUserIdFromLocalStorage = (): number | null => {
-    // ยังคงเก็บไว้เป็น Fallback เผื่อระบบเก่า
     if (typeof window === "undefined") return null;
     try {
       const candidateKeys = ["userId", "user_id", "uid", "id", "user"];
@@ -1247,7 +1242,6 @@ const handleSubmit = async () => {
     setErrorMsg(null);
 
     try {
-      // 1. หา User ID
       let uid: number | string | null = null;
       if (session?.user) {
         // @ts-ignore
@@ -1280,27 +1274,17 @@ const handleSubmit = async () => {
         return;
       }
 
-      // --------------------------------------------------------
-      // ตรวจสอบ ID ปลายทางที่จะ Redirect (หาให้เจอก่อนส่ง)
-      // --------------------------------------------------------
       const targetId = labId ?? detectedLabId ?? classId;
       console.log(`Submitting FlowchartID: ${flowchartId}, UserID: ${finalUserId}, TargetRedirectID: ${targetId}`);
 
-      // 2. เรียก API ส่งงาน
       const resp = await apiSubmitFlowchart(Number(flowchartId), finalUserId);
       console.log("✅ Submit Success:", resp);
 
-      // 3. Redirect
       if (targetId) {
-        // ถ้าเจอ ID -> ไปหน้า Lab นั้น
         router.push(`/Studentlab/${targetId}`);
       } else {
-        // ❌ ถ้าไม่เจอ ID -> ห้ามไป /Studentlab เพราะจะเจอ 404
-        // ให้กลับหน้าแรก หรือแจ้งเตือนแทน
         console.warn("ไม่พบ Lab ID หรือ Class ID สำหรับ Redirect");
         alert("ส่งงานสำเร็จ! (แต่ไม่สามารถกลับไปหน้ารายวิชาได้เนื่องจากไม่พบ ID กรุณากดปุ่ม Back ของ Browser)");
-        // หรือถ้าต้องการให้กลับหน้าแรกสุดให้ใช้:
-        // router.push("/"); 
       }
 
     } catch (err) {
@@ -1313,7 +1297,6 @@ const handleSubmit = async () => {
     }
   };
 
-  // --- Render UI ---
   return (
     <div className="absolute z-1 pt-4">
       {/* Control bar */}
@@ -1444,7 +1427,6 @@ const handleSubmit = async () => {
                 const inputDisplay = format(rawInput);
                 const outputDisplay = format(rawOutput);
 
-                // --- find matching testResults using multiple possible keys ---
                 const possibleKeys = [
                   displayId,
                   String(tc.id ?? ""),
