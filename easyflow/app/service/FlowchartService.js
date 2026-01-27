@@ -986,3 +986,44 @@ export const apiDeleteLab = async (labId, userId) => {
     throw err;
   }
 };
+
+export const apiCancelSubmission = async (labId, userId) => {
+  if (!labId || !userId) {
+    throw new Error("apiCancelSubmission: missing labId or userId");
+  }
+
+  try {
+    const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(
+      labId
+    )}/user/${encodeURIComponent(userId)}/cancel`;
+
+    const resp = await axios.post(url, {}); // body ว่างตาม spec
+
+    return resp.data; 
+    // expected เช่น { ok: true, message: "Submission canceled" }
+  } catch (err) {
+    console.error("apiCancelSubmission error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+
+/**
+ * ดูข้อมูลรายละเอียดนักเรียนทุกคนที่อยู่ในแลป
+ * Endpoint: GET /api/submission/lab/:labId/details
+ */
+export const apiGetSubmissionDetailsByLab = async (labId) => {
+  if (!labId) {
+    throw new Error("apiGetSubmissionDetailsByLab: missing labId");
+  }
+
+  try {
+    const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}/details`;
+    const resp = await axios.get(url);
+
+    return resp.data;
+  } catch (err) {
+    console.error("apiGetSubmissionDetailsByLab error:", err?.response ?? err);
+    throw err;
+  }
+};

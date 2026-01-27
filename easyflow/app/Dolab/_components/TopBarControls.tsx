@@ -8,7 +8,6 @@ import {
   apiResetFlowchart,
   apiRunTestcaseFromFlowchart,
   apiGetLab,
-  apiGetTestcases,
   apiSubmitFlowchart,
 } from "@/app/service/FlowchartService";
 import { useRouter } from "next/navigation";
@@ -87,7 +86,6 @@ export default function TopBarControls({
   const [pendingHighlightAfterOutput, setPendingHighlightAfterOutput] = useState<string | number | null>(null);
 
   const runAllActiveRef = useRef(false);
-  // แก้ไข Type ให้รับ response กลับมาได้
   const runAllWaitingForInputRef = useRef<((resp?: any) => void) | null>(null);
 
   // --- New State for Robust Lab ID Handling ---
@@ -456,7 +454,6 @@ export default function TopBarControls({
           const resumedRes = await new Promise<any>((resolve) => (runAllWaitingForInputRef.current = resolve));
           runAllWaitingForInputRef.current = null;
           
-          // ถ้ามี Response กลับมาจาก Input Handler ให้ใช้ค่าใหม่นี้เลย (ไม่ต้อง Fetch ใหม่)
           if (resumedRes) {
              pushedResponse = resumedRes;
              resp = resumedRes;
@@ -470,7 +467,6 @@ export default function TopBarControls({
       }
 
       if (finalDone) {
-        // ... (Logic จบการทำงานเหมือนเดิม) ...
         try {
           const endId = await pickEndNodeId();
           if (endId) safeHighlight(endId);
@@ -498,13 +494,10 @@ export default function TopBarControls({
       while (runAllActiveRef.current) {
         await new Promise((r) => setTimeout(r, 180));
 
-        // แก้ไขจุดสำคัญ: เช็คว่ามี pushedResponse จาก Input ก่อนหน้าหรือไม่
         if (pushedResponse) {
-             // ถ้ามีให้ใช้ค่านี้เลย และเคลียร์ทิ้ง (เท่ากับข้ามการ Execute ซ้ำ)
              resp = pushedResponse;
              pushedResponse = null;
         } else {
-             // ถ้าไม่มี ค่อย Execute ตามปกติ
              resp = (await executeStepNode(flowchartId ?? null, [], forceAdvanceBP)) as ExecuteResponse;
         }
         
@@ -554,14 +547,12 @@ export default function TopBarControls({
             setInputValue("");
             setExpectingInput(true);
 
-            // รอ Input และรับค่า Response กลับมา
             const resumedResLoop = await new Promise<any>((resolve) => (runAllWaitingForInputRef.current = resolve));
             runAllWaitingForInputRef.current = null;
             
-            // ถ้ามีค่ากลับมา ให้เก็บไว้ใน pushedResponse เพื่อใช้ในรอบถัดไปของ Loop
             if (resumedResLoop) {
                 pushedResponse = resumedResLoop;
-                resp = resumedResLoop; // อัปเดตตัวแปร local เพื่อเช็ค condition ด้านล่าง
+                resp = resumedResLoop;
             } else {
                 resp = lastResponse ?? resp;
             }
@@ -644,18 +635,15 @@ export default function TopBarControls({
       const resolvedVarName = inputVarName ?? resolvedFromFlow ?? currentVars[0]?.name ?? null;
 
       if (!resolvedVarName) {
-        console.warn("No variable name found for input. lastResponse:", lastResponse, "fetchedVariables:", fetchedVariables, "targetNodeId:", targetNodeId);
-        setErrorMsg("ไม่พบชื่อตัวแปรสำหรับการป้อนข้อมูล — โปรดตรวจสอบ response จาก backend หรือ node ใน flowchart ว่ามี data.variable / data.name หรือไม่");
+        console.warn("No variable name found for input.");
+        setErrorMsg("ไม่พบชื่อตัวแปรสำหรับการป้อนข้อมูล");
         setIsLoading(false);
         return;
       }
 
-      console.log("Submitting input:", { targetNodeId, resolvedVarName, inputValue });
-
       setChatMessages((m) => [...m, { sender: "user", text: String(inputValue) }]);
 
       const singleVarPayload: Variable[] = [{ name: resolvedVarName, value: inputValue }];
-
       const resp = (await executeStepNode(flowchartId ?? null, singleVarPayload, forceAdvanceBP)) as ExecuteResponse;
 
       setLastResponse(resp);
@@ -688,7 +676,6 @@ export default function TopBarControls({
         }
       }
 
-      // แก้ไข: ส่งค่า resp กลับไปให้ runAllWaitingForInputRef เพื่อให้ Loop ใช้ต่อได้เลย
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current(resp);
@@ -791,6 +778,7 @@ export default function TopBarControls({
   const [loadingTestcases, setLoadingTestcases] = useState(false);
 
   const findLabLikeId = (obj: any): number | string | null => {
+    if (!obj) return null;
     const seen = new WeakSet();
     const queue: any[] = [obj];
 
@@ -801,27 +789,32 @@ export default function TopBarControls({
 
       for (const key of Object.keys(cur)) {
         const val = cur[key];
-        if (/(lab|assignment).?id$/i.test(key) && (typeof val === "number" || (typeof val === "string" && /^\d+$/.test(val)))) {
-          return typeof val === "string" ? Number(val) : val;
+        // Check key pattern
+        if (/(lab|assignment).?id$/i.test(key)) {
+            if (typeof val === "number") return val;
+            if (typeof val === "string" && /^\d+$/.test(val)) return Number(val);
         }
-        if (/^lab$/i.test(key) && val && (val.id || val.labId || val.lab_id)) {
+        // Specific checks for nested objects like lab: { id: ... }
+        if (/^lab$/i.test(key) && val) {
           const candidate = val.id ?? val.labId ?? val.lab_id;
-          if (typeof candidate === "number" || (typeof candidate === "string" && /^\d+$/.test(candidate))) {
-            return typeof candidate === "string" ? Number(candidate) : candidate;
-          }
+          if (candidate) return typeof candidate === "string" ? Number(candidate) : candidate;
         }
-        if (/^assignment$/i.test(key) && val && (val.id || val.assignmentId || val.assignment_id)) {
+        if (/^assignment$/i.test(key) && val) {
           const candidate = val.id ?? val.assignmentId ?? val.assignment_id;
-          if (typeof candidate === "number" || (typeof candidate === "string" && /^\d+$/.test(candidate))) {
-            return typeof candidate === "string" ? Number(candidate) : candidate;
-          }
+          if (candidate) return typeof candidate === "string" ? Number(candidate) : candidate;
         }
-        if (typeof val === "object") queue.push(val);
+        
+        if (typeof val === "object" && val !== null) {
+            queue.push(val);
+        }
       }
     }
     return null;
   };
 
+  // ------------------------------------------------------------------
+  //  IMPROVED DATA LOADING LOGIC 
+  // ------------------------------------------------------------------
   useEffect(() => {
     if (!flowchartId && !labId && !detectedLabId) {
       setProblemDetail(null);
@@ -830,142 +823,107 @@ export default function TopBarControls({
     }
 
     let mounted = true;
-    const loadTestcases = async () => {
+
+    const loadData = async () => {
       setLoadingProblem(true);
       setLoadingTestcases(true);
-
+      
       try {
-        let fullResp: any = null;
-        let nestedFlow: any = null;
+        let finalLabId: number | string | null = null;
 
-        if (flowchartId) {
+        // 1. Try to get Lab ID from props or existing state
+        if (labId) finalLabId = labId;
+        else if (detectedLabId) finalLabId = detectedLabId;
+
+        // 2. If no Lab ID, try to fetch it from Flowchart
+        let flowData: any = null;
+        if (!finalLabId && flowchartId) {
             try {
-                fullResp = await apiGetFlowchart(flowchartId);
-                nestedFlow = fullResp?.flowchart ?? null;
-            } catch(e) {
-                console.warn("Could not fetch flowchart details", e);
+                const resp = await apiGetFlowchart(flowchartId);
+                flowData = resp;
+                
+                // Try to find ID deeply in flowchart response
+                const found = findLabLikeId(resp) ?? findLabLikeId(resp?.flowchart);
+                if (found) {
+                    finalLabId = found;
+                    setDetectedLabId(found);
+                }
+            } catch (e) {
+                console.warn("Could not fetch flowchart for LabID extraction", e);
             }
         }
 
-        let targetLabId = detectedLabId ?? labId ??
-          fullResp?.labId ??
-          fullResp?.lab_id ??
-          fullResp?.assignmentId ??
-          fullResp?.assignment_id ??
-          fullResp?.assignment?.id ??
-          fullResp?.lab?.id ??
-          fullResp?.session?.labId ??
-          fullResp?.session?.lab_id ??
-          nestedFlow?.labId ??
-          nestedFlow?.lab_id ??
-          nestedFlow?.assignmentId ??
-          nestedFlow?.assignment_id ??
-          nestedFlow?.assignment?.id ??
-          nestedFlow?.lab?.id ??
-          nestedFlow?.session?.labId ??
-          fullResp?.raw?.labId ??
-          fullResp?.raw?.lab_id ??
-          nestedFlow?.raw?.labId ??
-          null;
+        let title: string | null = null;
+        let desc: string | null = null;
+        let tcs: any[] = [];
 
-        if (!targetLabId && fullResp?.raw && typeof fullResp.raw === 'string') {
-             try {
-                const parsedRaw = JSON.parse(fullResp.raw);
-                if (parsedRaw.labId) targetLabId = parsedRaw.labId;
-             } catch {}
+        // 3. If we have a Lab ID, try to fetch fresh Lab details
+        if (finalLabId) {
+            try {
+                const normalizedId = Number(finalLabId);
+                const labResp = await apiGetLab(normalizedId);
+                
+                const labObj = 
+                    labResp?.lab ?? 
+                    labResp?.data?.lab ?? 
+                    labResp?.assignment ?? 
+                    labResp?.data ?? 
+                    labResp;
+
+                title = 
+                    labObj?.labname ??   // supports 'labname'
+                    labObj?.title ?? 
+                    labObj?.name ?? 
+                    labObj?.assignment?.title ?? 
+                    labResp?.title ?? 
+                    null;
+
+                desc = 
+                    labObj?.problemSolving ??  // supports 'problemSolving'
+                    labObj?.description ?? 
+                    labObj?.detail ?? 
+                    labObj?.assignment?.description ?? 
+                    labResp?.description ?? 
+                    null;
+
+                if (Array.isArray(labObj?.testcases)) tcs = labObj.testcases;
+                else if (Array.isArray(labObj?.testCases)) tcs = labObj.testCases;
+                else if (Array.isArray(labObj?.assignment?.testcases)) tcs = labObj.assignment.testcases;
+                else if (Array.isArray(labResp?.testcases)) tcs = labResp.testcases;
+                else if (Array.isArray(labResp)) tcs = labResp;
+
+            } catch (err) {
+                console.warn("apiGetLab failed, falling back to embedded data", err);
+            }
         }
 
-        if (!targetLabId && fullResp) {
-          const found = findLabLikeId(fullResp) ?? findLabLikeId(nestedFlow);
-          if (found) targetLabId = found;
-        }
-
-        let title =
-          nestedFlow?.assignment?.title ??
-          nestedFlow?.lab?.title ??
-          nestedFlow?.title ??
-          nestedFlow?.name ??
-          fullResp?.assignment?.title ??
-          fullResp?.lab?.title ??
-          fullResp?.title ??
-          fullResp?.name ??
-          fullResp?.meta?.title ??
-          null;
-        
-        let desc =
-          nestedFlow?.assignment?.description ??
-          nestedFlow?.assignment?.detail ??
-          nestedFlow?.lab?.description ??
-          nestedFlow?.lab?.detail ??
-          nestedFlow?.description ??
-          nestedFlow?.meta?.description ??
-          fullResp?.assignment?.description ??
-          fullResp?.lab?.description ??
-          fullResp?.description ??
-          fullResp?.meta?.description ??
-          null;
-
-        if (targetLabId && !detectedLabId) {
-             setDetectedLabId(targetLabId);
-        }
-
-        if (targetLabId) {
-          try {
-            const normalizedLabId =
-              typeof targetLabId === "string" && /^\d+$/.test(String(targetLabId)) ? Number(String(targetLabId)) : targetLabId;
+        // 4. Fallback: If fields are still missing, try to use data embedded in Flowchart
+        if ((!title || !desc || tcs.length === 0) && flowData) {
+            const nested = flowData?.flowchart ?? flowData;
             
-            const resp = await apiGetLab(normalizedLabId);
-            const labObj = resp?.lab ?? resp?.data ?? resp;
-
-            if (labObj) {
-                if (labObj.title) title = labObj.title;
-                else if (labObj.assignment?.title) title = labObj.assignment.title;
-                else if (labObj.name) title = labObj.name;
-                else if (resp?.title) title = resp.title;
-
-                if (labObj.description) desc = labObj.description;
-                else if (labObj.detail) desc = labObj.detail;
-                else if (labObj.assignment?.description) desc = labObj.assignment.description;
-                else if (resp?.description) desc = resp.description;
+            if (!title) {
+                title = nested?.assignment?.title ?? nested?.lab?.title ?? nested?.title ?? flowData?.title;
             }
-
-            let tcs: any[] = [];
-            if (labObj && Array.isArray(labObj.testcases)) {
-                tcs = labObj.testcases;
-            } else if (Array.isArray(labObj)) {
-                tcs = labObj;
-            } else if (resp?.testcases && Array.isArray(resp.testcases)) {
-                tcs = resp.testcases;
+            if (!desc) {
+                desc = nested?.assignment?.description ?? nested?.lab?.description ?? nested?.description ?? flowData?.description;
             }
-
-            if (mounted) setLabTestcases(tcs);
-          } catch (err) {
-            console.warn("apiGetLab failed", err);
-            if (mounted) setLabTestcases([]);
-          }
-        } else {
-          const embeddedTcs =
-            nestedFlow?.testcases ??
-            nestedFlow?.lab?.testcases ??
-            nestedFlow?.assignment?.testcases ??
-            fullResp?.testcases ??
-            fullResp?.data?.testcases ??
-            fullResp?.raw?.testcases ??
-            [];
-          if (Array.isArray(embeddedTcs)) {
-            if (mounted) setLabTestcases(embeddedTcs);
-          } else {
-            if (mounted) setLabTestcases([]);
-          }
+            if (tcs.length === 0) {
+                tcs = nested?.testcases ?? nested?.lab?.testcases ?? nested?.assignment?.testcases ?? flowData?.testcases ?? [];
+            }
         }
 
-        if (mounted) setProblemDetail({ title: title ?? "โจทย์ Lab", description: desc ?? "" });
+        if (mounted) {
+            setProblemDetail({ 
+                title: title ?? "โจทย์ Lab", 
+                description: desc ?? "" 
+            });
+            setLabTestcases(tcs);
+        }
 
       } catch (err) {
-        console.warn("Failed to load data", err);
+        console.error("Error loading lab data:", err);
         if (mounted) {
-          setProblemDetail({ title: "ไม่สามารถโหลดโจทย์", description: "" });
-          setLabTestcases([]);
+             setProblemDetail({ title: "Error loading data", description: "" });
         }
       } finally {
         if (mounted) {
@@ -975,10 +933,8 @@ export default function TopBarControls({
       }
     };
 
-    loadTestcases();
-    return () => {
-      mounted = false;
-    };
+    loadData();
+    return () => { mounted = false; };
   }, [flowchartId, labId, detectedLabId]);
 
   const handleRunTests = async () => {
@@ -1125,8 +1081,6 @@ export default function TopBarControls({
             __generatedFromResults: true,
           });
         });
-
-        console.log("Generated synthetic labTestcases from results:", synthetic);
         setLabTestcases(synthetic);
       }
 
@@ -1137,6 +1091,27 @@ export default function TopBarControls({
       setRunningTests(false);
     }
   };
+
+  // --- Auto Run Tests when Popup Opens ---
+  // ใช้ autoRunTriggered เพื่อกันการรันซ้ำใน session เดียวกันของ popup
+  const autoRunTriggered = useRef(false);
+
+  useEffect(() => {
+    // รีเซ็ต flag เมื่อปิด popup เพื่อให้เปิดใหม่แล้วรันใหม่ได้
+    if (!showPopup) {
+      autoRunTriggered.current = false;
+    }
+    
+    // ถ้ารูป popup เปิดอยู่ และมี flowchartId และยังไม่เคย auto-run ในรอบนี้
+    if (showPopup && flowchartId && !autoRunTriggered.current) {
+        autoRunTriggered.current = true;
+        // เช็คว่าถ้ายังไม่มีผลลัพธ์ (หรือต้องการรันทุกครั้ง) ให้สั่งรันเลย
+        if (Object.keys(testResults).length === 0 && !runningTests) {
+            handleRunTests();
+        }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPopup, flowchartId]);
 
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
     const base = "inline-block text-xs px-2 py-1 rounded-md mb-2";
@@ -1236,7 +1211,7 @@ export default function TopBarControls({
     return null;
   };
 
-const handleSubmit = async () => {
+  const handleSubmit = async () => {
     if (submitting) return;
     setSubmitting(true);
     setErrorMsg(null);

@@ -12,7 +12,7 @@ import { useSession } from "next-auth/react";
 import { 
   apiGetLab, 
   apiGetTestcases, 
-  apiGetSubmissionsByLab, 
+  apiGetSubmissionDetailsByLab, 
   apiConfirmSubmission,
   apiRejectSubmission
 } from "@/app/service/FlowchartService";
@@ -71,13 +71,9 @@ function LabInClass() {
   const [students, setStudents] = useState<StudentSubmission[]>([]);
   const [filterStatus, setFilterStatus] = useState("All");
 
-  // ✅ 1. แยก fetchData ออกมาเป็น function (ใช้ useCallback เพื่อให้เรียกซ้ำได้)
   const fetchData = useCallback(async () => {
     if (!labId) return;
     
-    // อย่าเพิ่ง setLoading(true) ทุกครั้งที่เรียก เพื่อไม่ให้ UI กระพริบตอนกด Submit
-    // setLoading(true); 
-
     try {
       const [labResp, tcResp] = await Promise.all([
          apiGetLab(String(labId)),
@@ -114,51 +110,78 @@ function LabInClass() {
           whileSymVal: remoteLab?.whileSymVal ?? 0,
       });
 
-      const subResp = await apiGetSubmissionsByLab(String(labId));
-      const rawSubs = subResp?.data ?? subResp ?? [];
+      // --- Fetch Submissions (Details) ---
+      const subResp = await apiGetSubmissionDetailsByLab(String(labId));
+      const rawData = subResp?.data ?? subResp ?? [];
+      const rawSubs = Array.isArray(rawData) ? rawData : [];
 
-      const mappedStudents: StudentSubmission[] = rawSubs.map((sub: any) => {
-          const results: TestResult[] = tcs.map((tc) => {
-              const match = sub.results?.find((r: any) => r.testcaseId === tc.testcaseId);
-              const status = match?.status ?? "PENDING";
-              
-              let obtainedScore = 0;
-              if (match?.score !== undefined) {
-                  obtainedScore = Number(match.score);
-              } else if (status === "PASS") {
-                  obtainedScore = tc.score;
+      const mappedStudents: StudentSubmission[] = rawSubs.map((item: any) => {
+          // 1. หาชื่อนักเรียน (เพิ่ม item.userName)
+          const userObj = item.user || item.User || item.student || item.Student || item;
+          const join = (f: any, l: any) => `${f || ""} ${l || ""}`.trim();
+
+          let studentName = "Unknown Student";
+          if (item.userName) studentName = item.userName; // ✅ เพิ่มบรรทัดนี้ตาม JSON
+          else if (userObj.firstname || userObj.lastname) studentName = join(userObj.firstname, userObj.lastname);
+          else if (userObj.firstName || userObj.lastName) studentName = join(userObj.firstName, userObj.lastName);
+          else if (userObj.name) studentName = userObj.name;
+          else if (userObj.username) studentName = userObj.username;
+          else if (userObj.email) studentName = userObj.email;
+
+          // 2. ดึงข้อมูลผลลัพธ์ (API ใช้ key 'testcases' แทน 'results')
+          // ให้ใช้ item.testcases ถ้ามี ถ้าไม่มีค่อยหา results
+          const rawResults = item.testcases || item.results || item.submission?.results || [];
+
+          // 3. ✅✅ หา STATUS 
+          // JSON นี้ไม่มี status อยู่ข้างนอกสุด ต้องไปขุดมาจากใน testcases[0]
+          let finalStatus = "PENDING"; 
+
+          // ลองหาจากข้างนอกก่อน
+          if (item.status) finalStatus = item.status;
+          else if (item.submission?.status) finalStatus = item.submission.status;
+          else if (Array.isArray(item.submissions) && item.submissions.length > 0) finalStatus = item.submissions[0].status;
+
+          // ถ้าข้างนอกหาไม่เจอ (ยังเป็น PENDING) ให้ลองดูใน testcases ตัวแรก
+          if ((!finalStatus || finalStatus === "PENDING") && rawResults.length > 0) {
+              const firstTc = rawResults[0];
+              if (firstTc && firstTc.status) {
+                  finalStatus = firstTc.status; // ✅ ดึง "CONFIRMED" จากตรงนี้
               }
+          }
+
+          // 4. คะแนนรวม
+          const score = item.totalScore ?? item.submission?.score ?? 0;
+          const submissionId = item.flowchartId ?? item.submission?.id ?? item.submissionId ?? undefined;
+
+          // 5. Map Results
+          const results: TestResult[] = tcs.map((tc) => {
+              // หาผลลัพธ์ที่ตรงกับ testcaseId
+              const match = rawResults.find((r: any) => r.testcaseId === tc.testcaseId);
+              
+              const rStatus = match?.status ?? "PENDING";
+              
+              // JSON ใช้ 'scoreAwarded'
+              let rScore = 0;
+              if (match?.scoreAwarded !== undefined) rScore = Number(match.scoreAwarded);
+              else if (match?.score !== undefined) rScore = Number(match.score);
+              else if (rStatus === "PASS" || rStatus === "CONFIRMED") rScore = tc.score;
 
               return { 
-                  status: status,
-                  score: obtainedScore,
+                  status: rStatus,
+                  score: rScore,
                   maxScore: tc.score
               };
           });
 
-          let studentName = "Unknown Student";
-          if (sub.user?.name) studentName = sub.user.name;
-          else if (sub.User?.name) studentName = sub.User.name;
-          else if (sub.student?.name) studentName = sub.student.name;
-          else if (sub.studentName) studentName = sub.studentName;
-          else if (sub.username) studentName = sub.username;
-          else if (sub.user?.firstname) studentName = `${sub.user.firstname} ${sub.user.lastname || ""}`;
-          else if (sub.user?.email) studentName = sub.user.email;
-
-          // ✅ 3. ปรับ Logic หา Status ให้ฉลาดขึ้น
-          // บางที API อาจจะเก็บ status ไว้ใน sub.submission.status หรือ sub.submissions[0].status
-          const rawStatus = 
-             sub.status || 
-             sub.submission?.status || 
-             (Array.isArray(sub.submissions) ? sub.submissions[0]?.status : undefined) ||
-             "pending";
+          // หา ID นักเรียน
+          const studentId = item.userId ?? userObj.id ?? userObj.userId ?? userObj.studentId;
 
           return {
-              studentId: sub.userId ?? sub.studentId ?? Math.random(),
-              submissionId: sub.submissionId ?? sub.id,
+              studentId: studentId,
+              submissionId: submissionId,
               name: studentName,
-              status: rawStatus, // ใช้ค่าที่หามาได้
-              score: sub.score ?? 0,
+              status: finalStatus || "Pending", 
+              score: score,
               maxScore: totalScore,
               selected: false,
               results: results
@@ -174,7 +197,6 @@ function LabInClass() {
     }
   }, [labId]);
 
-  // useEffect เรียก fetchData ครั้งแรก
   useEffect(() => {
       setLoading(true);
       fetchData();
@@ -199,11 +221,7 @@ function LabInClass() {
   const handleSubmitAll = async () => {
     const user = session?.user as any;
     const reviewerId = user?.id || user?.userId || user?.sub;
-
-    if (!reviewerId) {
-        alert("ไม่พบข้อมูลผู้ตรวจ (Reviewer ID) กรุณา Login ใหม่");
-        return;
-    }
+    if (!reviewerId) return alert("กรุณา Login ใหม่");
 
     const selectedStudents = students.filter(s => s.selected);
     if (selectedStudents.length === 0) return;
@@ -213,34 +231,20 @@ function LabInClass() {
     try {
         await Promise.all(selectedStudents.map(async (student) => {
             if (student.studentId) {
-                await apiConfirmSubmission(
-                    String(labId),             
-                    String(student.studentId), 
-                    String(reviewerId)         
-                );
+                await apiConfirmSubmission(String(labId), String(student.studentId), String(reviewerId));
             }
         }));
-
-        alert("บันทึกผลการตรวจ (Pass) เรียบร้อยแล้ว");
-        // ✅ 2. เรียก fetchData ใหม่ทันที เพื่อดึงข้อมูลล่าสุดจาก DB
-        // ถ้า DB อัปเดตจริง หน้าเว็บจะโชว์ Pass เอง และเมื่อกด F5 ก็จะยังเป็น Pass
+        alert("Success!");
         await fetchData(); 
-
     } catch (error: any) {
-        console.error("Failed to submit:", error);
-        const msg = error?.response?.data?.message || error.message;
-        alert(`เกิดข้อผิดพลาด: ${msg}`);
+        alert(`Error: ${error.message}`);
     }
   };
 
   const handleRejectAll = async () => {
     const user = session?.user as any; 
     const reviewerId = user?.id || user?.userId || user?.sub;
-
-    if (!reviewerId) {
-        alert("ไม่พบข้อมูลผู้ตรวจ (Reviewer ID) กรุณา Login ใหม่");
-        return;
-    }
+    if (!reviewerId) return alert("กรุณา Login ใหม่");
 
     const selectedStudents = students.filter(s => s.selected);
     if (selectedStudents.length === 0) return;
@@ -250,61 +254,48 @@ function LabInClass() {
     try {
         await Promise.all(selectedStudents.map(async (student) => {
             if (student.studentId) {
-                await apiRejectSubmission(
-                    String(labId), 
-                    String(student.studentId), 
-                    String(reviewerId)
-                );
+                await apiRejectSubmission(String(labId), String(student.studentId), String(reviewerId));
             }
         }));
-
-        alert("บันทึกผลการปฏิเสธ (Reject) เรียบร้อยแล้ว");
-        // ✅ 2. เรียก fetchData ใหม่ทันที
+        alert("Rejected successfully");
         await fetchData();
-
     } catch (error: any) {
-        console.error("Failed to reject:", error);
-        const msg = error?.response?.data?.message || error.message;
-        alert(`เกิดข้อผิดพลาด: ${msg}`);
+        alert(`Error: ${error.message}`);
     }
   };
 
   const handleViewStudent = (submissionId?: number) => {
-      if (submissionId) {
-          router.push(`/checklab/${submissionId}`);
-      }
+      if (submissionId) router.push(`/Dolab/${submissionId}`);
   };
 
-  const filteredStudents =
-    filterStatus === "All"
+  const filteredStudents = filterStatus === "All"
       ? students
       : students.filter((student) => student.status.toLowerCase() === filterStatus.toLowerCase());
 
-  const isAllChecked =
-    filteredStudents.length > 0 && filteredStudents.every((s) => s.selected);
+  const isAllChecked = filteredStudents.length > 0 && filteredStudents.every((s) => s.selected);
 
-  const filterOptions = ["All", "Pass", "Submitted", "Pending", "Fail"];
+  const filterOptions = ["All", "Confirmed", "Pass", "Submitted", "Pending", "Fail"];
 
   const renderStatusBadge = (status: string) => {
-      const s = status ? status.toLowerCase() : "unknown";
-      let color = "bg-gray-100 text-gray-600 border-gray-200";
-      
-      if (s === "pass" || s === "graded" || s === "confirmed") {
-          color = "bg-green-100 text-green-700 border-green-200";
+      const s = String(status || "").toUpperCase();
+      let badgeClass = "bg-gray-100 text-gray-600 border-gray-200"; 
+
+      if (["PASS", "PASSED", "CONFIRMED", "GRADED", "SUCCESS"].includes(s)) {
+          badgeClass = "bg-green-100 text-green-700 border-green-200";
       }
-      else if (s === "fail" || s === "rejected") {
-          color = "bg-red-100 text-red-700 border-red-200";
+      else if (["FAIL", "FAILED", "REJECTED", "WRONG"].includes(s)) {
+          badgeClass = "bg-red-100 text-red-700 border-red-200";
       }
-      else if (s === "submitted") {
-          color = "bg-blue-100 text-blue-700 border-blue-200";
+      else if (["SUBMITTED", "SUBMIT"].includes(s)) {
+          badgeClass = "bg-blue-100 text-blue-700 border-blue-200";
       }
-      else if (s === "pending") {
-          color = "bg-yellow-100 text-yellow-700 border-yellow-200";
+      else if (["PENDING", "WAITING", "UNKNOWN"].includes(s) || s === "") {
+          badgeClass = "bg-yellow-100 text-yellow-700 border-yellow-200";
       }
 
       return (
-          <span className={`px-3 py-1 rounded-full text-xs font-bold border capitalize ${color}`}>
-              {status}
+          <span className={`px-3 py-1 rounded-full text-xs font-bold border capitalize ${badgeClass}`}>
+              {status || "Pending"}
           </span>
       );
   };
@@ -468,7 +459,7 @@ function LabInClass() {
                                 </td>
                                 {labData.testCases.map((_, idx) => {
                                     const res = student.results[idx];
-                                    const isPass = res?.status === "PASS";
+                                    const isPass = res?.status === "PASS" || res?.status === "CONFIRMED";
                                     const scoreText = `${res?.score ?? 0}/${res?.maxScore ?? 0}`;
                                     let textColor = "text-gray-400";
                                     if (isPass) textColor = "text-green-600 font-bold";

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 
@@ -13,7 +12,9 @@ import {
   apiGetTestcases, 
   apiGetLab, 
   apiPostFlowchart, 
-  apiGetSubmissionsByLab 
+  apiGetSubmissionsByLab,
+  apiSubmitFlowchart,
+  apiCancelSubmission
 } from "@/app/service/FlowchartService";
 
 // --- Interfaces ---
@@ -115,6 +116,10 @@ export default function StudentLabPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [tcResults, setTcResults] = useState<SubmissionResult[]>([]);
 
+  // states for submit/unsubmit actions
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
   // --- Fetch Data ---
   useEffect(() => {
     if (!labIdResolved) return;
@@ -165,7 +170,7 @@ export default function StudentLabPage() {
         if (mounted) setTestCases(mappedTC);
 
         // ================================
-        // ✅ FIX สำคัญ: เช็ค submission เฉพาะ user คนนี้
+        // ✅ CHECK submissions for current user
         // ================================
         if (session?.user) {
           const user = session.user as any;
@@ -174,10 +179,14 @@ export default function StudentLabPage() {
           try {
             const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
 
-            const allSubs = apiResponse?.data?.[0]?.submissions || [];
+            // backend shape may vary; previously code expected apiResponse.data[0].submissions
+            const allSubs = apiResponse?.data?.[0]?.submissions || apiResponse?.submissions || apiResponse?.data || [];
 
-            // 🔥 FILTER ด้วย userId
-            const mySubs = allSubs.filter(
+            // normalize to array
+            const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
+
+            // filter by userId
+            const mySubs = (arrSubs ?? []).filter(
               (s: any) => Number(s.userId) === currentUserId
             );
 
@@ -239,9 +248,117 @@ export default function StudentLabPage() {
     }
   };
 
-  const handleUnsubmitMock = () => {
-    if (confirm("คุณต้องการยกเลิกการส่งงานใช่หรือไม่? (UI Only)")) {
-        console.log("Unsubmit button clicked");
+  // --- Submit the lab (student) ---
+  const handleSubmit = async () => {
+    if (!session?.user) {
+      alert("กรุณาเข้าสู่ระบบก่อนส่งงาน");
+      return;
+    }
+    if (!labIdResolved) {
+      alert("Missing lab id");
+      return;
+    }
+
+    const user = session.user as any;
+    const userId = user.id || user.userId || user.sub;
+
+    setIsSubmitting(true);
+    try {
+      // 1. ต้องหา Flowchart ID ของ User คนนี้ก่อน
+      // เราใช้ apiPostFlowchart เพื่อ Get หรือ Create Flowchart ID ที่ถูกต้องสำหรับ Lab นี้
+      const payload = { 
+        userId: Number(userId), 
+        labId: Number(labIdResolved),
+        clientRequestId: `${userId}-${Date.now()}`
+      };
+
+      const flowchartResult = await apiPostFlowchart(payload);
+      const targetFlowchartId = flowchartResult.id || flowchartResult.flowchartId || flowchartResult.trialId;
+
+      if (!targetFlowchartId) {
+        throw new Error("ไม่พบ Flowchart ID สำหรับการส่งงาน");
+      }
+
+      // 2. เรียก apiSubmitFlowchart โดยใช้ flowchartId ที่ถูกต้อง
+      await apiSubmitFlowchart(Number(targetFlowchartId), Number(userId));
+
+      // 3. รีเฟรชสถานะ submission ของผู้ใช้เพื่อแสดงผลคะแนน/สถานะ
+      try {
+        const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
+        const allSubs = apiResponse?.data?.[0]?.submissions || apiResponse?.submissions || apiResponse?.data || [];
+        const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
+        const mySubs = (arrSubs ?? []).filter((s: any) => Number(s.userId) === Number(userId));
+
+        if (mySubs.length > 0) {
+          setTcResults(mySubs);
+          setIsSubmitted(true);
+        } else {
+          // ถ้า backend ไม่คืนค่า submissions ทันที ก็ให้ถือว่าเป็น submitted อย่างน้อย
+          setTcResults([]);
+          setIsSubmitted(true);
+        }
+      } catch {
+        setIsSubmitted(true);
+      }
+
+      alert("ส่งงานเรียบร้อย");
+    } catch (err: any) {
+      console.error("Submit error:", err);
+      // แสดง error ที่ชัดเจนขึ้น
+      const msg = err?.response?.data?.message || err?.message || "Unknown error";
+      alert(`ไม่สามารถส่งงานได้: ${msg}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- Cancel submission (unsubmit) ---
+  const handleUnsubmit = async () => {
+    if (!session?.user) {
+      alert("กรุณาเข้าสู่ระบบก่อน");
+      return;
+    }
+    if (!labIdResolved) {
+      alert("Missing lab id");
+      return;
+    }
+
+    if (!confirm("คุณต้องการยกเลิกการส่งงานใช่หรือไม่?")) return;
+
+    const user = session.user as any;
+    const userId = user.id || user.userId || user.sub;
+
+    setIsCancelling(true);
+    try {
+      await apiCancelSubmission(Number(labIdResolved), Number(userId));
+
+      // รีเฟรชหรือเคลียร์ผลการส่งของผู้ใช้
+      setIsSubmitted(false);
+      setTcResults([]);
+
+      // (optional) รีเฟรช list จาก backend
+      try {
+        const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
+        const allSubs = apiResponse?.data?.[0]?.submissions || apiResponse?.submissions || apiResponse?.data || [];
+        const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
+        const mySubs = (arrSubs ?? []).filter((s: any) => Number(s.userId) === Number(userId));
+        if (mySubs.length === 0) {
+          setIsSubmitted(false);
+          setTcResults([]);
+        } else {
+          setIsSubmitted(true);
+          setTcResults(mySubs);
+        }
+      } catch {
+        // ignore
+      }
+
+      alert("ยกเลิกการส่งงานเรียบร้อย");
+    } catch (err: any) {
+      console.error("Unsubmit error:", err);
+      alert(`ไม่สามารถยกเลิกการส่งงานได้: ${err?.message ?? "Unknown error"}`);
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -301,13 +418,23 @@ export default function StudentLabPage() {
                 </button>
 
                 {isSubmitted ? (
-                    <button onClick={handleUnsubmitMock} className="bg-red-600 text-white px-6 py-2 rounded-full flex items-center justify-center hover:bg-red-700 transition-colors shadow-sm font-medium">
-                        Unsubmit
+                    <button
+                      onClick={handleUnsubmit}
+                      disabled={isCancelling}
+                      className="bg-red-600 text-white px-6 py-2 rounded-full flex items-center justify-center hover:bg-red-700 transition-colors shadow-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        {isCancelling ? "Cancelling..." : "Unsubmit"}
                     </button>
                 ) : (
-                    <Link href="/" className="bg-[#133384] text-white px-6 py-2 rounded-full flex items-center justify-center hover:bg-[#1945B7] transition-colors shadow-sm font-medium">
-                        Submit
-                    </Link>
+                    <button
+                      onClick={handleSubmit}
+                      disabled={isSubmitting || loading}
+                      className={`px-6 py-2 rounded-full flex items-center justify-center text-white transition-colors shadow-sm font-medium
+                        ${isSubmitting || loading ? 'bg-gray-400 cursor-not-allowed opacity-70' : 'bg-[#133384] hover:bg-[#1945B7]'}
+                      `}
+                    >
+                      {isSubmitting ? "Submitting..." : "Submit"}
+                    </button>
                 )}
               </div>
 
