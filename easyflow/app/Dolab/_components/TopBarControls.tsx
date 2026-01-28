@@ -204,19 +204,38 @@ export default function TopBarControls({
     return String(v);
   };
 
+  // Helper to push a system message but avoid duplicates (same sender & same text as last)
+  const pushSystemMessage = (text: string) => {
+    setChatMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.sender === "system" && last.text === text) return prev;
+      return [...prev, { sender: "system", text }];
+    });
+  };
+
+  // ---------- FIXED: highlight node that produced outputs immediately ----------
   const handleResponseOutputs = (resp: ExecuteResponse | undefined | null, autoContinue = false): boolean => {
     const respOutputs = resp?.result?.context?.output ?? resp?.context?.output ?? [];
     if (Array.isArray(respOutputs) && respOutputs.length > 0) {
+      // determine the node that produced the output (prefer result.node.id, fallback to nextNodeId)
+      const producerRaw = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+      const producerId = producerRaw !== null && typeof producerRaw !== "undefined" ? String(producerRaw) : null;
+
+      // highlight the node that produced this output immediately so user sees which node emitted the output
+      safeHighlight(producerId);
+
       const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
       setChatMessages((m) => [...m, ...mapped]);
 
       if (!autoContinue) {
+        // keep expected behavior: caller can set pendingHighlightAfterOutput to the next node
         return true;
       }
       console.log("Auto-continue: output recorded", respOutputs);
     }
     return false;
   };
+  // ---------------------------------------------------------------------------
 
   useEffect(() => {
     return () => {
@@ -342,7 +361,7 @@ export default function TopBarControls({
         const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
         setInputNodeId(nextId ?? null);
         setInputVarName(resolvedVarName ?? null);
-        setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
+        pushSystemMessage(`กรุณากรอกค่า ${resolvedVarName ?? "input"}`);
         setInputValue("");
         setExpectingInput(true);
         return;
@@ -414,7 +433,8 @@ export default function TopBarControls({
       let nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      if (handleResponseOutputs(resp, autoPlayInputs)) {
+      // <-- CHANGED: force auto-continue inside runAll so all outputs are appended (no pause)
+      if (handleResponseOutputs(resp, true)) {
         if (!autoPlayInputs) {
           setPendingHighlightAfterOutput(nextId);
           await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
@@ -446,7 +466,7 @@ export default function TopBarControls({
         } else {
           setInputNodeId(nextId ?? null);
           setInputVarName(resolvedVarName ?? null);
-          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
+          pushSystemMessage(`กรุณากรอกค่า ${resolvedVarName ?? "input"}`);
           setInputValue("");
           setExpectingInput(true);
 
@@ -513,7 +533,8 @@ export default function TopBarControls({
         let nextIdRawLoop = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         let nextIdLoop = nextIdRawLoop !== null && typeof nextIdRawLoop !== "undefined" ? String(nextIdRawLoop) : null;
 
-        if (handleResponseOutputs(resp, autoPlayInputs)) {
+        // <-- CHANGED: force auto-continue inside runAll so all outputs are appended (no pause)
+        if (handleResponseOutputs(resp, true)) {
           setPendingHighlightAfterOutput(nextIdLoop);
           if (!autoPlayInputs) {
             await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
@@ -543,7 +564,7 @@ export default function TopBarControls({
           } else {
             setInputNodeId(nextIdLoop ?? null);
             setInputVarName(resolvedVarName ?? null);
-            setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
+            pushSystemMessage(`กรุณากรอกค่า ${resolvedVarName ?? "input"}`);
             setInputValue("");
             setExpectingInput(true);
 
@@ -669,7 +690,7 @@ export default function TopBarControls({
       } else {
         if (nextType === "IN" || nextType === "INPUT") {
           const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
-          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
+          pushSystemMessage(`กรุณากรอกค่า ${resolvedVarName2 ?? "input"}`);
           setExpectingInput(true);
         } else {
           setExpectingInput(false);
