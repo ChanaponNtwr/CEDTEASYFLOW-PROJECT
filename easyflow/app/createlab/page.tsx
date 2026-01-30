@@ -283,7 +283,7 @@ export default function Createlab() {
                     />
                   </div>
 
-                  <div className="w-full md:w-1/4">
+                  {/* <div className="w-full md:w-1/4">
                     <label className="block text-sm font-medium">Dateline</label>
                     <input
                       type="date"
@@ -291,7 +291,7 @@ export default function Createlab() {
                       onChange={(e) => setDateline(e.target.value)}
                       className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md"
                     />
-                  </div>
+                  </div> */}
                 </div>
 
                 <div>
@@ -303,8 +303,6 @@ export default function Createlab() {
                     className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md h-32"
                   ></textarea>
                 </div>
-
-                <div className="text-sm text-gray-600">Sending testcases to server (will create lab first)</div>
 
                 {/* Testcases */}
                 <div>

@@ -113,7 +113,7 @@ function Sidebar() {
               return (
                 <Link 
                   key={cId}
-                  href={`/classwork/${cId}`}
+                  href={`/Classwork/${cId}`}
                   passHref 
                   legacyBehavior
                 >
@@ -159,7 +159,7 @@ function Sidebar() {
               return (
                 <Link 
                   key={cId}
-                  href={`/studentclass/${cId}`}
+                  href={`/Classwork/${cId}`}
                   passHref 
                   legacyBehavior
                 >

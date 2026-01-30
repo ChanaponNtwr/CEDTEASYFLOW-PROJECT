@@ -224,9 +224,9 @@ function ImportLabModal({
             exit={{ scale: 0.8, opacity: 0 }}
             transition={{ duration: 0.3 }}
           >
-            <div className="flex justify-center mb-2">
+            {/* <div className="flex justify-center mb-2">
               <div onClick={onClose} className="w-28 h-1 bg-[#dbdbdb] rounded-lg cursor-pointer" />
-            </div>
+            </div> */}
 
             <div className="mb-6 flex items-center">
               <div className="w-16 h-16 bg-[#E9E5FF] rounded-full flex items-center justify-center mr-2">
