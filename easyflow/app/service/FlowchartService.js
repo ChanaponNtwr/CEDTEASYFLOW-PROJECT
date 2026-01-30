@@ -1027,3 +1027,25 @@ export const apiGetSubmissionDetailsByLab = async (labId) => {
     throw err;
   }
 };
+
+
+export const apiGetFlowchartsByUser = async (userId) => {
+  if (typeof userId === "undefined" || userId === null || userId === "") {
+    throw new Error("apiGetFlowchartsByUser: missing userId");
+  }
+
+  try {
+    // ใช้ params ให้ axios สร้าง query string ให้ (=> /flowchart/by-user?userId=3)
+    const resp = await axios.get(`${BASE_URL}/flowchart/by-user`, {
+      params: { userId },
+      headers: { "Content-Type": "application/json" },
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
+
+    // คาดว่า backend จะคืน list เช่น [{ id, labName, submitStatus, ... }, ...]
+    return resp.data;
+  } catch (err) {
+    console.error("apiGetFlowchartsByUser error:", err?.response ?? err);
+    throw err;
+  }
+};

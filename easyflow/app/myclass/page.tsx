@@ -1,3 +1,4 @@
+// app/.../Myclass.tsx (ไฟล์เต็มที่แก้แล้ว)
 "use client";
 import React, { useState, useEffect } from "react";
 import Sidebar from '@/components/Sidebar';
@@ -194,7 +195,12 @@ function Myclass() {
           isOwner: true, // ✅ คนสร้าง = Owner
         };
 
-        setMyClasses((prev) => [...prev, newClass]);
+        // ===============================
+        // เปลี่ยนจาก append -> prepend
+        // เพื่อให้ class ใหม่อยู่บนสุด (ไม่กระทบ UI)
+        // ===============================
+        setMyClasses((prev) => [newClass, ...prev]);
+
         closeModal();
       } else {
         alert("Create failed");

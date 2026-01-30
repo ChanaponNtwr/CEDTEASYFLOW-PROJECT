@@ -14,6 +14,8 @@ import ImportLabModal from "./_components/ImportLabModal";
 import { apiGetClass, apiRemoveLabFromClass } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
 
+type FilterType = "all" | "oldest" | "newest" | "todo";
+
 function Classwork({ classId: propClassId }: { classId?: string }) {
   const params = useParams();
   const routeClassId = params ? (params.classId as string) : undefined;
@@ -30,7 +32,6 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   const [activeTab, setActiveTab] = useState<string>("Classwork");
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
-  // ✅ เพิ่ม State สำหรับเก็บข้อมูล Lab ที่กำลังแก้ไข
   const [editingLab, setEditingLab] = useState<{
     labId: string;
     dueDate: string;
@@ -48,16 +49,18 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
 
-  // ✅ ปรับปรุง: เมื่อกดปุ่ม Import (Create) ให้เคลียร์ค่า edit และเปิด Modal
+  // ✅ เพิ่ม state สำหรับ filter
+  const [filter, setFilter] = useState<FilterType>("newest");
+
   const handleCreateClick = () => {
-    setEditingLab(null); // เคลียร์โหมดแก้ไข
-    setFormData({ labId: "", dueDate: "", dueTime: "" }); // เคลียร์ฟอร์ม
+    setEditingLab(null);
+    setFormData({ labId: "", dueDate: "", dueTime: "" });
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingLab(null); // รีเซ็ตเมื่อปิด
+    setEditingLab(null);
   };
 
   const fetchClass = async (cid: string) => {
@@ -97,23 +100,20 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finalClassId, status, session]);
 
-  // เมื่อบันทึกเสร็จ ให้รีเฟรชข้อมูล
   const handleAddClick = async () => {
     if (!finalClassId) return;
     await fetchClass(finalClassId);
   };
 
-  // ✅ ฟังก์ชันเมื่อกดปุ่ม Edit ที่ AssignmentItem
   const handleEditLab = (labId: string, rawDueDate: string, title: string) => {
     setEditingLab({
       labId,
-      dueDate: rawDueDate, // ส่งค่าวันที่ดิบ (ISO String) ไปให้ Modal แปลง
+      dueDate: rawDueDate,
       labName: title,
     });
     setIsModalOpen(true);
   };
 
-  // ✅ ฟังก์ชันเมื่อกดปุ่ม Delete ที่ AssignmentItem
   const handleDeleteLab = async (labId: string) => {
     if (!finalClassId) return;
     if (!currentUserId) {
@@ -127,15 +127,10 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
     try {
       setLoading(true);
       setError(null);
-
-      // เรียกใช้ API ที่คุณให้ไว้ (ต้อง export จาก FlowchartService)
       await apiRemoveLabFromClass(finalClassId, labId, currentUserId);
-
-      // รีเฟรชข้อมูล class หลังลบ
       await fetchClass(finalClassId);
     } catch (err: any) {
       console.error("Failed to remove lab from class:", err);
-      // แสดง error เล็กน้อยให้ผู้ใช้
       alert(err?.message || "ลบ Lab ไม่สำเร็จ");
       setError(err?.message || "Failed to remove lab");
     } finally {
@@ -143,35 +138,61 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
     }
   };
 
+  // =========================
+  // ✅ เรียง + Filter ที่นี่
+  // =========================
   const assignments = useMemo(() => {
     if (!classDetail?.classLabs?.length) return [];
-    return classDetail.classLabs.map((cl: any) => {
+
+    let list = classDetail.classLabs.map((cl: any) => {
       const lab = cl.lab || {};
-      
-      // ✅ แก้ไข: ให้ดึง dueDate จาก 'cl' (ตารางความสัมพันธ์) ก่อน
-      // เพราะการสั่งงาน (Assignment) จะเก็บวันส่งไว้ที่นี่
-      const actualDueDate = cl.dueDate || lab.dueDate; 
+      const actualDueDate = cl.dueDate || lab.dueDate;
 
       return {
         labId: lab.labId,
         title: lab.labname || "Untitled Lab",
         problemSolving: lab.problemSolving || "",
-        
-        // ✅ ใช้ actualDueDate แทน lab.dueDate
-        rawDueDate: actualDueDate || "", 
-        
+        rawDueDate: actualDueDate || "",
         dueDate: actualDueDate
           ? new Date(actualDueDate).toLocaleDateString("th-TH", {
               year: "numeric",
               month: "short",
               day: "numeric",
               hour: "2-digit",
-              minute: "2-digit"
+              minute: "2-digit",
             })
           : "No due date",
       };
     });
-  }, [classDetail]);
+
+    // --- SORT ---
+    if (filter === "newest") {
+      list.sort(
+        (a: any, b: any) =>
+          new Date(b.rawDueDate || 0).getTime() -
+          new Date(a.rawDueDate || 0).getTime()
+      );
+    }
+
+    if (filter === "oldest") {
+      list.sort(
+        (a: any, b: any) =>
+          new Date(a.rawDueDate || 0).getTime() -
+          new Date(b.rawDueDate || 0).getTime()
+      );
+    }
+
+    // --- TODO (ตัวอย่าง: ยังไม่มี dueDate หรือเลยกำหนด) ---
+    if (filter === "todo") {
+      const now = new Date().getTime();
+      list = list.filter((a: any) => {
+        if (!a.rawDueDate) return true;
+        return new Date(a.rawDueDate).getTime() >= now;
+      });
+    }
+
+    return list;
+  }, [classDetail, filter]);
 
   const hasClassLoaded = classDetail !== null;
   const canEdit = ["owner", "teacher"].includes(currentUserRole);
@@ -204,8 +225,10 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
               backgroundImage="/images/classwork.png"
             />
 
+            {/* ✅ ส่ง onFilterChange เข้าไป */}
             <FilterActions
               onCreateClick={canEdit ? handleCreateClick : undefined}
+              onFilterChange={setFilter}
             />
 
             {loading ? (
@@ -236,13 +259,11 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
                         title={a.title}
                         description={a.problemSolving}
                         due={`Due ${a.dueDate}`}
-                        // ✅ เชื่อมต่อปุ่ม Edit ให้เรียก handleEditLab
                         onEditClick={
                           canEdit
                             ? () => handleEditLab(a.labId, a.rawDueDate, a.title)
                             : undefined
                         }
-                        // ✅ เชื่อมต่อปุ่ม Delete ให้เรียก handleDeleteLab
                         onDeleteClick={
                           canEdit
                             ? () => handleDeleteLab(a.labId)
@@ -257,7 +278,6 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
           </div>
         </div>
 
-        {/* ✅ ส่ง Props isEditMode และ editData ไปให้ ImportLabModal */}
         {canEdit && (
           <ImportLabModal
             isOpen={isModalOpen}
@@ -267,8 +287,8 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
             setFormData={setFormData}
             classId={finalClassId}
             userId={currentUserId}
-            isEditMode={!!editingLab} // ถ้ามี editingLab แปลว่าเป็นโหมดแก้ไข
-            editData={editingLab || undefined} // ส่งข้อมูลที่จะแก้เข้าไป
+            isEditMode={!!editingLab}
+            editData={editingLab || undefined}
           />
         )}
       </div>
