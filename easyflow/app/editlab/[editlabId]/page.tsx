@@ -360,7 +360,7 @@ const payload: any = {
                       className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm"
                     />
                   </div>
-                  <div className="w-full md:w-1/4">
+                  {/* <div className="w-full md:w-1/4">
                     <label className="block text-sm font-medium text-gray-700">Dateline</label>
                     <input
                       type="date"
@@ -368,7 +368,7 @@ const payload: any = {
                       onChange={(e) => setDateline(e.target.value)}
                       className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm"
                     />
-                  </div>
+                  </div> */}
                 </div>
 
                 <div>

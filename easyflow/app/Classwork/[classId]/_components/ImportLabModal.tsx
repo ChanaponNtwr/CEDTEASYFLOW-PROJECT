@@ -6,12 +6,12 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 
-// ✅ เพิ่ม apiGetLab + apiCreateLab
 import { 
   apiAddLabToClass, 
   apiUpdateLabDueDate,
   apiGetLab,
-  apiCreateLab
+  apiCreateLab,
+  apiUpdateLab
 } from "@/app/service/FlowchartService";
 
 interface ImportForm {
@@ -56,7 +56,31 @@ function ImportLabModal({
     if (isOpen) {
       setError(null);
 
-      if (!isEditMode) {
+      // ✅ กรณี Edit Mode: ดึงค่าเดิมมาใส่ Form (Pre-fill)
+      if (isEditMode && editData?.dueDate) {
+        try {
+          const dt = new Date(editData.dueDate);
+          if (!isNaN(dt.getTime())) {
+            // แปลงเป็น Local Time เพื่อแยก Date/Time
+            const yyyy = dt.getFullYear();
+            const mm = String(dt.getMonth() + 1).padStart(2, '0');
+            const dd = String(dt.getDate()).padStart(2, '0');
+            const hh = String(dt.getHours()).padStart(2, '0');
+            const min = String(dt.getMinutes()).padStart(2, '0');
+
+            setFormData({
+              labId: editData.labId,
+              dueDate: `${yyyy}-${mm}-${dd}`, // Format สำหรับ input type="date"
+              dueTime: `${hh}:${min}`,       // Format สำหรับ input type="time"
+            });
+          }
+        } catch (e) {
+          console.error("Error parsing edit date", e);
+        }
+        setSelectedLabel(null);
+      } 
+      // ✅ กรณี Import Mode: โหลดข้อมูลจาก Session (Logic เดิม)
+      else if (!isEditMode) {
         try {
           const raw = sessionStorage.getItem("selectedImportedLabs");
           if (raw) {
@@ -77,7 +101,7 @@ function ImportLabModal({
         }
       }
     }
-  }, [isOpen, isEditMode]);
+  }, [isOpen, isEditMode, editData, setFormData]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -94,7 +118,7 @@ function ImportLabModal({
   };
 
   // ===============================
-  // 🔥 CORE: COPY LAB + NEW ID
+  // 🔥 CORE: SUBMIT (IMPORT OR UPDATE)
   // ===============================
   const handleSubmitAction = async () => {
     setError(null);
@@ -123,12 +147,45 @@ function ImportLabModal({
     setLoading(true);
 
     try {
-      // =========================
-      // IMPORT MODE = COPY LAB
-      // =========================
+      // ✅ 1. กรณีโหมดแก้ไข (Edit Mode)
+      if (isEditMode) {
+        if (!editData?.labId) {
+            throw new Error("ไม่พบ Lab ID สำหรับแก้ไข");
+        }
+        
+        // 1.1 อัปเดต Due Date ของ Lab ใน Class
+        await apiUpdateLabDueDate(classId, editData.labId, userId, dueDateTimeIso);
+        
+        // 1.2 อัปเดตข้อมูลที่ตัว Lab ด้วย
+        try {
+          const labResp = await apiGetLab(editData.labId);
+          const currentLab = labResp?.lab ?? labResp;
+
+          if (currentLab) {
+            const updatePayload = {
+              ...currentLab,
+              dueDate: dueDateTimeIso,
+              dateline: dueDateTimeIso, 
+            };
+            
+            if (typeof apiUpdateLab === 'function') {
+                await apiUpdateLab(editData.labId, updatePayload);
+            }
+          }
+        } catch (innerErr) {
+          console.error("Failed to update lab entity date:", innerErr);
+        }
+
+        onAddClick?.(); 
+        onClose();
+        return; 
+      }
+
+      // ✅ 2. กรณีโหมด Import (Copy Lab)
       let payloadRaw = sessionStorage.getItem("selectedImportedLabs");
       if (!payloadRaw) {
         alert("ยังไม่ได้เลือก My lab");
+        setLoading(false);
         return;
       }
 
@@ -143,12 +200,12 @@ function ImportLabModal({
 
       if (!labIds.length) {
         alert("ยังไม่ได้เลือก My lab");
+        setLoading(false);
         return;
       }
 
-      // 🔥 วน COPY ทีละ Lab
+      // วน Loop สร้าง Lab ใหม่
       for (const sourceLabId of labIds) {
-        // 1. ดึง Lab ต้นฉบับ
         const sourceResp = await apiGetLab(String(sourceLabId));
         const sourceLab = sourceResp?.lab ?? sourceResp;
 
@@ -156,7 +213,6 @@ function ImportLabModal({
           throw new Error(`ไม่พบข้อมูล Lab ต้นฉบับ: ${sourceLabId}`);
         }
 
-        // 2. สร้าง Lab ใหม่ (Clone)
         const createPayload = {
           ownerUserId: userId,
           labname: sourceLab.labname || sourceLab.name,
@@ -170,6 +226,8 @@ function ImportLabModal({
           whileSymVal: sourceLab.whileSymVal,
           status: "active",
           testcases: sourceLab.testcases || [],
+          dueDate: dueDateTimeIso,
+          dateline: dueDateTimeIso,
         };
 
         const createResp = await apiCreateLab(createPayload);
@@ -183,11 +241,9 @@ function ImportLabModal({
           throw new Error("สร้าง Lab ใหม่ไม่สำเร็จ (ไม่ได้รับ labId)");
         }
 
-        // 3. เอา Lab ใหม่ไปผูกกับ Class
         await apiAddLabToClass(classId, newLabId, userId, dueDateTimeIso);
       }
 
-      // cleanup
       try {
         sessionStorage.removeItem("selectedImportedLabs");
         sessionStorage.removeItem("importForm");
@@ -199,8 +255,8 @@ function ImportLabModal({
       onClose();
 
     } catch (err: any) {
-      console.error("Import & failed:", err);
-      setError(err?.message || "Import & failed");
+      console.error("Operation failed:", err);
+      setError(err?.message || "Operation failed");
     } finally {
       setLoading(false);
     }
@@ -224,17 +280,13 @@ function ImportLabModal({
             exit={{ scale: 0.8, opacity: 0 }}
             transition={{ duration: 0.3 }}
           >
-            {/* <div className="flex justify-center mb-2">
-              <div onClick={onClose} className="w-28 h-1 bg-[#dbdbdb] rounded-lg cursor-pointer" />
-            </div> */}
-
             <div className="mb-6 flex items-center">
               <div className="w-16 h-16 bg-[#E9E5FF] rounded-full flex items-center justify-center mr-2">
                 <Image src="/images/import.png" alt="Icon" width={30} height={30} />
               </div>
               <div className="ml-4">
                 <h2 className="text-3xl font-medium text-gray-800">
-                  Import Mylab
+                  {isEditMode ? (editData?.labName || "Edit Lab") : "Import Mylab"}
                 </h2>
               </div>
             </div>
@@ -306,7 +358,7 @@ function ImportLabModal({
                 className="px-6 py-2 rounded-full text-white bg-blue-600"
                 disabled={loading}
               >
-                {loading ? "Processing..." : "Import"}
+                {loading ? "Processing..." : (isEditMode ? "Update" : "Import")}
               </button>
             </div>
           </motion.div>
