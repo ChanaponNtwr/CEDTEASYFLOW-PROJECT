@@ -17,6 +17,22 @@ interface TestCase {
 }
 
 export default function Createlab() {
+  const MAX_LINES = 15;
+  const MAX_CHARS = 2500;
+
+  const handleProblemChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+
+    // 1️⃣ จำกัดตัวอักษร
+    if (value.length > MAX_CHARS) return;
+
+    // 2️⃣ จำกัดจำนวนบรรทัด (Enter)
+    const lines = value.split("\n").length;
+    if (lines > MAX_LINES) return;
+
+    setProblem(value);
+  };
+
   const router = useRouter();
   // [2] เรียกใช้ session
   const { data: session } = useSession();
@@ -295,14 +311,26 @@ export default function Createlab() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium">Problem Solving</label>
-                  <textarea
-                    value={problem}
-                    placeholder='Problem Solving'
-                    onChange={(e) => setProblem(e.target.value)}
-                    className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md h-32"
-                  ></textarea>
-                </div>
+  <label className="block text-sm font-medium">
+    Problem Solving
+    <span className="ml-2 text-xs text-gray-400">
+      ({problem.length}/2500)
+    </span>
+  </label>
+
+  <textarea
+    value={problem}
+    placeholder="Problem Solving"
+    rows={15}
+    onChange={handleProblemChange}
+    className="
+      bg-white mt-1 block w-full p-2
+      border border-gray-300 rounded-md
+      resize-none overflow-hidden
+      leading-6
+    "
+  />
+</div>
 
                 {/* Testcases */}
                 <div>
