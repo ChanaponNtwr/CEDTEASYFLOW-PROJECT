@@ -248,7 +248,7 @@ function Myclass() {
             )}
 
             {/* Joined Class */}
-           <h2 className="text-4xl font-semibold border-b border-gray-300 pb-1 mt-12 mb-4">
+           <h2 className="text-4xl font-semibold border-b border-gray-300 pb-1 mt-12 pb-4 mb-6">
               Joined Class
             </h2>
 
