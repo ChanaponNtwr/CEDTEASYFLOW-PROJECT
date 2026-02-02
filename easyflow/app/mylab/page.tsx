@@ -208,21 +208,21 @@ function Mylab() {
           <Sidebar />
           <div className="flex-1 flex flex-col p-20">
             {/* Create Lab */}
-            <div className="flex justify-end">
-              <Link
-                href="/createlab"
-                className="bg-[#0D3ACE] text-white px-4 py-2 rounded-lg hover:bg-[#0B2EA6]"
-              >
-                + Create Lab
-              </Link>
-            </div>
+            <div className="flex items-center justify-between pb-6 border-b border-gray-300">
+              <h2 className="text-4xl font-semibold">
+                My Labs
+              </h2>
 
-            <h2 className="text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-4">
-              My Labs{" "}
-              <span className="text-base text-gray-500 font-normal">
-                (User: {session?.user?.name})
-              </span>
-            </h2>
+              {/* ✅ แสดงปุ่มนี้เฉพาะตอน "มี Lab แล้ว" */}
+              {displayLabs.length > 0 && (
+                <Link
+                  href="/createlab"
+                  className="bg-[#0D3ACE] text-white px-4 py-2 rounded-lg hover:bg-[#0B2EA6]"
+                >
+                  + Create Lab
+                </Link>
+              )}
+            </div>
 
             {loading && (
               <div className="mb-4 text-sm text-gray-600">
@@ -235,8 +235,38 @@ function Mylab() {
             )}
 
             {displayLabs.length === 0 ? (
-              <div className="p-6 text-gray-600">
-                ยังไม่มี Lab สำหรับบัญชีนี้ หรือคุณยังไม่ได้สร้าง Lab
+              <div className="flex flex-col items-center justify-center flex-1 text-gray-500">
+                {/* Icon (inline SVG – ไม่ใช้ไฟล์) */}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="w-20 h-20 mb-6 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9.75 17L8 21h8l-1.75-4M3 13h18M5 3h14a2 2 0 012 2v8H3V5a2 2 0 012-2z"
+                  />
+                </svg>
+
+                {/* Text */}
+                <p className="text-xl font-medium text-gray-600">
+                  ยังไม่มี Lab สำหรับบัญชีนี้
+                </p>
+                <p className="mt-2 text-sm text-gray-500">
+                  คุณยังไม่ได้สร้าง Lab แรกของคุณ
+                </p>
+
+                {/* CTA */}
+                <Link
+                  href="/createlab"
+                  className="mt-6 bg-[#0D3ACE] text-white px-6 py-3 rounded-lg hover:bg-[#0B2EA6] transition"
+                >
+                  + Create Lab
+                </Link>
               </div>
             ) : (
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
