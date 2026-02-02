@@ -1360,7 +1360,7 @@ export default function TopBarControls({
                 {runningTests ? "Testing..." : "Test"}
               </button>
 
-              <button className="mt-0 bg-blue-900 text-white text-sm px-6 py-2 rounded-full hover:bg-blue-800 transition-colors">Submit</button>
+              {/* <button className="mt-0 bg-blue-900 text-white text-sm px-6 py-2 rounded-full hover:bg-blue-800 transition-colors">Submit</button> */}
             </div>
           </div>
         </div>

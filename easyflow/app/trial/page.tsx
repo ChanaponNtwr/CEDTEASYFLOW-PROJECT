@@ -231,12 +231,12 @@ function Trial() {
                 >
                   {isStarting ? "Starting..." : "Do lab"}
                 </button>
-                <Link
+                {/* <Link
                   href="/"
                   className="bg-[#133384] text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-[#1945B7] w-24"
                 >
                   Submit
-                </Link>
+                </Link> */}
               </div>
 
               {/* Title Section */}
