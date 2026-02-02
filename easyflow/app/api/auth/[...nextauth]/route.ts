@@ -90,32 +90,23 @@ export const authOptions: NextAuthOptions = {
     return true;
     },
 
-    async jwt({ token }): Promise<JWT> {
-      if (!token.email) return token;
+    async jwt({ token, user, trigger }) {
+  // ตอน login ใหม่
+  if (trigger === "signIn" && user?.email) {
+    const dbUser = await prisma.user.findUnique({
+      where: { email: user.email },
+    });
 
-      const dbUser = await prisma.user.findUnique({
-        where: { email: token.email },
-      });
-
-      if (!dbUser) return token;
-
+    if (dbUser) {
       token.userId = dbUser.id.toString();
       token.name = dbUser.name ?? "Unknown";
       token.email = dbUser.email ?? "";
       token.picture = dbUser.image ?? null;
+    }
+  }
 
-      return token;
-    },
-
-//     async jwt({ token, user }) {
-//   if (user) {
-//     token.userId = user.id;
-//     token.name = user.name;
-//     token.email = user.email;
-//     token.picture = user.image;
-//   }
-//   return token;
-// },
+  return token;
+},
 
     async session({ session, token }) {
       session.user = {
@@ -125,21 +116,10 @@ export const authOptions: NextAuthOptions = {
         image: token.picture as string | null ?? null,
       };
       return session;
-    // async session({ session, user }) {
-    // if (user) {
-    //   session.user = {
-    //     userId: user.id.toString(),
-    //     name: user.name ?? "Unknown",
-    //     email: user.email ?? "",
-    //     image: user.image ?? null,
-    //   };
-    // }
-    // return session;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
-  // session: { strategy: "database" },
 };
 
 const handler = NextAuth(authOptions);
