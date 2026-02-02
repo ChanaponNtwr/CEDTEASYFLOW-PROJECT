@@ -246,52 +246,75 @@ router.post("/:trialId/flowchart/node", async (req, res) => {
  * PUT /trial/:trialId/flowchart/node/:nodeId
  * update node data (same validation as DB-backed)
  */
-router.post("/:trialId/flowchart/node", async (req, res) => {
-  const { trialId } = req.params;
-  const state = trialFlowcharts.get(trialId);
-  if (!state) return res.status(404).json({ ok: false, error: "trial not found" });
+router.put("/:trialId/flowchart/node/:nodeId", async (req, res) => {
+  try {
+    const { trialId, nodeId } = req.params;
+    const state = trialFlowcharts.get(trialId);
 
-  const { edgeId, node } = req.body;
-  if (!edgeId || !node) {
-    return res.status(400).json({ ok: false, error: "edgeId & node required" });
-  }
+    if (!state) {
+      return res.status(404).json({ ok: false, error: "trial not found" });
+    }
 
-  const before = computeUsageAndRemaining(state.flowchart, state.labRow);
-  const nodeType = normalizeType(node.type || "PH");
+    const { label, data, position, type } = req.body || {};
 
-  const info = before[nodeType];
+    const fc = hydrateFlowchart(state.flowchart);
+    const node = fc.getNode(nodeId);
 
-  // ⭐ จุดนี้ unlimited จะไม่โดน block
-  if (info.limit !== "unlimited" && info.remaining <= 0) {
-    return res.status(409).json({
+    if (!node) {
+      return res.status(404).json({ ok: false, error: `Node '${nodeId}' not found` });
+    }
+
+    // ❗ ถ้าจะ allow เปลี่ยน type ต้องเช็ค limit ด้วย
+    if (type) {
+      const before = computeUsageAndRemaining(state.flowchart, state.labRow);
+      const newType = normalizeType(type);
+      const oldType = normalizeType(node.type);
+
+      if (newType !== oldType) {
+        const info = before[newType] || { limit: "unlimited", remaining: "unlimited" };
+        if (info.limit !== "unlimited" && Number(info.remaining) <= 0) {
+          return res.status(409).json({
+            ok: false,
+            error: `Node limit reached for type ${newType}`,
+            shapeRemaining: before
+          });
+        }
+        node.type = newType;
+      }
+    }
+
+    // update fields
+    if (label !== undefined) node.label = label;
+    if (data !== undefined) node.data = data;
+    if (position !== undefined) node.position = position;
+
+    // serialize + save
+    const afterSerialized = serializeFlowchart(fc);
+    state.flowchart = afterSerialized;
+    trialFlowcharts.set(trialId, state);
+
+    return res.json({
+      ok: true,
+      message: `Node ${nodeId} updated`,
+      nodeId,
+      node: {
+        id: node.id,
+        type: node.type,
+        label: node.label,
+        data: node.data,
+        position: node.position
+      },
+      flowchart: afterSerialized,
+      shapeRemaining: computeUsageAndRemaining(afterSerialized, state.labRow)
+    });
+
+  } catch (err) {
+    console.error("trial edit-node error:", err);
+    return res.status(500).json({
       ok: false,
-      error: `Limit reached for ${nodeType}`,
-      shapeRemaining: before
+      error: String(err.message ?? err)
     });
   }
-
-  const fc = hydrateFlowchart(state.flowchart);
-
-  const newNode = new Node(
-    node.id || fc.genId(),
-    nodeType,
-    node.label || "",
-    node.data || {},
-    node.position || { x: 0, y: 0 },
-    [],
-    []
-  );
-
-  fc.insertNodeAtEdge(edgeId, newNode);
-
-  state.flowchart = serializeFlowchart(fc);
-
-  return res.json({
-    ok: true,
-    nodeId: newNode.id,
-    flowchart: state.flowchart,
-    shapeRemaining: computeUsageAndRemaining(state.flowchart, state.labRow)
-  });
 });
 
 

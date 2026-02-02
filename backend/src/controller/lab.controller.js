@@ -68,13 +68,21 @@ router.put("/:labId", async (req, res) => {
  */
 router.delete("/:labId", async (req, res) => {
   try {
-    const currentUserId = req.body?.currentUserId ?? null;
-    await labService.deleteLab(req.params.labId, currentUserId);
-    res.json({ ok: true });
+    const actorUserId = req.headers["x-user-id"];
+    if (!actorUserId) {
+      return res.status(403).json({ ok: false, message: "x-user-id required" });
+    }
+
+    await labService.deleteLab(req.params.labId, actorUserId);
+
+    return res.json({ ok: true });
   } catch (err) {
     console.error("LAB DELETE ERROR:", err);
-    const status = err.code === "FORBIDDEN" ? 403 : 400;
-    res.status(status).json({ ok: false, message: err.message });
+    const status =
+      err.code === "FORBIDDEN" ? 403 :
+      err.code === "NOT_FOUND" ? 404 : 400;
+
+    return res.status(status).json({ ok: false, message: err.message });
   }
 });
 

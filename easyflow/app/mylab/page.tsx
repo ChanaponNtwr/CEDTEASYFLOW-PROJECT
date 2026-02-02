@@ -4,9 +4,7 @@ import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import ClassCard from "./_components/ClassCard";
-import { apiGetLab } from "@/app/service/FlowchartService";
-
-// 1. Import useSession
+import { apiGetLab, apiDeleteLab } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
 
 /* =======================
@@ -25,16 +23,14 @@ type LocalLab = {
   testCases?: any[];
   testcases?: any[];
   createdAt?: string;
-  // เพิ่ม field author เผื่อ API ส่งกลับมา
   author?: string; 
   teacher?: string;
+  authorEmail?: string; 
 };
 
 /* =======================
    Helpers
 ======================= */
-
-// วันที่แบบประเทศไทย
 function formatThaiDate(d?: string) {
   if (!d) return "ไม่กำหนดวันส่ง";
   try {
@@ -50,7 +46,6 @@ function formatThaiDate(d?: string) {
   }
 }
 
-// รวมคะแนนจาก testcases
 function calcTotalScore(testcases?: any[]) {
   if (!Array.isArray(testcases)) return 0;
   return testcases.reduce((sum, tc) => {
@@ -60,24 +55,33 @@ function calcTotalScore(testcases?: any[]) {
 }
 
 function Mylab() {
-  // 2. ดึงข้อมูล Session
-  const { data: session } = useSession();
-
+  const { data: session, status } = useSession();
   const [labs, setLabs] = useState<LocalLab[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /* =======================
-      Load labs
-  ======================= */
-  useEffect(() => {
-    const stored = localStorage.getItem("labs");
-    const parsed: LocalLab[] = stored ? JSON.parse(stored) : [];
-    setLabs(parsed);
+  const currentUserEmail = session?.user?.email;
 
-    const remoteLabs = parsed.filter(
+  /* =======================
+       Load labs
+   ======================= */
+  useEffect(() => {
+    if (status === "loading") return;
+    if (!currentUserEmail) {
+      setLabs([]);
+      return;
+    }
+
+    const stored = localStorage.getItem("labs");
+    const allLabs: LocalLab[] = stored ? JSON.parse(stored) : [];
+
+    const myLabs = allLabs.filter(lab => lab.authorEmail === currentUserEmail);
+    setLabs(myLabs);
+
+    const remoteLabs = myLabs.filter(
       (l) => l.labId !== undefined && l.labId !== null
     );
+    
     if (remoteLabs.length === 0) return;
 
     let mounted = true;
@@ -100,29 +104,34 @@ function Mylab() {
 
         if (!mounted) return;
 
-        const updated = [...parsed];
+        const currentLocalStorageAll = stored ? JSON.parse(stored) : [];
         let anyUpdated = false;
 
-        results.forEach((r) => {
-          if (r.ok && r.remoteLab) {
-            const idx = updated.findIndex(
-              (x) => String(x.labId) === String(r.labId)
-            );
-            if (idx !== -1) {
-              updated[idx] = {
-                ...updated[idx],
-                ...r.remoteLab,
-              };
-              anyUpdated = true;
-            }
+        const updatedAllLabs = currentLocalStorageAll.map((localLab: LocalLab) => {
+          const matchResult = results.find(
+            r => r.ok && String(r.labId) === String(localLab.labId)
+          );
+          
+          if (matchResult && matchResult.remoteLab) {
+            anyUpdated = true;
+            return {
+              ...localLab,
+              ...matchResult.remoteLab
+            };
           }
+          return localLab;
         });
 
         if (anyUpdated) {
-          setLabs(updated);
-          localStorage.setItem("labs", JSON.stringify(updated));
+          const updatedMyLabs = updatedAllLabs.filter(
+            (l: LocalLab) => l.authorEmail === currentUserEmail
+          );
+          setLabs(updatedMyLabs);
+          localStorage.setItem("labs", JSON.stringify(updatedAllLabs));
         }
-      } catch {
+
+      } catch (err) {
+        console.error(err);
         setError("Failed to fetch remote labs");
       } finally {
         if (mounted) setLoading(false);
@@ -130,19 +139,66 @@ function Mylab() {
     };
 
     fetchRemote();
+
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [currentUserEmail, status]); 
 
   /* =======================
-      Sort newest first
-  ======================= */
+       Sort newest first
+   ======================= */
   const displayLabs = [...labs].sort((a, b) => {
     const da = new Date(a.createdAt ?? a.id ?? 0).getTime();
     const db = new Date(b.createdAt ?? b.id ?? 0).getTime();
     return db - da;
   });
+
+  /* =======================
+       Delete Lab (My Lab)
+   ======================= */
+  const handleDeleteLab = async (labId: string | number) => {
+    const userId =
+      (session?.user as any)?.id ||
+      (session?.user as any)?.userId;
+
+    if (!userId) {
+      alert("ไม่พบข้อมูลผู้ใช้ กรุณา Login ใหม่");
+      return;
+    }
+
+    const confirmed = confirm(
+      "คุณต้องการลบ Lab นี้ถาวรใช่หรือไม่?\nการกระทำนี้ไม่สามารถย้อนกลับได้"
+    );
+    if (!confirmed) return;
+
+    try {
+      await apiDeleteLab(String(labId), userId);
+
+      // ✅ ลบออกจาก state ทันที
+      setLabs((prev) =>
+        prev.filter(
+          (l) => String(l.labId ?? l.id) !== String(labId)
+        )
+      );
+
+      // ✅ ลบออกจาก localStorage ด้วย
+      const stored = localStorage.getItem("labs");
+      const allLabs: LocalLab[] = stored ? JSON.parse(stored) : [];
+      const updatedAll = allLabs.filter(
+        (l) => String(l.labId ?? l.id) !== String(labId)
+      );
+      localStorage.setItem("labs", JSON.stringify(updatedAll));
+
+    } catch (err: any) {
+      console.error("Delete lab failed:", err);
+      alert(err?.message || "ลบ Lab ไม่สำเร็จ");
+    }
+  };
+
+  if (status === "loading") {
+    return <div className="p-20 text-center">Loading session...</div>;
+  }
 
   return (
     <div className="min-h-screen w-full ">
@@ -162,7 +218,10 @@ function Mylab() {
             </div>
 
             <h2 className="text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-4">
-              My Labs
+              My Labs{" "}
+              <span className="text-base text-gray-500 font-normal">
+                (User: {session?.user?.name})
+              </span>
             </h2>
 
             {loading && (
@@ -177,7 +236,7 @@ function Mylab() {
 
             {displayLabs.length === 0 ? (
               <div className="p-6 text-gray-600">
-                ยังไม่มี Lab กด Create Lab เพื่อสร้างใหม่
+                ยังไม่มี Lab สำหรับบัญชีนี้ หรือคุณยังไม่ได้สร้าง Lab
               </div>
             ) : (
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -194,11 +253,6 @@ function Mylab() {
                   const testcases = lab.testcases ?? lab.testCases ?? [];
                   const totalScore = calcTotalScore(testcases);
 
-                  // 3. กำหนดชื่อผู้สร้าง
-                  // ลำดับความสำคัญ:
-                  // 1. ชื่อจาก API (ถ้ามี field author/teacher)
-                  // 2. ชื่อจาก Session (คน Login ปัจจุบัน)
-                  // 3. Fallback "Unknown"
                   const teacherName = 
                     lab.author || 
                     lab.teacher || 
@@ -208,17 +262,18 @@ function Mylab() {
                   return (
                     <Link
                       key={String(labId)}
-                      href={`/labinfo?labId=${labId}`}
+                      href={`/labinfo/${labId}`} 
                       className="block"
                     >
                       <ClassCard
                         code={String(labId)}
                         title={name}
-                        // ส่งชื่อ teacher ไปที่ Card
                         teacher={teacherName} 
                         score={totalScore}
                         due={due}
                         problem={problem || "—"}
+                        // ✅ ส่ง handler ลบเข้าไป
+                        onDeleteClick={() => handleDeleteLab(labId)}
                       />
                     </Link>
                   );

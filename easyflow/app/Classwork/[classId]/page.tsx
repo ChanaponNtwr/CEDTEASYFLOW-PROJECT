@@ -1,3 +1,4 @@
+// page.tsx
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
@@ -10,12 +11,13 @@ import ClassHeader from "./_components/ClassHeader";
 import FilterActions from "./_components/FilterActions";
 import AssignmentItem from "./_components/AssignmentItem";
 import ImportLabModal from "./_components/ImportLabModal";
-import { apiGetClass } from "@/app/service/FlowchartService";
+import { apiGetClass, apiRemoveLabFromClass } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
+
+type FilterType = "all" | "oldest" | "newest" | "todo";
 
 function Classwork({ classId: propClassId }: { classId?: string }) {
   const params = useParams();
-  // Safe access to params
   const routeClassId = params ? (params.classId as string) : undefined;
   const finalClassId = propClassId ?? routeClassId;
 
@@ -30,6 +32,12 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   const [activeTab, setActiveTab] = useState<string>("Classwork");
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
+  const [editingLab, setEditingLab] = useState<{
+    labId: string;
+    dueDate: string;
+    labName: string;
+  } | null>(null);
+
   const [formData, setFormData] = useState({
     labId: "",
     dueDate: "",
@@ -41,8 +49,19 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
 
-  const handleCreateClick = () => setIsModalOpen(true);
-  const closeModal = () => setIsModalOpen(false);
+  // ✅ เพิ่ม state สำหรับ filter
+  const [filter, setFilter] = useState<FilterType>("newest");
+
+  const handleCreateClick = () => {
+    setEditingLab(null);
+    setFormData({ labId: "", dueDate: "", dueTime: "" });
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingLab(null);
+  };
 
   const fetchClass = async (cid: string) => {
     setLoading(true);
@@ -86,24 +105,94 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
     await fetchClass(finalClassId);
   };
 
+  const handleEditLab = (labId: string, rawDueDate: string, title: string) => {
+    setEditingLab({
+      labId,
+      dueDate: rawDueDate,
+      labName: title,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteLab = async (labId: string) => {
+    if (!finalClassId) return;
+    if (!currentUserId) {
+      alert("Cannot determine current user. Please login.");
+      return;
+    }
+
+    const confirmed = confirm("ลบ Lab นี้จาก Class ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้");
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+      await apiRemoveLabFromClass(finalClassId, labId, currentUserId);
+      await fetchClass(finalClassId);
+    } catch (err: any) {
+      console.error("Failed to remove lab from class:", err);
+      alert(err?.message || "ลบ Lab ไม่สำเร็จ");
+      setError(err?.message || "Failed to remove lab");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // =========================
+  // ✅ เรียง + Filter ที่นี่
+  // =========================
   const assignments = useMemo(() => {
     if (!classDetail?.classLabs?.length) return [];
-    return classDetail.classLabs.map((cl: any) => {
+
+    let list = classDetail.classLabs.map((cl: any) => {
       const lab = cl.lab || {};
+      const actualDueDate = cl.dueDate || lab.dueDate;
+
       return {
         labId: lab.labId,
         title: lab.labname || "Untitled Lab",
         problemSolving: lab.problemSolving || "",
-        dueDate: lab.dueDate
-          ? new Date(lab.dueDate).toLocaleDateString("th-TH", {
+        rawDueDate: actualDueDate || "",
+        dueDate: actualDueDate
+          ? new Date(actualDueDate).toLocaleDateString("th-TH", {
               year: "numeric",
               month: "short",
               day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
             })
           : "No due date",
       };
     });
-  }, [classDetail]);
+
+    // --- SORT ---
+    if (filter === "newest") {
+      list.sort(
+        (a: any, b: any) =>
+          new Date(b.rawDueDate || 0).getTime() -
+          new Date(a.rawDueDate || 0).getTime()
+      );
+    }
+
+    if (filter === "oldest") {
+      list.sort(
+        (a: any, b: any) =>
+          new Date(a.rawDueDate || 0).getTime() -
+          new Date(b.rawDueDate || 0).getTime()
+      );
+    }
+
+    // --- TODO (ตัวอย่าง: ยังไม่มี dueDate หรือเลยกำหนด) ---
+    if (filter === "todo") {
+      const now = new Date().getTime();
+      list = list.filter((a: any) => {
+        if (!a.rawDueDate) return true;
+        return new Date(a.rawDueDate).getTime() >= now;
+      });
+    }
+
+    return list;
+  }, [classDetail, filter]);
 
   const hasClassLoaded = classDetail !== null;
   const canEdit = ["owner", "teacher"].includes(currentUserRole);
@@ -136,8 +225,10 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
               backgroundImage="/images/classwork.png"
             />
 
+            {/* ✅ ส่ง onFilterChange เข้าไป */}
             <FilterActions
               onCreateClick={canEdit ? handleCreateClick : undefined}
+              onFilterChange={setFilter}
             />
 
             {loading ? (
@@ -170,7 +261,12 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
                         due={`Due ${a.dueDate}`}
                         onEditClick={
                           canEdit
-                            ? () => console.log("Edit lab:", a.labId)
+                            ? () => handleEditLab(a.labId, a.rawDueDate, a.title)
+                            : undefined
+                        }
+                        onDeleteClick={
+                          canEdit
+                            ? () => handleDeleteLab(a.labId)
                             : undefined
                         }
                       />
@@ -191,6 +287,8 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
             setFormData={setFormData}
             classId={finalClassId}
             userId={currentUserId}
+            isEditMode={!!editingLab}
+            editData={editingLab || undefined}
           />
         )}
       </div>

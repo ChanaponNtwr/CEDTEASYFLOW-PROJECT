@@ -43,7 +43,7 @@ function CreateClassModal({ isOpen, onClose, onCreate, formData, setFormData }: 
           >
             {/* Header */}
             <div className="flex justify-center mb-2">
-              <div onClick={onClose} className="w-28 h-1 bg-[#dbdbdb] rounded-lg cursor-pointer"/>
+              {/* <div onClick={onClose} className="w-28 h-1 bg-[#dbdbdb] rounded-lg cursor-pointer"/> */}
             </div>
             <div className="mb-6 flex items-center">
               <div className="w-16 h-16 bg-[#E9E5FF] rounded-full flex items-center justify-center mr-2">

@@ -1,13 +1,11 @@
-console.log("🔎 InputHandler v5 loaded");
+console.log("🔎 InputHandler v6 loaded");
 
 export default function InputHandler(node, context, flowchart, options = {}) {
-  // validate
   const varName = node?.data?.variable || node?.data?.name;
   const varTypeRaw = node?.data?.varType;
   if (!varName) throw new Error("IN handler requires node.data.variable");
 
   /**
-   * ✅ NEW RULE
    * IN node reads input by default
    * Only skip when node.data.skipIfExists === true
    */
@@ -25,30 +23,26 @@ export default function InputHandler(node, context, flowchart, options = {}) {
       ? flowchart._inputProvider
       : null;
 
-  // obtain provided value
   let provided;
+
+  // ✅ TRY GET INPUT
   if (provider) {
     try {
       provided = provider(node.data?.prompt ?? "", varName);
-    } catch (e) {
-      const err = new Error(`Input missing for '${varName}': ${e.message || "no value provided"}`);
-      err.code = "INPUT_MISSING";
-      throw err;
+    } catch {
+      provided = undefined;
     }
-  } else {
-    if (node?.data?.default !== undefined) {
-      provided = node.data.default;
-    } else {
-      const err = new Error(`Input missing for '${varName}': no input provider and no default`);
-      err.code = "INPUT_MISSING";
-      throw err;
-    }
+  } else if (node?.data?.default !== undefined) {
+    provided = node.data.default;
   }
 
+  // ⏸ STILL NO INPUT → WAIT (❗ ไม่ throw แล้ว)
   if (provided === undefined || provided === null) {
-    const err = new Error(`Input missing for '${varName}': provided value is ${String(provided)}`);
-    err.code = "INPUT_MISSING";
-    throw err;
+    console.log(`⏸ Waiting for input: ${varName}`);
+    return {
+      nextCondition: "wait",
+      waitFor: varName,
+    };
   }
 
   // debug
@@ -88,7 +82,8 @@ export default function InputHandler(node, context, flowchart, options = {}) {
         case "int":
         case "integer": {
           const n = Number(norm);
-          if (!Number.isInteger(n)) throw Object.assign(new Error(`Invalid integer for ${varName}`), { code: "INVALID_VALUE" });
+          if (!Number.isInteger(n))
+            throw Object.assign(new Error(`Invalid integer for ${varName}`), { code: "INVALID_VALUE" });
           finalValue = n;
           finalType = "int";
           break;
@@ -96,7 +91,8 @@ export default function InputHandler(node, context, flowchart, options = {}) {
         case "float":
         case "number": {
           const f = Number(norm);
-          if (isNaN(f)) throw Object.assign(new Error(`Invalid number for ${varName}`), { code: "INVALID_VALUE" });
+          if (isNaN(f))
+            throw Object.assign(new Error(`Invalid number for ${varName}`), { code: "INVALID_VALUE" });
           finalValue = f;
           finalType = "float";
           break;
@@ -106,7 +102,8 @@ export default function InputHandler(node, context, flowchart, options = {}) {
           if (typeof norm === "boolean") finalValue = norm;
           else if (norm === 1 || norm === "1" || String(norm).toLowerCase() === "true") finalValue = true;
           else if (norm === 0 || norm === "0" || String(norm).toLowerCase() === "false") finalValue = false;
-          else throw Object.assign(new Error(`Invalid boolean for ${varName}`), { code: "INVALID_VALUE" });
+          else
+            throw Object.assign(new Error(`Invalid boolean for ${varName}`), { code: "INVALID_VALUE" });
           finalType = "bool";
           break;
         }
@@ -130,7 +127,7 @@ export default function InputHandler(node, context, flowchart, options = {}) {
   } catch (e) {
     const err = new Error(e.message || `Invalid input for ${varName}`);
     err.code = e.code || "INVALID_VALUE";
-    throw err;
+    throw err; // ❗ type error ยัง throw ได้ (ถูกต้องแล้ว)
   }
 
   // store

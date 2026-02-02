@@ -376,59 +376,66 @@ export const apiGetClass = async (classId) => {
 
 // FlowchartService.js
 
-export const apiAddLabToClass = async (classId, labId, userId, dueDate) => { // ✅ รับ dueDate เพิ่ม
-  if (!classId) throw new Error("apiAddLabToClass: missing classId");
-  if (!labId) throw new Error("apiAddLabToClass: missing labId");
-  
-  // เพิ่มการเช็ค userId
-  if (!userId) throw new Error("apiAddLabToClass: missing userId (x-user-id)");
+export const apiAddLabToClass = async (classId, labId, userId, dueDate) => {
+  if (!classId || !labId || !userId) {
+    throw new Error("apiAddLabToClass: missing required parameters");
+  }
 
   try {
-    // เตรียม Body Payload
+    const url = `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`;
+    
+    // Body: { "labId": 3, "dueDate": "..." }
     const payload = { 
-      labId: labId 
+      labId: Number(labId) 
     };
 
-    // ✅ ถ้ามี dueDate ส่งมา ให้เพิ่มเข้าไปใน Body
+    // ถ้ามี dueDate ส่งมาด้วย ให้เพิ่มเข้าไปใน body
     if (dueDate) {
       payload.dueDate = dueDate;
     }
 
-    const resp = await axios.post(
-      `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`,
-      payload,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-id": String(userId), // ✅ แก้ไข: ส่ง userId ใน Header ตาม Spec
-        },
-        // allow axios to resolve for 2xx; we'll check status below
-        validateStatus: (status) => status >= 200 && status < 300,
-      }
-    );
+    const resp = await axios.post(url, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": String(userId), // Teacher ID
+      },
+      // ยอมรับ status 200 หรือ 201 ว่าสำเร็จ
+      validateStatus: (status) => status === 200 || status === 201,
+    });
 
-    // Accept both 200 and 201 as success
-    if (resp.status !== 200 && resp.status !== 201) {
-      console.warn(`apiAddLabToClass: expected 200/201 but got ${resp.status}`);
-    }
-
-    // Expect response like { ok: true }
     return resp.data;
   } catch (err) {
-    // If backend returns non-2xx, axios throws: err.response may exist
     console.error("apiAddLabToClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+// ✅ แก้ไขวันครบกำหนด (Edit Due Date)
+// Method: PATCH /classes/:classId/labs/:labId
+export const apiUpdateLabDueDate = async (classId, labId, userId, newDueDate) => {
+  if (!classId || !labId || !userId || !newDueDate) {
+    throw new Error("apiUpdateLabDueDate: missing required parameters");
+  }
+
+  try {
+    const url = `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs/${encodeURIComponent(labId)}`;
     
-    // Re-throw with helpful message
-    const message =
-      err?.response?.data?.message ||
-      err?.response?.data ||
-      err.message ||
-      "apiAddLabToClass failed";
-      
-    const e = new Error(message);
-    // attach response for callers who want more detail
-    e.response = err?.response;
-    throw e;
+    const payload = { 
+      dueDate: newDueDate 
+    };
+
+    const resp = await axios.patch(url, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": String(userId),
+      },
+      validateStatus: (status) => status === 200 || status === 201,
+    });
+
+    return resp.data;
+  } catch (err) {
+    console.error("apiUpdateLabDueDate error:", err?.response ?? err);
+    throw err;
   }
 };
 
@@ -490,15 +497,28 @@ export const apiGetClassUsers = async (classId) => {
   }
 };
 
-export const apiSearchUsers = async (query) => {
+// แก้ไขฟังก์ชัน apiSearchUsers
+export const apiSearchUsers = async (classId, query, currentUserId) => {
+  // ตรวจสอบข้อมูลเบื้องต้น (Optional)
+  if (!classId || !currentUserId) {
+    console.warn("apiSearchUsers: Missing classId or currentUserId");
+    // อาจจะ return ค่าว่างกลับไปเพื่อป้องกัน error
+    return { ok: true, users: [] };
+  }
+
   try {
-    // ใช้ params เพื่อให้ axios จัดการ ?q=... ให้ (รวมถึง encode ตัวอักษรพิเศษ)
-    const resp = await axios.get(`${BASE_URL}/classes/users/search`, {
+    // 1. แทรก classId ลงใน URL ตาม Requirement: /classes/{id}/users/search
+    const url = `${BASE_URL}/classes/${encodeURIComponent(classId)}/users/search`;
+
+    const resp = await axios.get(url, {
       params: { q: query }, 
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        // 2. เพิ่ม Header x-user-id ตาม Requirement
+        "x-user-id": currentUserId 
+      },
     });
 
-    // คาดหวัง return shape: { ok: true, users: [...] } หรือตามที่ backend ส่งมา
     return resp.data;
   } catch (err) {
     console.error("apiSearchUsers error:", err?.response ?? err);
@@ -539,9 +559,33 @@ export const apiAddUserToClass = async (classId, targetUserId, roleId, actorId) 
 };
 
 
+// เปลี่ยน Role ของ User ใน Class
+export const apiUpdateUserRole = async (classId, targetUserId, newRoleId, currentUserId) => {
+  if (!classId || !targetUserId || !newRoleId || !currentUserId) {
+    throw new Error("apiUpdateUserRole: Missing required parameters");
+  }
 
+  try {
+    // URL format: /classes/:classId/users/:userId/role
+    const url = `${BASE_URL}/classes/${classId}/users/${targetUserId}/role`;
 
+    const resp = await axios.patch(
+      url,
+      { roleId: newRoleId }, // Body: { "roleId": ... }
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUserId, // Header: x-user-id
+        },
+      }
+    );
 
+    return resp.data;
+  } catch (err) {
+    console.error("apiUpdateUserRole error:", err?.response ?? err);
+    throw err;
+  }
+};
 
 
 
@@ -728,6 +772,280 @@ export const apiGetTrialShapeRemaining = async (trialId) => {
     return resp.data;
   } catch (err) {
     console.error("apiGetTrialShapeRemaining error:", err);
+    throw err;
+  }
+};
+
+
+// ---------------------------------------------------------
+// Submission APIs (ส่งงาน / ตรวจงาน)
+// ---------------------------------------------------------
+
+/**
+ * ส่งงาน (Submit Flowchart)
+ * Endpoint: POST /api/submission/submit
+ */
+export const apiSubmitFlowchart = async (flowchartId, userId) => {
+  if (!flowchartId || !userId) {
+    throw new Error("apiSubmitFlowchart: missing flowchartId or userId");
+  }
+
+  try {
+    const payload = {
+      flowchartId: Number(flowchartId),
+      userId: Number(userId),
+    };
+
+    const resp = await axios.post(`${BASE_URL}/api/submission/submit`, payload);
+    return resp.data; // Expected: { ok: true, summary: {...}, normalizedResults: [...] }
+  } catch (err) {
+    console.error("apiSubmitFlowchart error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ดึงรายการส่งงานของ Lab นั้นๆ (List Submissions by Lab)
+ * Endpoint: GET /api/submission/lab/{labId}
+ */
+export const apiGetSubmissionsByLab = async (labId) => {
+  if (!labId) {
+    throw new Error("apiGetSubmissionsByLab: missing labId");
+  }
+
+  try {
+    const resp = await axios.get(`${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}`);
+    return resp.data; // Expected: List of submissions or specific submission structure
+  } catch (err) {
+    console.error("apiGetSubmissionsByLab error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ยืนยัน/อนุมัติงาน (Confirm Submission)
+ * Endpoint: POST /api/submission/lab/{labId}/user/{userId}/confirm
+ */
+export const apiConfirmSubmission = async (labId, studentUserId, reviewerId) => {
+  if (!labId || !studentUserId || !reviewerId) {
+    throw new Error("apiConfirmSubmission: missing required parameters");
+  }
+
+  try {
+    const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}/user/${encodeURIComponent(studentUserId)}/confirm`;
+    
+    const payload = { 
+      reviewerId: Number(reviewerId) 
+    };
+
+    const resp = await axios.post(url, payload);
+    return resp.data;
+  } catch (err) {
+    console.error("apiConfirmSubmission error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ปฏิเสธงาน (Reject Submission)
+ * Endpoint: POST /api/submission/lab/{labId}/user/{userId}/reject
+ */
+export const apiRejectSubmission = async (labId, studentUserId, reviewerId) => {
+  if (!labId || !studentUserId || !reviewerId) {
+    throw new Error("apiRejectSubmission: missing required parameters");
+  }
+
+  try {
+    const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}/user/${encodeURIComponent(studentUserId)}/reject`;
+    
+    const payload = { 
+      reviewerId: Number(reviewerId) 
+    };
+
+    const resp = await axios.post(url, payload);
+    return resp.data;
+  } catch (err) {
+    console.error("apiRejectSubmission error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+
+export const apiLeaveClass = async (classId, userId) => {
+  if (!classId || !userId) {
+    throw new Error("apiLeaveClass: Missing classId or userId");
+  }
+
+  try {
+    const resp = await axios.post(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/leave`,
+      {}, // Body ว่าง
+      {
+        headers: { "x-user-id": String(userId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiLeaveClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * Owner ลบ User ออกจากคลาส (Kick user)
+ * DELETE /classes/:classId/users/:userId
+ * Header: x-user-id (Actor/Owner)
+ */
+export const apiRemoveUserFromClass = async (classId, targetUserId, actorId) => {
+  if (!classId || !targetUserId || !actorId) {
+    throw new Error("apiRemoveUserFromClass: Missing required parameters");
+  }
+
+  try {
+    const resp = await axios.delete(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/users/${encodeURIComponent(targetUserId)}`,
+      {
+        headers: { "x-user-id": String(actorId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiRemoveUserFromClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ลบ Lab ออกจาก Class (Owner ลบได้หมด, Teacher/TA ลบได้เฉพาะที่สร้าง)
+ * DELETE /classes/:classId/labs/:labId
+ * Header: x-user-id (Actor)
+ */
+export const apiRemoveLabFromClass = async (classId, labId, actorId) => {
+  if (!classId || !labId || !actorId) {
+    throw new Error("apiRemoveLabFromClass: Missing required parameters");
+  }
+
+  try {
+    const resp = await axios.delete(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs/${encodeURIComponent(labId)}`,
+      {
+        headers: { "x-user-id": String(actorId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiRemoveLabFromClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * Owner ลบ Class ทิ้งถาวร
+ * DELETE /classes/:classId
+ * Header: x-user-id (Owner)
+ */
+export const apiDeleteClass = async (classId, actorId) => {
+  if (!classId || !actorId) {
+    throw new Error("apiDeleteClass: Missing classId or actorId");
+  }
+
+  try {
+    const resp = await axios.delete(
+      `${BASE_URL}/classes/${encodeURIComponent(classId)}`,
+      {
+        headers: { "x-user-id": String(actorId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiDeleteClass error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+/**
+ * ผู้ใช้ลบ Lab ของตัวเอง (My Lab)
+ * DELETE /labs/:labId
+ * Header: x-user-id
+ */
+export const apiDeleteLab = async (labId, userId) => {
+  if (!labId || !userId) {
+    throw new Error("apiDeleteLab: Missing labId or userId");
+  }
+
+  try {
+    const resp = await axios.delete(
+      `${BASE_URL}/labs/${encodeURIComponent(labId)}`,
+      {
+        headers: { "x-user-id": String(userId) },
+      }
+    );
+    return resp.data;
+  } catch (err) {
+    console.error("apiDeleteLab error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+export const apiCancelSubmission = async (labId, userId) => {
+  if (!labId || !userId) {
+    throw new Error("apiCancelSubmission: missing labId or userId");
+  }
+
+  try {
+    const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(
+      labId
+    )}/user/${encodeURIComponent(userId)}/cancel`;
+
+    const resp = await axios.post(url, {}); // body ว่างตาม spec
+
+    return resp.data; 
+    // expected เช่น { ok: true, message: "Submission canceled" }
+  } catch (err) {
+    console.error("apiCancelSubmission error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+
+/**
+ * ดูข้อมูลรายละเอียดนักเรียนทุกคนที่อยู่ในแลป
+ * Endpoint: GET /api/submission/lab/:labId/details
+ */
+export const apiGetSubmissionDetailsByLab = async (labId) => {
+  if (!labId) {
+    throw new Error("apiGetSubmissionDetailsByLab: missing labId");
+  }
+
+  try {
+    const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}/details`;
+    const resp = await axios.get(url);
+
+    return resp.data;
+  } catch (err) {
+    console.error("apiGetSubmissionDetailsByLab error:", err?.response ?? err);
+    throw err;
+  }
+};
+
+
+export const apiGetFlowchartsByUser = async (userId) => {
+  if (typeof userId === "undefined" || userId === null || userId === "") {
+    throw new Error("apiGetFlowchartsByUser: missing userId");
+  }
+
+  try {
+    // ใช้ params ให้ axios สร้าง query string ให้ (=> /flowchart/by-user?userId=3)
+    const resp = await axios.get(`${BASE_URL}/flowchart/by-user`, {
+      params: { userId },
+      headers: { "Content-Type": "application/json" },
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
+
+    // คาดว่า backend จะคืน list เช่น [{ id, labName, submitStatus, ... }, ...]
+    return resp.data;
+  } catch (err) {
+    console.error("apiGetFlowchartsByUser error:", err?.response ?? err);
     throw err;
   }
 };

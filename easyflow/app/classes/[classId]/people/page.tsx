@@ -6,26 +6,28 @@ import Navbar from "@/components/Navbar";
 import Tabs from "../../../Addpeople/_components/Tabs";
 import AddPersonModal from "../../../Addpeople/_components/AddPersonModal";
 import PeopleList from "../../../Addpeople/_components/PeopleList";
-import { useSearchParams, usePathname } from "next/navigation";
-import { apiGetClassUsers } from "@/app/service/FlowchartService";
-
-// ✅ 1. Import NextAuth Hook
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
+import { 
+  apiGetClassUsers, 
+  apiUpdateUserRole, 
+  apiRemoveUserFromClass, 
+  apiLeaveClass 
+} from "@/app/service/FlowchartService"; 
 import { useSession } from "next-auth/react";
 
 interface UIUser {
   name: string;
   email: string;
   position?: string;
-  id?: number;
+  id: number; 
 }
 
 function Addpeople() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
-
+  const router = useRouter(); // ✅ Import router
   const { data: session, status } = useSession();
 
-  // ✅ 1. ดึง User ID ออกมาจาก Session เตรียมไว้ที่ component level
   const currentUserId = session?.user 
     ? Number((session.user as any).id || (session.user as any).userId) 
     : 0;
@@ -52,9 +54,9 @@ function Addpeople() {
   const [students, setStudents] = useState<UIUser[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  // State เก็บ Role
+  
   const [canManage, setCanManage] = useState<boolean>(false);
+  const [amIOwner, setAmIOwner] = useState<boolean>(false); // ✅ เพิ่ม state เพื่อเช็คว่าเป็น Owner ไหม
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRole, setModalRole] = useState<"Teacher" | "TA" | "Students">("Teacher");
@@ -72,20 +74,15 @@ function Addpeople() {
         const newTAs: UIUser[] = [];
         const newStudents: UIUser[] = [];
         
-        // ✅ 3. ดึง Current User ID จาก Session
         const currentUid = session?.user ? ((session.user as any).id || (session.user as any).userId) : null;
         let myRole = "";
-
-        console.log("📍 [AddPeople] Current User ID from Session:", currentUid);
 
         allData.forEach((item) => {
           const uData = item.user;
           const rData = item.role;
 
-          // เช็คว่าคนนี้คือเราไหม? (แปลงเป็น String ทั้งคู่เพื่อความชัวร์)
           if (currentUid && String(uData.id) === String(currentUid)) {
              myRole = rData?.roleName?.toLowerCase() || "";
-             console.log("📍 [AddPeople] Found Me! Role is:", myRole);
           }
 
           const userForUI: UIUser = {
@@ -110,10 +107,11 @@ function Addpeople() {
         setTAs(newTAs);
         setStudents(newStudents);
 
-        // กำหนดสิทธิ์: Owner หรือ Teacher
-        const hasPermission = myRole === "owner" || myRole === "teacher";
-        console.log("📍 [AddPeople] Can Manage?:", hasPermission);
-        setCanManage(hasPermission);
+        const isOwner = myRole === "owner";
+        const isTeacher = myRole === "teacher";
+        
+        setAmIOwner(isOwner);
+        setCanManage(isOwner || isTeacher);
       }
     } catch (err: any) {
       console.error("Error fetching class users:", err);
@@ -121,10 +119,9 @@ function Addpeople() {
     } finally {
       setLoading(false);
     }
-  }, [classId, session]); // ✅ ใส่ session ลงใน dependency เพื่อให้โหลดใหม่เมื่อ Login เสร็จ
+  }, [classId, session]);
 
   useEffect(() => {
-    // ถ้า session ยังโหลดไม่เสร็จ ให้รอก่อนได้ (หรือจะโหลดเลยก็ได้ แต่ currentUid จะเป็น null ชั่วคราว)
     if (status === "loading") return;
     fetchData();
   }, [fetchData, status]);
@@ -134,6 +131,72 @@ function Addpeople() {
     setModalOpen(true);
   };
   const closeModal = () => setModalOpen(false);
+
+  const handleRoleChange = async (targetUserId: number, newRoleStr: "Teacher" | "TA" | "Students") => {
+    if(!classId || !currentUserId) return;
+    
+    let roleId = 2; // Default Student
+    if (newRoleStr === "Teacher") roleId = 1;
+    else if (newRoleStr === "TA") roleId = 3;
+    else if (newRoleStr === "Students") roleId = 2;
+
+    const confirmMsg = `Are you sure you want to change this user's role to ${newRoleStr}?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+        setLoading(true);
+        await apiUpdateUserRole(classId, targetUserId, roleId, currentUserId);
+        alert(`User role updated to ${newRoleStr}`);
+        fetchData(); 
+    } catch (error) {
+        console.error("Change role failed", error);
+        alert("Failed to update role.");
+        setLoading(false);
+    }
+  };
+
+  // ✅ ฟังก์ชันจัดการการลบ User หรือ การออกจาก Class
+  const handleRemoveUser = async (targetUserId: number) => {
+    if (!classId || !currentUserId) return;
+
+    // กรณีที่ 1: ลบตัวเอง (Leave Class)
+    if (targetUserId === currentUserId) {
+        if (amIOwner) {
+            alert("Owner cannot leave the class. You must delete the class or transfer ownership.");
+            return;
+        }
+
+        if (!confirm("Are you sure you want to LEAVE this class?")) return;
+
+        try {
+            setLoading(true);
+            await apiLeaveClass(classId, currentUserId);
+            alert("You have left the class.");
+            router.push("/myclass"); // กลับไปหน้า Dashboard หรือหน้าอื่น
+        } catch (error) {
+            console.error("Leave class failed:", error);
+            alert("Failed to leave class.");
+            setLoading(false);
+        }
+    } 
+    // กรณีที่ 2: ลบคนอื่น (Kick User) - ต้องมีสิทธิ์ canManage
+    else {
+        if (!canManage) return; 
+
+        if (!confirm("Are you sure you want to remove this user from the class?")) return;
+
+        try {
+            setLoading(true);
+            await apiRemoveUserFromClass(classId, targetUserId, currentUserId);
+            // alert("User removed successfully.");
+            fetchData(); // โหลดข้อมูลใหม่
+        } catch (error) {
+            console.error("Remove user failed:", error);
+            alert("Failed to remove user.");
+            setLoading(false);
+        }
+    }
+  };
 
   if (!classId) return <div className="pt-20 text-center">Missing Class ID</div>;
 
@@ -153,20 +216,33 @@ function Addpeople() {
 
             {!loading && !error && (
               <>
+                {/* ✅ ส่ง Props เพิ่ม: onRemove, canManage, currentUserId */}
                 <PeopleList 
                     title="Teacher" 
                     people={teachers} 
                     onAdd={canManage ? () => openModal("Teacher") : undefined} 
+                    onRoleChange={canManage ? handleRoleChange : undefined}
+                    onRemove={handleRemoveUser} 
+                    canManage={canManage}
+                    currentUserId={currentUserId}
                 />
                 <PeopleList 
                     title="TA" 
                     people={tas} 
                     onAdd={canManage ? () => openModal("TA") : undefined} 
+                    onRoleChange={canManage ? handleRoleChange : undefined}
+                    onRemove={handleRemoveUser}
+                    canManage={canManage}
+                    currentUserId={currentUserId}
                 />
                 <PeopleList 
                     title="Students" 
                     people={students} 
                     onAdd={canManage ? () => openModal("Students") : undefined} 
+                    onRoleChange={canManage ? handleRoleChange : undefined}
+                    onRemove={handleRemoveUser}
+                    canManage={canManage}
+                    currentUserId={currentUserId}
                 />
               </>
             )}
