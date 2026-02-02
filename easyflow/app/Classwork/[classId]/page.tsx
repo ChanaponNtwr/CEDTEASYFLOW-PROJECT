@@ -1,9 +1,8 @@
-// page.tsx
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation"; // ✅ เพิ่ม useSearchParams, useRouter
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import Tabs from "./_components/Tabs";
@@ -18,6 +17,9 @@ type FilterType = "all" | "oldest" | "newest" | "todo";
 
 function Classwork({ classId: propClassId }: { classId?: string }) {
   const params = useParams();
+  const searchParams = useSearchParams(); // ✅ Hook สำหรับอ่าน Query Params
+  const router = useRouter(); // ✅ Hook สำหรับจัดการ URL
+  
   const routeClassId = params ? (params.classId as string) : undefined;
   const finalClassId = propClassId ?? routeClassId;
 
@@ -49,8 +51,20 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
 
-  // ✅ เพิ่ม state สำหรับ filter
   const [filter, setFilter] = useState<FilterType>("newest");
+
+  // ✅ EFFECT: เช็คว่ากลับมาจากหน้า Select Lab หรือไม่
+  useEffect(() => {
+    const shouldOpen = searchParams?.get("openImport");
+    if (shouldOpen === "true") {
+      setIsModalOpen(true);
+      
+      // ลบ query param ออกจาก URL เพื่อไม่ให้ refresh แล้วเด้งอีก (Optional แต่แนะนำเพื่อ UX ที่ดี)
+      // ใช้ window.history.replaceState เพื่อไม่ให้เกิด reload
+      const newUrl = window.location.pathname;
+      window.history.replaceState(null, "", newUrl);
+    }
+  }, [searchParams]);
 
   const handleCreateClick = () => {
     setEditingLab(null);
@@ -138,9 +152,6 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
     }
   };
 
-  // =========================
-  // ✅ เรียง + Filter ที่นี่
-  // =========================
   const assignments = useMemo(() => {
     if (!classDetail?.classLabs?.length) return [];
 
@@ -165,7 +176,6 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
       };
     });
 
-    // --- SORT ---
     if (filter === "newest") {
       list.sort(
         (a: any, b: any) =>
@@ -182,7 +192,6 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
       );
     }
 
-    // --- TODO (ตัวอย่าง: ยังไม่มี dueDate หรือเลยกำหนด) ---
     if (filter === "todo") {
       const now = new Date().getTime();
       list = list.filter((a: any) => {
@@ -225,7 +234,6 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
               backgroundImage="/images/classwork.png"
             />
 
-            {/* ✅ ส่ง onFilterChange เข้าไป */}
             <FilterActions
               onCreateClick={canEdit ? handleCreateClick : undefined}
               onFilterChange={setFilter}

@@ -229,12 +229,14 @@ export default function Selectlab() {
       } catch {}
 
       try {
-        sessionStorage.removeItem("importForm");
+        // ไม่ลบ importForm เพราะอาจจะต้องใช้อีกทีตอนกด confirm ใน modal
         sessionStorage.removeItem("importMode");
       } catch {}
 
       if (importReturn) {
-        router.push(importReturn);
+        // ✅ เพิ่ม ?openImport=true เพื่อให้หน้า Classwork รู้ว่าต้องเปิด Modal
+        const separator = importReturn.includes("?") ? "&" : "?";
+        router.push(`${importReturn}${separator}openImport=true`);
       } else {
         router.back();
       }
@@ -264,7 +266,6 @@ export default function Selectlab() {
           <div className="flex-1 flex flex-col p-20">
             {/* Control Bar */}
             <div className="flex items-center justify-end gap-4 mb-4">
-              {/* Existing controls */}
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleSelectAll}
@@ -296,7 +297,6 @@ export default function Selectlab() {
                 Select
               </button>
 
-              {/* Create Lab (RIGHT MOST) */}
               <button
                 onClick={handleCreateLab}
                 className="px-4 py-2 rounded-md bg-[#0D3ACE] text-white text-sm hover:bg-[#0B2EA6] shadow"
