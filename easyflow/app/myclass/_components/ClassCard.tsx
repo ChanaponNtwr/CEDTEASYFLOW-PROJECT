@@ -6,8 +6,7 @@ interface ClassCardProps {
   teacher?: string;
   due?: string;
   problem?: string;
-
-  // ✅ เพิ่ม props สำหรับลบ (optional ไม่กระทบที่อื่น)
+  profileImage?: string; // รับ URL รูปภาพ
   onDeleteClick?: () => void;
 }
 
@@ -16,17 +15,18 @@ function ClassCard({
   teacher = '',
   due = '',
   problem = '',
+  profileImage,
   onDeleteClick,
 }: ClassCardProps) {
   return (
     <div className="relative bg-white shadow-md rounded-lg overflow-hidden hover:scale-105 transition-all cursor-pointer">
       
-      {/* ✅ ปุ่มลบ (แสดงเฉพาะถ้ามี onDeleteClick) */}
+      {/* ปุ่มลบ */}
       {onDeleteClick && (
         <button
           onClick={(e) => {
             e.preventDefault();
-            e.stopPropagation(); // กันไม่ให้ Link ทำงาน
+            e.stopPropagation();
             onDeleteClick();
           }}
           title="Delete Class"
@@ -37,6 +37,7 @@ function ClassCard({
         </button>
       )}
 
+      {/* Header สีส้ม */}
       <div className="bg-orange-500 text-white p-4">
         <div className="flex flex-col">
           <span className="text-lg font-semibold">{code || 'No Code'}</span>
@@ -44,20 +45,22 @@ function ClassCard({
         </div>
       </div>
 
+      {/* Avatar Section */}
       <div className="relative flex justify-end -mt-14 mr-6">
         <img
-          src="https://img2.pic.in.th/pic/9440461.jpg"
+          // ถ้าไม่มีรูปส่งมา ให้ใช้รูป Placeholder เดิม
+          src={profileImage || "https://img2.pic.in.th/pic/9440461.jpg"}
           alt="Avatar"
-          className="h-24 w-24 rounded-full border-4 border-white"
+          // bg-white สำคัญมากสำหรับรูป SVG เพื่อไม่ให้พื้นหลังทะลุ
+          className="h-24 w-24 rounded-full border-4 border-white bg-white object-cover shadow-sm"
         />
       </div>
 
+      {/* Content Body */}
       <div className="p-10 relative">
         <div className="absolute top-0 left-6">
           <p className="text-gray-600 text-sm">{due || 'No Due Date'}</p>
-          <p className="text-gray-800 font-semibold text-base">
-            {problem || 'No Problem'}
-          </p>
+          <p className="text-gray-800 font-semibold text-base">{problem || 'No Problem'}</p>
         </div>
       </div>
     </div>

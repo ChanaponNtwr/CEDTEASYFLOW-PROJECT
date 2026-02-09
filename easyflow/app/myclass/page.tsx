@@ -24,6 +24,14 @@ export type ClassItem = {
   isOwner: boolean;
 };
 
+// ✅ ฟังก์ชันสุ่มรูปภาพที่ดูสุภาพ (Personas Style)
+// ใช้ชื่อ teacher เป็น seed เพื่อให้ได้รูปเดิมเสมอสำหรับคนเดิม
+const getAvatarUrl = (name: string) => {
+  return `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(
+    name
+  )}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffdfbf,ffd5dc`;
+};
+
 function Myclass() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -238,6 +246,8 @@ function Myclass() {
                   >
                     <ClassCard
                       {...c}
+                      // ✅ ส่ง URL รูปภาพที่สุ่มได้เข้าไป
+                      profileImage={getAvatarUrl(c.teacher)}
                       onDeleteClick={
                         c.isOwner ? () => handleDeleteClass(c.id) : undefined
                       }
@@ -248,7 +258,7 @@ function Myclass() {
             )}
 
             {/* Joined Class */}
-           <h2 className="text-4xl font-semibold border-b border-gray-300 pb-1 mt-12 pb-4 mb-6">
+            <h2 className="text-4xl font-semibold border-b border-gray-300 pb-1 mt-12 pb-4 mb-6">
               Joined Class
             </h2>
 
@@ -272,7 +282,11 @@ function Myclass() {
                     href={`/classes/${encodeURIComponent(String(c.id))}`}
                     key={`joined-${index}`}
                   >
-                    <ClassCard_Other {...c} />
+                    <ClassCard_Other 
+                        {...c} 
+                        // ✅ ส่ง URL รูปภาพที่สุ่มได้เข้าไป
+                        profileImage={getAvatarUrl(c.teacher)}
+                    />
                   </Link>
                 ))}
               </div>

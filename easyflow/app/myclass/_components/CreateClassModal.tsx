@@ -1,6 +1,5 @@
 "use client";
 import React from "react";
-import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CreateClassModalProps {
@@ -29,81 +28,83 @@ function CreateClassModal({ isOpen, onClose, onCreate, formData, setFormData }: 
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 bg-gray-900/20 backdrop-blur-md flex items-center justify-center z-[1000]"
+          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[1000]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          onClick={onClose}
         >
           <motion.div
-            className="bg-white rounded-lg p-6 w-full max-w-md shadow-2xl"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ duration: 0.3 }}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 m-4 border border-gray-100"
+            initial={{ scale: 0.95, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 20 }}
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex justify-center mb-2">
-              {/* <div onClick={onClose} className="w-28 h-1 bg-[#dbdbdb] rounded-lg cursor-pointer"/> */}
-            </div>
-            <div className="mb-6 flex items-center">
-              <div className="w-16 h-16 bg-[#E9E5FF] rounded-full flex items-center justify-center mr-2">
-                <Image src="/images/create.png" alt="Create Icon" width={30} height={30} />
-              </div>
-              <div className="flex justify-center ml-6">
-                <h2 className="text-4xl font-medium">Create Class</h2>
-              </div>
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-bold text-gray-800">Create New Class</h2>
+              <p className="text-gray-500 text-sm mt-1">Enter the details for your new classroom</p>
             </div>
 
-            {/* Form */}
+            {/* Inputs */}
             <div className="space-y-4">
               <div>
-                <label className="block text-gray-500 mb-1" htmlFor="className">Class Name</label>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5" htmlFor="className">
+                  Class Name
+                </label>
                 <input
                   type="text"
                   name="className"
                   value={formData.className}
                   onChange={handleInputChange}
-                  placeholder="Class Name..."
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Intro to Programming"
+                  className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all bg-gray-50"
                 />
               </div>
-              <div>
-                <label className="block text-gray-500 mb-1" htmlFor="section">Section</label>
-                <input
-                  type="text"
-                  name="section"
-                  value={formData.section}
-                  onChange={handleInputChange}
-                  placeholder="Section..."
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-500 mb-1" htmlFor="room">Room</label>
-                <input
-                  type="text"
-                  name="room"
-                  value={formData.room}
-                  onChange={handleInputChange}
-                  placeholder="Room..."
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5" htmlFor="section">
+                      Section
+                    </label>
+                    <input
+                      type="text"
+                      name="section"
+                      value={formData.section}
+                      onChange={handleInputChange}
+                      placeholder="e.g. 001"
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all bg-gray-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5" htmlFor="room">
+                      Room
+                    </label>
+                    <input
+                      type="text"
+                      name="room"
+                      value={formData.room}
+                      onChange={handleInputChange}
+                      placeholder="e.g. 404"
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all bg-gray-50"
+                    />
+                  </div>
               </div>
             </div>
 
             {/* Buttons */}
-            <div className="flex justify-center gap-3 mt-6">
+            <div className="flex gap-3 mt-8">
               <button
                 onClick={onClose}
-                className="px-6 py-2 bg-gray-200 rounded-full text-gray-700 hover:bg-gray-300 transition-all duration-200 cursor-pointer"
+                className="flex-1 px-6 py-3 bg-gray-100 text-gray-600 rounded-xl font-semibold hover:bg-gray-200 transition-all duration-200"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmit}
-                className="px-6 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all duration-200 cursor-pointer"
+                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
               >
-                Create
+                Create Class
               </button>
             </div>
           </motion.div>

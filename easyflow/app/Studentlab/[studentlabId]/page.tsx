@@ -3,10 +3,15 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection"; 
+
+// Icons
+import { FaPlay, FaPaperPlane, FaTimes, FaCalendarAlt, FaCheckCircle, FaExclamationCircle, FaSpinner } from "react-icons/fa";
+import { IoHardwareChipOutline } from "react-icons/io5";
 
 import { 
   apiGetTestcases, 
@@ -111,12 +116,8 @@ export default function StudentLabPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [isStarting, setIsStarting] = useState(false);
-
-  // ✅ ของ user คนปัจจุบันเท่านั้น
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [tcResults, setTcResults] = useState<SubmissionResult[]>([]);
-
-  // states for submit/unsubmit actions
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
@@ -169,30 +170,21 @@ export default function StudentLabPage() {
 
         if (mounted) setTestCases(mappedTC);
 
-        // ================================
-        // ✅ CHECK submissions for current user
-        // ================================
         if (session?.user) {
           const user = session.user as any;
           const currentUserId = Number(user.id || user.userId || user.sub);
 
           try {
             const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
-
-            // backend shape may vary; previously code expected apiResponse.data[0].submissions
             const allSubs = apiResponse?.data?.[0]?.submissions || apiResponse?.submissions || apiResponse?.data || [];
-
-            // normalize to array
             const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
-
-            // filter by userId
             const mySubs = (arrSubs ?? []).filter(
               (s: any) => Number(s.userId) === currentUserId
             );
 
             if (mySubs.length > 0) {
               setTcResults(mySubs);
-              setIsSubmitted(true);   // เฉพาะถ้าคนนี้เคยส่ง
+              setIsSubmitted(true);
             } else {
               setTcResults([]);
               setIsSubmitted(false);
@@ -217,7 +209,7 @@ export default function StudentLabPage() {
     return () => { mounted = false; };
   }, [labIdResolved, session]);
 
-  // --- Do lab ---
+  // --- Handlers ---
   const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (!session?.user) { alert("Please login first!"); return; }
@@ -248,41 +240,27 @@ export default function StudentLabPage() {
     }
   };
 
-  // --- Submit the lab (student) ---
   const handleSubmit = async () => {
-    if (!session?.user) {
-      alert("กรุณาเข้าสู่ระบบก่อนส่งงาน");
-      return;
-    }
-    if (!labIdResolved) {
-      alert("Missing lab id");
-      return;
-    }
+    if (!session?.user) return alert("กรุณาเข้าสู่ระบบก่อนส่งงาน");
+    if (!labIdResolved) return alert("Missing lab id");
 
     const user = session.user as any;
     const userId = user.id || user.userId || user.sub;
 
     setIsSubmitting(true);
     try {
-      // 1. ต้องหา Flowchart ID ของ User คนนี้ก่อน
-      // เราใช้ apiPostFlowchart เพื่อ Get หรือ Create Flowchart ID ที่ถูกต้องสำหรับ Lab นี้
       const payload = { 
         userId: Number(userId), 
         labId: Number(labIdResolved),
         clientRequestId: `${userId}-${Date.now()}`
       };
-
       const flowchartResult = await apiPostFlowchart(payload);
       const targetFlowchartId = flowchartResult.id || flowchartResult.flowchartId || flowchartResult.trialId;
 
-      if (!targetFlowchartId) {
-        throw new Error("ไม่พบ Flowchart ID สำหรับการส่งงาน");
-      }
+      if (!targetFlowchartId) throw new Error("ไม่พบ Flowchart ID สำหรับการส่งงาน");
 
-      // 2. เรียก apiSubmitFlowchart โดยใช้ flowchartId ที่ถูกต้อง
       await apiSubmitFlowchart(Number(targetFlowchartId), Number(userId));
 
-      // 3. รีเฟรชสถานะ submission ของผู้ใช้เพื่อแสดงผลคะแนน/สถานะ
       try {
         const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
         const allSubs = apiResponse?.data?.[0]?.submissions || apiResponse?.submissions || apiResponse?.data || [];
@@ -293,18 +271,15 @@ export default function StudentLabPage() {
           setTcResults(mySubs);
           setIsSubmitted(true);
         } else {
-          // ถ้า backend ไม่คืนค่า submissions ทันที ก็ให้ถือว่าเป็น submitted อย่างน้อย
           setTcResults([]);
           setIsSubmitted(true);
         }
       } catch {
         setIsSubmitted(true);
       }
-
       alert("ส่งงานเรียบร้อย");
     } catch (err: any) {
       console.error("Submit error:", err);
-      // แสดง error ที่ชัดเจนขึ้น
       const msg = err?.response?.data?.message || err?.message || "Unknown error";
       alert(`ไม่สามารถส่งงานได้: ${msg}`);
     } finally {
@@ -312,17 +287,8 @@ export default function StudentLabPage() {
     }
   };
 
-  // --- Cancel submission (unsubmit) ---
   const handleUnsubmit = async () => {
-    if (!session?.user) {
-      alert("กรุณาเข้าสู่ระบบก่อน");
-      return;
-    }
-    if (!labIdResolved) {
-      alert("Missing lab id");
-      return;
-    }
-
+    if (!session?.user) return alert("กรุณาเข้าสู่ระบบก่อน");
     if (!confirm("คุณต้องการยกเลิกการส่งงานใช่หรือไม่?")) return;
 
     const user = session.user as any;
@@ -331,27 +297,19 @@ export default function StudentLabPage() {
     setIsCancelling(true);
     try {
       await apiCancelSubmission(Number(labIdResolved), Number(userId));
-
-      // รีเฟรชหรือเคลียร์ผลการส่งของผู้ใช้
       setIsSubmitted(false);
       setTcResults([]);
-
-      // (optional) รีเฟรช list จาก backend
+      
       try {
         const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
         const allSubs = apiResponse?.data?.[0]?.submissions || apiResponse?.submissions || apiResponse?.data || [];
         const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
         const mySubs = (arrSubs ?? []).filter((s: any) => Number(s.userId) === Number(userId));
-        if (mySubs.length === 0) {
-          setIsSubmitted(false);
-          setTcResults([]);
-        } else {
+        if (mySubs.length > 0) {
           setIsSubmitted(true);
           setTcResults(mySubs);
         }
-      } catch {
-        // ignore
-      }
+      } catch { /* ignore */ }
 
       alert("ยกเลิกการส่งงานเรียบร้อย");
     } catch (err: any) {
@@ -367,169 +325,195 @@ export default function StudentLabPage() {
   const labProblem = lab?.problemSolving ?? lab?.problem ?? "";
   const dueText = lab?.dueDate ?? lab?.dateline ?? undefined;
 
-  const symbolLabData = lab
-    ? {
-        inSymVal: lab.inSymVal ?? 0,
-        outSymVal: lab.outSymVal ?? 0,
-        declareSymVal: lab.declareSymVal ?? 0,
-        assignSymVal: lab.assignSymVal ?? 0,
-        ifSymVal: lab.ifSymVal ?? 0,
-        forSymVal: lab.forSymVal ?? 0,
-        whileSymVal: lab.whileSymVal ?? 0,
-      }
-    : undefined;
+  const symbolLabData = lab ? {
+    inSymVal: lab.inSymVal ?? 0,
+    outSymVal: lab.outSymVal ?? 0,
+    declareSymVal: lab.declareSymVal ?? 0,
+    assignSymVal: lab.assignSymVal ?? 0,
+    ifSymVal: lab.ifSymVal ?? 0,
+    forSymVal: lab.forSymVal ?? 0,
+    whileSymVal: lab.whileSymVal ?? 0,
+  } : undefined;
 
-  // --- Render Helpers ---
   const renderStatusBadge = (status: string) => {
-    if (!status) return <span className="text-gray-400">-</span>;
+    if (!status) return <span className="text-gray-300 font-mono">-</span>;
     const s = String(status).toUpperCase();
     
+    let styles = "bg-gray-100 text-gray-500 border-gray-200";
+    let icon = null;
+
     if (["PASS", "PASSED", "CORRECT", "OK", "SUCCESS"].includes(s)) {
-      return <span className="px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold border border-green-200">PASS</span>;
+      styles = "bg-emerald-50 text-emerald-700 border-emerald-200";
+      icon = <FaCheckCircle className="mr-1" />;
+    } else if (["FAIL", "FAILED", "INCORRECT", "WRONG"].includes(s)) {
+      styles = "bg-red-50 text-red-700 border-red-200";
+      icon = <FaExclamationCircle className="mr-1" />;
+    } else if (["ERROR", "ERR", "TIMEOUT", "CRASH"].includes(s)) {
+      styles = "bg-amber-50 text-amber-700 border-amber-200";
+      icon = <FaExclamationCircle className="mr-1" />;
     }
-    if (["FAIL", "FAILED", "INCORRECT", "WRONG"].includes(s)) {
-      return <span className="px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-bold border border-red-200">FAIL</span>;
-    }
-    if (["ERROR", "ERR", "TIMEOUT", "CRASH"].includes(s)) {
-        return <span className="px-2 py-1 rounded bg-orange-100 text-orange-700 text-xs font-bold border border-orange-200">ERROR</span>;
-    }
-    return <span className="px-2 py-1 rounded bg-gray-100 text-gray-600 text-xs font-bold border border-gray-200">{s}</span>;
+
+    return (
+      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold border ${styles}`}>
+        {icon} {s}
+      </span>
+    );
   };
 
+  // --- Render ---
   return (
-    <div className="min-h-screen w-full bg-gray-100">
-      <div className="pt-20 pl-60">
+    <div className="min-h-screen w-full bg-[#F9FAFB]">
+      <div className="pt-20 pl-0 md:pl-64 transition-all duration-300">
         <Navbar />
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <div className="flex-1 flex justify-center p-6 md:p-10">
-            <div className="w-full max-w-5xl bg-white p-8 rounded-lg shadow-md min-h-[500px]">
-              
-              {/* Header & Buttons */}
-              <div className="flex justify-end space-x-3 mb-6">
-                <button
-                  onClick={handleClick}
-                  disabled={loading || isStarting || isSubmitted}
-                  className={`px-6 py-2 rounded-full flex items-center justify-center text-white transition-colors shadow-sm font-medium
-                    ${loading || isStarting || isSubmitted ? 'bg-gray-400 cursor-not-allowed opacity-70' : 'bg-blue-600 hover:bg-blue-700'}
-                  `}
-                >
-                  {isStarting ? "Creating..." : "Do lab"}
-                </button>
+        <Sidebar />
+        
+        <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+            
+            {/* 1. Header Card */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="flex items-center gap-5">
+                    <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-white rounded-2xl flex items-center justify-center flex-shrink-0 border border-blue-100 shadow-sm">
+                        <img src="/images/lab.png" className="w-8 h-auto object-contain" alt="Lab Icon" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900 leading-tight">{labTitle}</h1>
+                        <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500">
+                             <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-blue-500 "></span>
+                                <span className="font-medium text-gray-700">{totalPoints} Points</span>
+                             </div>
+                             <div className="hidden md:block w-[1px] h-4 bg-gray-300"></div>
+                             <div className="flex items-center gap-1.5">
+                                <FaCalendarAlt className="text-gray-400" />
+                                <span>Due: {formatDueDate(dueText)}</span>
+                             </div>
+                             {isSubmitted && (
+                                <>
+                                  <div className="hidden md:block w-[1px] h-4 bg-gray-300"></div>
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-xs font-bold border border-blue-100">
+                                    Submitted
+                                  </span>
+                                </>
+                             )}
+                        </div>
+                    </div>
+                </div>
 
-                {isSubmitted ? (
+                {/* Buttons Group */}
+                <div className="flex items-center gap-3 w-full md:w-auto self-end md:self-center">
                     <button
-                      onClick={handleUnsubmit}
-                      disabled={isCancelling}
-                      className="bg-red-600 text-white px-6 py-2 rounded-full flex items-center justify-center hover:bg-red-700 transition-colors shadow-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                      onClick={handleClick}
+                      disabled={loading || isStarting || isSubmitted}
+                      className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all
+                        ${loading || isStarting || isSubmitted 
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200' 
+                            : 'bg-white border border-indigo-200 text-blue-600  hover:bg-indigo-50 hover:border-indigo-300'
+                        }`}
                     >
-                        {isCancelling ? "Cancelling..." : "Unsubmit"}
+                       {isStarting ? <FaSpinner className="animate-spin" /> : <FaPlay size={12} />} 
+                       {isStarting ? "Creating..." : "Do Lab"}
                     </button>
-                ) : (
-                    <button
-                      onClick={handleSubmit}
-                      disabled={isSubmitting || loading}
-                      className={`px-6 py-2 rounded-full flex items-center justify-center text-white transition-colors shadow-sm font-medium
-                        ${isSubmitting || loading ? 'bg-gray-400 cursor-not-allowed opacity-70' : 'bg-[#133384] hover:bg-[#1945B7]'}
-                      `}
-                    >
-                      {isSubmitting ? "Submitting..." : "Submit"}
-                    </button>
-                )}
-              </div>
 
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b-2 border-gray-100 pb-4 mb-6">
-                <div className="flex items-center">
-                  <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mr-4 shadow-sm border border-blue-100">
-                    <img src="/images/lab.png" className="w-8 h-10 object-contain opacity-80" alt="lab" />
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-800">{labTitle}</h2>
-                    <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-md">
-                      {totalPoints} Points
-                    </span>
-                    {isSubmitted && <span className="ml-2 inline-block px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-md border border-blue-200">Submitted</span>}
-                  </div>
+                    {isSubmitted ? (
+                        <button
+                          onClick={handleUnsubmit}
+                          disabled={isCancelling}
+                          className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-all disabled:opacity-70"
+                        >
+                            {isCancelling ? <FaSpinner className="animate-spin" /> : <FaTimes />}
+                            {isCancelling ? "Cancelling..." : "Unsubmit"}
+                        </button>
+                    ) : (
+                        <button
+                          onClick={handleSubmit}
+                          disabled={isSubmitting || loading}
+                          className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm text-white transition-all hover:shadow-md hover:-translate-y-0.5
+                            ${isSubmitting || loading 
+                                ? 'bg-gray-400 cursor-not-allowed' 
+                                : 'bg-gradient-to-r from-blue-600  to-blue-600 hover:from-blue-700  hover:to-blue-700 '
+                            }`}
+                        >
+                          {isSubmitting ? <FaSpinner className="animate-spin" /> : <FaPaperPlane size={12} />}
+                          {isSubmitting ? "Sending..." : "Submit"}
+                        </button>
+                    )}
                 </div>
-                <div className="mt-2 md:mt-0 text-gray-500 text-sm font-medium bg-gray-50 px-3 py-1 rounded-lg">
-                   Due: {formatDueDate(dueText)}
-                </div>
-              </div>
+            </div>
 
-              <div className="pl-0 md:pl-4">
-                <div className="mb-8">
-                   <h3 className="text-lg font-semibold text-gray-700 mb-2">Problem Description</h3>
-                   <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 text-gray-700 whitespace-pre-wrap leading-relaxed">
-                      {labProblem || "No description available for this lab."}
-                   </div>
+            {/* 2. Problem Description */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <div className="flex items-center gap-2 mb-4 border-b border-gray-50 pb-3">
+                    <div className="w-1 h-5 bg-orange-400 rounded-full"></div>
+                    <h3 className="text-lg font-bold text-gray-800">Problem Description</h3>
                 </div>
+                <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap leading-relaxed">
+                    {labProblem || <span className="text-gray-400 italic">No description available for this lab.</span>}
+                </div>
+            </div>
 
-                {loading && (
-                  <div className="flex justify-center items-center py-12">
-                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                     <span className="ml-3 text-gray-600">Loading lab data...</span>
-                  </div>
-                )}
+            {/* 3. Test Cases */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <div className="flex items-center gap-2">
+                        <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
+                        <h3 className="text-lg font-bold text-gray-800">Test Cases</h3>
+                    </div>
+                </div>
                 
-                {error && (
-                  <div className="p-4 mb-6 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg text-center">Error: {error}</div>
-                )}
+                {loading && <div className="p-8 text-center text-gray-400 animate-pulse">Loading data...</div>}
+                {error && <div className="p-6 text-center text-red-500 bg-red-50 m-4 rounded-xl border border-red-100">Error: {error}</div>}
 
                 {!loading && !error && (
-                  <div className="mb-8">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-3">Test Cases</h3>
-                    <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                  <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-100">
+                        <thead className="bg-gray-50/50">
                           <tr>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">No.</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-16">No.</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Input</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Output</th>
-                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Score</th>
-                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Score</th>
+                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Status</th>
                           </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white divide-y divide-gray-100 text-sm">
                           {testCases.length > 0 ? (
                             testCases.map((tc, index) => {
-                                // 📌 Mapping Results
                                 const result = tcResults[index];
                                 const status = result?.status || "";
-                                
-                                // คำนวณคะแนนที่แสดง
                                 const obtainedScore = result?.score ?? 0;
                                 const maxScore = tc.score;
 
                                 return (
-                                  <tr key={tc.no} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4 text-sm text-gray-600 font-semibold">{tc.no}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-700">
-                                      <code className="bg-gray-100 px-2 py-1 rounded text-xs font-mono">{tc.input}</code>
+                                  <tr key={tc.no} className="hover:bg-gray-50/80 transition-colors">
+                                    <td className="px-6 py-4 font-medium text-gray-500">{tc.no}</td>
+                                    <td className="px-6 py-4">
+                                      <code className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-mono border border-gray-200">
+                                        {tc.input}
+                                      </code>
                                     </td>
-                                    <td className="px-6 py-4 text-sm text-blue-700">
-                                      <code className="bg-blue-50 px-2 py-1 rounded text-xs font-mono">{tc.output}</code>
+                                    <td className="px-6 py-4">
+                                      <code className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono border border-blue-100">
+                                        {tc.output}
+                                      </code>
                                     </td>
-                                    
-                                    {/* Column Score: คะแนนที่ได้ / คะแนนเต็ม */}
                                     <td className="px-6 py-4 text-center">
                                       {isSubmitted ? (
-                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-sm
+                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-sm border
                                           ${obtainedScore === maxScore 
-                                            ? "bg-green-100 text-green-700 border border-green-200" 
+                                            ? "bg-green-50 text-green-700 border-green-200" 
                                             : obtainedScore > 0 
-                                              ? "bg-yellow-100 text-yellow-700 border border-yellow-200"
-                                              : "bg-red-50 text-red-600 border border-red-100"
+                                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                                              : "bg-red-50 text-red-600 border-red-200"
                                           }
                                         `}>
                                           {obtainedScore} / {maxScore}
                                         </span>
                                       ) : (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
                                           {maxScore} pts
                                         </span>
                                       )}
                                     </td>
-
                                     <td className="px-6 py-4 text-center">
                                         {renderStatusBadge(status)}
                                     </td>
@@ -538,26 +522,26 @@ export default function StudentLabPage() {
                             })
                           ) : (
                             <tr>
-                              <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                                No test cases found.
-                              </td>
+                              <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">No test cases found.</td>
                             </tr>
                           )}
                         </tbody>
                       </table>
-                    </div>
                   </div>
                 )}
-
-                {!loading && !error && (
-                  <div className="pt-4 border-t border-gray-100 mt-8">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4">Flowchart Symbols</h3>
-                    <SymbolSection labData={symbolLabData} />
-                  </div>
-                )}
-              </div>
             </div>
-          </div>
+
+            {/* 4. Configuration Section */}
+            {!loading && !error && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                    <div className="flex items-center gap-2 mb-6 border-b border-gray-50 pb-3">
+                        <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
+                        <h2 className="text-lg font-bold text-gray-800">Configuration</h2>
+                    </div>
+                    <SymbolSection labData={symbolLabData} />
+                </div>
+            )}
+            
         </div>
       </div>
     </div>

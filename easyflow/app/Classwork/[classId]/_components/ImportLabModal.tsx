@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
-import { FaPlus } from "react-icons/fa";
+import { FaPlus, FaCalendarAlt, FaClock } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
@@ -56,12 +56,11 @@ function ImportLabModal({
     if (isOpen) {
       setError(null);
 
-      // ✅ กรณี Edit Mode: ดึงค่าเดิมมาใส่ Form (Pre-fill)
+      // Pre-fill Logic (Edit Mode)
       if (isEditMode && editData?.dueDate) {
         try {
           const dt = new Date(editData.dueDate);
           if (!isNaN(dt.getTime())) {
-            // แปลงเป็น Local Time เพื่อแยก Date/Time
             const yyyy = dt.getFullYear();
             const mm = String(dt.getMonth() + 1).padStart(2, '0');
             const dd = String(dt.getDate()).padStart(2, '0');
@@ -70,8 +69,8 @@ function ImportLabModal({
 
             setFormData({
               labId: editData.labId,
-              dueDate: `${yyyy}-${mm}-${dd}`, // Format สำหรับ input type="date"
-              dueTime: `${hh}:${min}`,       // Format สำหรับ input type="time"
+              dueDate: `${yyyy}-${mm}-${dd}`,
+              dueTime: `${hh}:${min}`,
             });
           }
         } catch (e) {
@@ -79,7 +78,7 @@ function ImportLabModal({
         }
         setSelectedLabel(null);
       } 
-      // ✅ กรณี Import Mode: โหลดข้อมูลจาก Session (Logic เดิม)
+      // Import Mode Logic
       else if (!isEditMode) {
         try {
           const raw = sessionStorage.getItem("selectedImportedLabs");
@@ -88,7 +87,7 @@ function ImportLabModal({
             if (Array.isArray(parsed?.labs) && parsed.labs.length > 0) {
               const names = parsed.labs.map((l: any) => l.name ?? l.labId ?? l.id);
               setSelectedLabel(
-                names.length <= 2 ? names.join(", ") : `${names.length} selected`
+                names.length <= 2 ? names.join(", ") : `${names.length} Labs Selected`
               );
             } else {
               setSelectedLabel(null);
@@ -117,101 +116,53 @@ function ImportLabModal({
     router.push("/Selectlab");
   };
 
-  // ===============================
-  // 🔥 CORE: SUBMIT (IMPORT OR UPDATE)
-  // ===============================
   const handleSubmitAction = async () => {
     setError(null);
-
-    if (!userId) {
-      alert("ไม่พบข้อมูลผู้ใช้");
-      return;
-    }
-    if (!classId) {
-      setError("Missing classId.");
-      return;
-    }
-
-    if (!formData.dueDate || !formData.dueTime) {
-      setError("กรุณาระบุ Due Date และ Time");
-      return;
-    }
+    if (!userId) { alert("User not found"); return; }
+    if (!classId) { setError("Missing classId."); return; }
+    if (!formData.dueDate || !formData.dueTime) { setError("Please specify Due Date and Time"); return; }
 
     const combined = new Date(`${formData.dueDate}T${formData.dueTime}:00`);
-    if (isNaN(combined.getTime())) {
-      setError("รูปแบบวันเวลาไม่ถูกต้อง");
-      return;
-    }
+    if (isNaN(combined.getTime())) { setError("Invalid Date/Time format"); return; }
     const dueDateTimeIso = combined.toISOString();
 
     setLoading(true);
 
     try {
-      // ✅ 1. กรณีโหมดแก้ไข (Edit Mode)
       if (isEditMode) {
-        if (!editData?.labId) {
-            throw new Error("ไม่พบ Lab ID สำหรับแก้ไข");
-        }
+        if (!editData?.labId) throw new Error("Missing Lab ID for edit");
         
-        // 1.1 อัปเดต Due Date ของ Lab ใน Class
         await apiUpdateLabDueDate(classId, editData.labId, userId, dueDateTimeIso);
         
-        // 1.2 อัปเดตข้อมูลที่ตัว Lab ด้วย
         try {
           const labResp = await apiGetLab(editData.labId);
           const currentLab = labResp?.lab ?? labResp;
-
           if (currentLab) {
-            const updatePayload = {
-              ...currentLab,
-              dueDate: dueDateTimeIso,
-              dateline: dueDateTimeIso, 
-            };
-            
-            if (typeof apiUpdateLab === 'function') {
-                await apiUpdateLab(editData.labId, updatePayload);
-            }
+            const updatePayload = { ...currentLab, dueDate: dueDateTimeIso, dateline: dueDateTimeIso };
+            if (typeof apiUpdateLab === 'function') await apiUpdateLab(editData.labId, updatePayload);
           }
-        } catch (innerErr) {
-          console.error("Failed to update lab entity date:", innerErr);
-        }
+        } catch (innerErr) { console.error("Failed to update lab entity date:", innerErr); }
 
         onAddClick?.(); 
         onClose();
         return; 
       }
 
-      // ✅ 2. กรณีโหมด Import (Copy Lab)
+      // Import Mode
       let payloadRaw = sessionStorage.getItem("selectedImportedLabs");
-      if (!payloadRaw) {
-        alert("ยังไม่ได้เลือก My lab");
-        setLoading(false);
-        return;
-      }
+      if (!payloadRaw) { alert("No labs selected"); setLoading(false); return; }
 
       let parsed = JSON.parse(payloadRaw);
-
       let labIds: string[] = [];
-      if (Array.isArray(parsed?.labIds)) {
-        labIds = parsed.labIds;
-      } else if (Array.isArray(parsed?.labs)) {
-        labIds = parsed.labs.map((l: any) => l.labId ?? l.id ?? l);
-      }
+      if (Array.isArray(parsed?.labIds)) labIds = parsed.labIds;
+      else if (Array.isArray(parsed?.labs)) labIds = parsed.labs.map((l: any) => l.labId ?? l.id ?? l);
 
-      if (!labIds.length) {
-        alert("ยังไม่ได้เลือก My lab");
-        setLoading(false);
-        return;
-      }
+      if (!labIds.length) { alert("No labs selected"); setLoading(false); return; }
 
-      // วน Loop สร้าง Lab ใหม่
       for (const sourceLabId of labIds) {
         const sourceResp = await apiGetLab(String(sourceLabId));
         const sourceLab = sourceResp?.lab ?? sourceResp;
-
-        if (!sourceLab) {
-          throw new Error(`ไม่พบข้อมูล Lab ต้นฉบับ: ${sourceLabId}`);
-        }
+        if (!sourceLab) throw new Error(`Source lab not found: ${sourceLabId}`);
 
         const createPayload = {
           ownerUserId: userId,
@@ -231,16 +182,9 @@ function ImportLabModal({
         };
 
         const createResp = await apiCreateLab(createPayload);
+        const newLabId = createResp?.lab?.labId || createResp?.labId || createResp?.id;
 
-        const newLabId =
-          createResp?.lab?.labId ||
-          createResp?.labId ||
-          createResp?.id;
-
-        if (!newLabId) {
-          throw new Error("สร้าง Lab ใหม่ไม่สำเร็จ (ไม่ได้รับ labId)");
-        }
-
+        if (!newLabId) throw new Error("Failed to create new lab copy");
         await apiAddLabToClass(classId, newLabId, userId, dueDateTimeIso);
       }
 
@@ -268,97 +212,114 @@ function ImportLabModal({
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 bg-gray-900/20 backdrop-blur-md flex items-center justify-center z-[1000]"
+          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
           <motion.div
-            className="bg-white rounded-lg p-6 w-full max-w-md shadow-2xl"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ duration: 0.3 }}
+            className="bg-white rounded-2xl p-8 w-full max-w-lg shadow-2xl overflow-hidden relative"
+            initial={{ scale: 0.95, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 20 }}
+            transition={{ duration: 0.2 }}
           >
-            <div className="mb-6 flex items-center">
-              <div className="w-16 h-16 bg-[#E9E5FF] rounded-full flex items-center justify-center mr-2">
-                <Image src="/images/import.png" alt="Icon" width={30} height={30} />
+            {/* Header */}
+            <div className="flex items-center mb-8">
+              <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mr-4 shrink-0">
+                <Image src="/images/import.png" alt="Icon" width={32} height={32} className="object-contain" />
               </div>
-              <div className="ml-4">
-                <h2 className="text-3xl font-medium text-gray-800">
-                  {isEditMode ? (editData?.labName || "Edit Lab") : "Import Mylab"}
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">
+                  {isEditMode ? "Edit Assignment" : "Import Lab"}
                 </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {isEditMode ? `Editing "${editData?.labName || 'Unknown'}"` : "Select a lab from your collection"}
+                </p>
               </div>
             </div>
 
-            {!isEditMode && (
-              <div className="mb-4">
-                <label className="block text-gray-500 mb-1">My lab</label>
-                <button
-                  type="button"
-                  onClick={handleOpenSelectlab}
-                  className="w-full h-12 border border-gray-300 bg-[#E9E5FF] rounded-lg flex items-center justify-center"
-                >
-                  {selectedLabel ? (
-                    <span className="text-sm text-gray-700 font-medium">
-                      {selectedLabel}
-                    </span>
-                  ) : (
-                    <FaPlus className="w-4 h-4 text-gray-500" />
-                  )}
-                </button>
-              </div>
-            )}
+            {/* Content */}
+            <div className="space-y-6">
+              {!isEditMode && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Select Lab Source</label>
+                  <button
+                    type="button"
+                    onClick={handleOpenSelectlab}
+                    className={`w-full h-14 border-2 border-dashed rounded-xl flex items-center justify-center transition-all duration-200 group
+                      ${selectedLabel ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-blue-400 hover:bg-gray-50"}
+                    `}
+                  >
+                    {selectedLabel ? (
+                      <span className="text-blue-700 font-semibold flex items-center">
+                        <FaPlus className="mr-2 w-3 h-3" /> {selectedLabel}
+                      </span>
+                    ) : (
+                      <div className="flex items-center text-gray-400 group-hover:text-blue-500">
+                        <FaPlus className="mr-2" />
+                        <span>Choose from My Labs</span>
+                      </div>
+                    )}
+                  </button>
+                </div>
+              )}
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-gray-500 mb-2">
-                  Assignment Due Date
-                </label>
-                <input
-                  type="date"
-                  name="dueDate"
-                  ref={dateInputRef}
-                  value={formData.dueDate}
-                  onChange={handleInputChange}
-                  className="w-full h-12 px-4 border rounded-lg"
-                  min={todayStr}
-                />
-              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Due Date</label>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      name="dueDate"
+                      ref={dateInputRef}
+                      value={formData.dueDate}
+                      onChange={handleInputChange}
+                      className="w-full h-12 pl-10 pr-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-600"
+                      min={todayStr}
+                    />
+                    <FaCalendarAlt className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-gray-500 mb-2">Time</label>
-                <input
-                  type="time"
-                  name="dueTime"
-                  ref={timeInputRef}
-                  value={formData.dueTime}
-                  onChange={handleInputChange}
-                  className="w-full h-12 px-4 border rounded-lg"
-                />
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Time</label>
+                  <div className="relative">
+                    <input
+                      type="time"
+                      name="dueTime"
+                      ref={timeInputRef}
+                      value={formData.dueTime}
+                      onChange={handleInputChange}
+                      className="w-full h-12 pl-10 pr-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-600"
+                    />
+                    <FaClock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  </div>
+                </div>
               </div>
             </div>
 
             {error && (
-              <div className="mt-4 text-sm text-red-600 bg-red-50 p-2 rounded text-center">
+              <div className="mt-6 text-sm text-red-600 bg-red-50 p-3 rounded-lg text-center border border-red-100">
                 {error}
               </div>
             )}
 
-            <div className="flex justify-center gap-3 mt-8">
+            {/* Footer */}
+            <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-gray-100">
               <button
                 onClick={onClose}
-                className="px-6 py-2 bg-gray-200 rounded-full"
+                className="px-6 py-2.5 text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl font-medium transition-colors"
                 disabled={loading}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmitAction}
-                className="px-6 py-2 rounded-full text-white bg-blue-600"
+                className="px-8 py-2.5 text-white bg-blue-600 hover:bg-blue-700 rounded-xl font-medium shadow-lg shadow-blue-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                 disabled={loading}
               >
-                {loading ? "Processing..." : (isEditMode ? "Update" : "Import")}
+                {loading ? "Processing..." : (isEditMode ? "Save Changes" : "Import Lab")}
               </button>
             </div>
           </motion.div>
