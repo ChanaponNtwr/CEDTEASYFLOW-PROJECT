@@ -7,6 +7,8 @@ import Navbar from "@/components/Navbar";
 import ClassCard from "./_components/ClassCard";
 import { apiGetLab } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
+// เพิ่ม Icons เพื่อความสวยงาม
+import { FaCheckDouble, FaTimes, FaFileImport, FaPlus, FaLayerGroup } from "react-icons/fa";
 
 /* =======================
    Types
@@ -190,8 +192,13 @@ export default function Selectlab() {
   };
 
   const handleSelectAll = () => {
-    const allIds = displayLabs.map((l, idx) => String(l.labId ?? l.id ?? idx));
-    setSelectedLabIds(allIds);
+    // Toggle Select All / Deselect All logic
+    if (selectedLabIds.length === displayLabs.length && displayLabs.length > 0) {
+        setSelectedLabIds([]);
+    } else {
+        const allIds = displayLabs.map((l, idx) => String(l.labId ?? l.id ?? idx));
+        setSelectedLabIds(allIds);
+    }
   };
 
   const handleClearSelection = () => {
@@ -229,12 +236,10 @@ export default function Selectlab() {
       } catch {}
 
       try {
-        // ไม่ลบ importForm เพราะอาจจะต้องใช้อีกทีตอนกด confirm ใน modal
         sessionStorage.removeItem("importMode");
       } catch {}
 
       if (importReturn) {
-        // ✅ เพิ่ม ?openImport=true เพื่อให้หน้า Classwork รู้ว่าต้องเปิด Modal
         const separator = importReturn.includes("?") ? "&" : "?";
         router.push(`${importReturn}${separator}openImport=true`);
       } else {
@@ -258,76 +263,115 @@ export default function Selectlab() {
   }
 
   return (
-    <div className="pt-20 min-h-screen bg-gray-100">
+    <div className="pt-20 min-h-screen bg-gray-50"> {/* เปลี่ยน bg เป็น gray-50 ให้อ่อนลงเล็กน้อย */}
       <div className="pl-60">
         <Navbar />
         <div className="flex h-screen">
           <Sidebar />
-          <div className="flex-1 flex flex-col p-20">
-            {/* Control Bar */}
-            <div className="flex items-center justify-end gap-4 mb-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleSelectAll}
-                  className="px-3 py-1 rounded-md bg-gray-100 text-sm hover:bg-gray-200"
-                >
-                  Select all
-                </button>
-                <button
-                  onClick={handleClearSelection}
-                  className="px-3 py-1 rounded-md bg-gray-100 text-sm hover:bg-gray-200"
-                >
-                  Clear
-                </button>
-              </div>
+          <div className="flex-1 flex flex-col p-8 lg:p-20"> {/* ปรับ padding ให้สมดุล */}
+            
+            {/* Header Title Area */}
+            <div className="flex items-center gap-3 mb-6">
+                 <div className="bg-indigo-100 p-3 rounded-xl text-indigo-600">
+                     <FaLayerGroup size={28} />
+                 </div>
+                 <div>
+                     <h1 className="text-3xl font-bold text-gray-800">Select Labs</h1>
+                     <p className="text-gray-500 text-sm">Choose labs from your collection to import</p>
+                 </div>
+             </div>
 
-              <div className="text-sm text-gray-700">
-                {selectedLabIds.length} selected
-              </div>
+            {/* ✅ NEW TOOLBAR: Control Bar Design */}
+            <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-gray-200 mb-8 flex flex-col sm:flex-row justify-between items-center gap-4 transition-all">
+                
+                {/* Left: Selection Controls */}
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <button
+                        onClick={handleSelectAll}
+                        className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl border transition-all active:scale-95
+                        ${selectedLabIds.length === displayLabs.length && displayLabs.length > 0
+                            ? "bg-blue-50 border-blue-200 text-blue-700" 
+                            : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                    >
+                        <FaCheckDouble className={selectedLabIds.length === displayLabs.length && displayLabs.length > 0 ? "text-blue-600" : "text-gray-400"} />
+                        {selectedLabIds.length === displayLabs.length && displayLabs.length > 0 ? "Deselect All" : "Select All"}
+                    </button>
 
-              <button
-                onClick={handleConfirmSelect}
-                disabled={selectedLabIds.length === 0}
-                className={`px-6 py-2 rounded-4xl flex items-center text-white transition-all duration-200 ${
-                  selectedLabIds.length > 0
-                    ? "bg-[#0D3ACE] hover:bg-[#0B2EA6] shadow-lg"
-                    : "bg-gray-300 cursor-not-allowed"
-                }`}
-              >
-                Select
-              </button>
+                    {/* Show Clear button only when items selected */}
+                    {selectedLabIds.length > 0 && (
+                        <button
+                            onClick={handleClearSelection}
+                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition-all active:scale-95 animate-in fade-in zoom-in duration-200"
+                        >
+                            <FaTimes />
+                            Clear
+                        </button>
+                    )}
+                </div>
 
-              <button
-                onClick={handleCreateLab}
-                className="px-4 py-2 rounded-md bg-[#0D3ACE] text-white text-sm hover:bg-[#0B2EA6] shadow"
-              >
-                + Create Lab
-              </button>
+                {/* Center/Right: Actions & Counter */}
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                    
+                    {/* Selected Counter */}
+                    <div className="hidden md:flex items-center gap-2 mr-2">
+                        <span className="text-sm text-gray-500">Selected:</span>
+                        <span className="bg-gray-100 text-gray-800 px-3 py-1 rounded-full font-bold text-sm">
+                            {selectedLabIds.length}
+                        </span>
+                    </div>
+
+                    {/* Import/Confirm Button (Primary) */}
+                    <button
+                        onClick={handleConfirmSelect}
+                        disabled={selectedLabIds.length === 0}
+                        className={`
+                            flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white rounded-xl shadow-md transition-all
+                            ${selectedLabIds.length > 0
+                                ? "bg-blue-600 hover:bg-blue-700 hover:shadow-lg hover:-translate-y-0.5 active:scale-95 shadow-blue-200"
+                                : "bg-gray-300 cursor-not-allowed shadow-none"}
+                        `}
+                    >
+                        <FaFileImport />
+                        Import {selectedLabIds.length > 0 ? `(${selectedLabIds.length})` : ""}
+                    </button>
+
+                    {/* Create Lab Button (Secondary) */}
+                    <button
+                        onClick={handleCreateLab}
+                        className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-gray-800 rounded-xl hover:bg-gray-900 shadow-md transition-all active:scale-95"
+                    >
+                        <FaPlus size={12} />
+                        Create Lab
+                    </button>
+                </div>
             </div>
 
-            <h2 className="text-4xl font-semibold border-b-2 border-gray-300 pb-1 mb-4">
-              My Labs{" "}
-              <span className="text-sm font-normal text-gray-500">
-                (User: {session?.user?.name})
-              </span>
-            </h2>
-
             {loading && (
-              <div className="mb-4 text-sm text-gray-600">
-                กำลังอัปเดตข้อมูลจากเซิร์ฟเวอร์...
+              <div className="mb-4 text-center text-gray-500 animate-pulse">
+                Updating labs from server...
               </div>
             )}
 
             {error && (
-              <div className="mb-4 text-sm text-red-600">{error}</div>
+              <div className="mb-4 p-4 rounded-xl bg-red-50 border border-red-100 text-sm text-red-600 text-center">
+                {error}
+              </div>
             )}
 
             {displayLabs.length === 0 ? (
-              <div className="p-6 text-gray-600">
-                ยังไม่มี Lab กด Create Lab เพื่อสร้างใหม่
+              <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-gray-300 text-gray-400">
+                <FaLayerGroup size={48} className="mb-4 text-gray-200" />
+                <p className="text-lg font-medium">No Labs Found</p>
+                <p className="text-sm mb-6">Create a new lab to get started.</p>
+                <button
+                    onClick={handleCreateLab}
+                    className="px-6 py-2 bg-blue-50 text-blue-600 rounded-full font-semibold hover:bg-blue-100 transition-colors"
+                >
+                    Create your first Lab
+                </button>
               </div>
             ) : (
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                 {displayLabs.map((lab, index) => {
                   const labId = String(lab.labId ?? lab.id ?? index);
                   const name =

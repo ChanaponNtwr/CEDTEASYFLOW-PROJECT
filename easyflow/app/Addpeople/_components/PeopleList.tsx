@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { FaTrash, FaEllipsisV, FaUserPlus, FaChalkboardTeacher, FaUserGraduate, FaUserTie, FaSignOutAlt } from "react-icons/fa";
+import { FaTrash, FaUserPlus, FaEllipsisV, FaUserTie, FaUserGraduate, FaChalkboardTeacher } from "react-icons/fa";
 
 type Person = { 
   id: number; 
@@ -14,7 +14,6 @@ interface PeopleListProps {
   people: Person[];
   onAdd?: () => void;
   onRoleChange?: (userId: number, newRole: "Teacher" | "TA" | "Students") => void;
-  // ✅ เพิ่ม Props สำหรับการลบและสิทธิ์
   onRemove?: (userId: number) => void;
   canManage?: boolean;
   currentUserId?: number;
@@ -53,130 +52,136 @@ const PeopleList: React.FC<PeopleListProps> = ({
     }
   };
 
+  // Icon mapping
+  const TitleIcon = {
+    Teacher: FaChalkboardTeacher,
+    TA: FaUserTie,
+    Students: FaUserGraduate
+  }[title];
+
+  // Colors mapping
+  const TitleColor = {
+    Teacher: "text-blue-600",
+    TA: "text-purple-600",
+    Students: "text-emerald-600"
+  }[title];
+
   return (
-    <div className="mb-10 w-full max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-2xl font-bold">{title}</h2>
+    <div className="w-full">
+      {/* Header Section */}
+      <div className="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
+        <div className="flex items-center gap-3">
+          <h2 className={`text-2xl font-bold ${TitleColor} flex items-center gap-2`}>
+             <TitleIcon className="text-xl opacity-80" />
+             {title}
+          </h2>
+          <span className="bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded-full text-xs font-semibold">
+            {people.length}
+          </span>
+        </div>
+        
         {onAdd && (
-          <FaUserPlus
-            className="text-gray-600 hover:text-black cursor-pointer text-xl"
+          <button 
             onClick={onAdd}
-            title="Add Member"
-          />
+            className="flex items-center gap-2 text-sm font-semibold text-blue-600 bg-blue-50 px-4 py-2 rounded-full hover:bg-blue-100 transition-colors"
+          >
+            <FaUserPlus />
+            <span className="hidden sm:inline">Add {title}</span>
+          </button>
         )}
       </div>
-      <hr className="border-t border-gray-300 mb-4" />
 
-      {/* Table header */}
-      <div className="flex justify-between text-gray-500 text-sm font-medium mb-2 px-2">
-        <span className="w-1/3">ชื่อ</span>
-        <span className="w-1/3">อีเมล</span>
-        <span className="w-1/6 text-right">การจัดการ</span>
-      </div>
-
-      {/* People list */}
-      {people.length === 0 ? (
-        <div className="text-center text-gray-400 py-4 italic">No {title} in this class yet.</div>
-      ) : (
-        people.map((person, idx) => {
-            // Logic การแสดงผลปุ่มลบ
+      {/* People List */}
+      <div className="space-y-3">
+        {people.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">
+            No {title} found in this class.
+          </div>
+        ) : (
+          people.map((person, idx) => {
             const isMe = person.id === currentUserId;
-            // สมมติว่า Teacher คนแรกคือ Owner ตาม Logic เดิม
-            const isOwnerRow = title === "Teacher" && idx === 0; 
+            const isOwnerRow = title === "Teacher" && idx === 0; // Assume first teacher is owner if logic applies
             
-            // แสดงถังขยะเมื่อ:
-            // 1. เรามีสิทธิ์ Manage (Teacher/Owner) และแถวนั้นไม่ใช่ Owner (ลบคนอื่นได้)
-            // 2. หรือ แถวนั้นคือเราเอง และเราไม่ใช่ Owner (User กด Leave Class)
+            // Logic to show Trash: Owner remove anyone, Self leave class
             const showTrash = (canManage && !isOwnerRow) || (isMe && !isOwnerRow);
-
-            // แสดงปุ่ม Edit Role เมื่อมีสิทธิ์ Manage และไม่ใช่ Owner (และไม่ใช่ตัวเองด้วย เพื่อป้องกันเปลี่ยน Role ตัวเองจนเสียสิทธิ์)
+            // Logic to show Role Edit: Manage others who are not owner
             const showEditRole = canManage && !isOwnerRow && !isMe;
 
             return (
-                <div
-                    key={person.id}
-                    className="relative flex items-center justify-between bg-white px-4 py-3 rounded-lg shadow-sm mb-2 hover:bg-gray-50 transition-colors"
-                >
-                    <span className="w-1/3 text-gray-800 font-medium">
-                        {person.name} {isMe && <span className="text-xs text-blue-500">(You)</span>}
+              <div 
+                key={person.id} 
+                className="group relative flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-200"
+              >
+                {/* Left: Avatar & Info */}
+                <div className="flex items-center gap-4 flex-1 overflow-hidden">
+                  <div className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm
+                    ${title === "Teacher" ? "bg-blue-500" : title === "TA" ? "bg-purple-500" : "bg-emerald-500"}
+                  `}>
+                    {person.name.charAt(0).toUpperCase()}
+                  </div>
+                  
+                  <div className="flex flex-col truncate">
+                    <span className="font-semibold text-gray-800 flex items-center gap-2 truncate">
+                      {person.name}
+                      {isMe && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-bold">YOU</span>}
+                      {isOwnerRow && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">OWNER</span>}
                     </span>
-                    <span className="w-1/3 text-gray-600">{person.email}</span>
-                    
-                    <div className="w-1/6 flex justify-end items-center space-x-4 relative">
-                        {/* ✅ ปุ่มลบ (Kick หรือ Leave) */}
-                        {showTrash && onRemove && (
-                            <>
-                              {isMe ? (
-                                // ถ้าเป็นตัวเอง — ให้แสดงไอคอนออก (Sign out / Leave)
-                                <FaSignOutAlt
-                                  className="text-yellow-600 cursor-pointer hover:text-yellow-800 transition-colors"
-                                  title="Leave Class"
-                                  onClick={() => onRemove(person.id)}
-                                />
-                              ) : (
-                                // ถ้าไม่ใช่ตัวเอง — ให้แสดงถังขยะ (Remove)
-                                <FaTrash 
-                                  className="text-red-400 cursor-pointer hover:text-red-600 transition-colors" 
-                                  title="Remove User" 
-                                  onClick={() => onRemove(person.id)}
-                                />
-                              )}
-                            </>
-                        )}
-                        
-                        {/* ✅ ปุ่มเปลี่ยน Role (3 จุด) */}
-                        {showEditRole && (
-                            <div className="relative">
-                                <FaEllipsisV 
-                                className="text-gray-400 cursor-pointer hover:text-gray-600 transition-colors" 
-                                onClick={() => toggleMenu(person.id)}
-                                />
-
-                                {openMenuId === person.id && onRoleChange && (
-                                <div 
-                                    ref={menuRef}
-                                    className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50 overflow-hidden"
-                                >
-                                    <div className="text-xs font-semibold text-gray-400 px-4 py-2 bg-gray-50">
-                                    Change Role to...
-                                    </div>
-                                    
-                                    {title !== "Teacher" && (
-                                    <button 
-                                        onClick={() => handleSelectRole(person.id, "Teacher")}
-                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
-                                    >
-                                        <FaChalkboardTeacher /> Teacher
-                                    </button>
-                                    )}
-
-                                    {title !== "TA" && (
-                                    <button 
-                                        onClick={() => handleSelectRole(person.id, "TA")}
-                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
-                                    >
-                                        <FaUserTie /> TA
-                                    </button>
-                                    )}
-
-                                    {title !== "Students" && (
-                                    <button 
-                                        onClick={() => handleSelectRole(person.id, "Students")}
-                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
-                                    >
-                                        <FaUserGraduate /> Student
-                                    </button>
-                                    )}
-                                </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
+                    <span className="text-sm text-gray-500 truncate">{person.email}</span>
+                  </div>
                 </div>
+
+                {/* Right: Actions */}
+                <div className="flex items-center gap-1 sm:gap-2 ml-4">
+                  {/* Remove Button */}
+                  {showTrash && onRemove && (
+                    <button
+                      onClick={() => onRemove(person.id)}
+                      className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title={isMe ? "Leave Class" : "Remove User"}
+                    >
+                      <FaTrash size={16} />
+                    </button>
+                  )}
+
+                  {/* Edit Role Dropdown */}
+                  {showEditRole && onRoleChange && (
+                    <div className="relative" ref={menuRef}>
+                      <button 
+                        onClick={() => toggleMenu(person.id)}
+                        className="p-2 text-gray-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      >
+                        <FaEllipsisV size={16} />
+                      </button>
+
+                      {openMenuId === person.id && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                           <div className="py-1">
+                              {title !== "Teacher" && (
+                                <button onClick={() => handleSelectRole(person.id, "Teacher")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2">
+                                    <FaChalkboardTeacher /> Teacher
+                                </button>
+                              )}
+                              {title !== "TA" && (
+                                <button onClick={() => handleSelectRole(person.id, "TA")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-600 flex items-center gap-2">
+                                    <FaUserTie /> TA
+                                </button>
+                              )}
+                              {title !== "Students" && (
+                                <button onClick={() => handleSelectRole(person.id, "Students")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-600 flex items-center gap-2">
+                                    <FaUserGraduate /> Student
+                                </button>
+                              )}
+                           </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             );
-        })
-      )}
+          })
+        )}
+      </div>
     </div>
   );
 };

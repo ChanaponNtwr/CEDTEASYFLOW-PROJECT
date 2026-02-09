@@ -3,8 +3,7 @@ import React, { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
-import Link from "next/link";
-// Update imports: ใช้ apiStartTrial แทน
+// import Link from "next/link"; // ไม่ได้ใช้ใน logic ปัจจุบัน
 import { apiStartTrial, apiGetLab, apiGetTestcases } from "@/app/service/FlowchartService";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -87,7 +86,7 @@ function Trial() {
             : tcResp?.data ?? tcResp?.testcases ?? tcResp ?? [];
         }
 
-        // Helper parsers (เหมือนเดิม)
+        // Helper parsers
         const parseVal = (val: any): any => {
           if (typeof val === "string") {
             const trimmed = val.trim();
@@ -167,34 +166,27 @@ function Trial() {
 
   const symbolLabData = lab
     ? {
-        inSymVal: lab.inSymVal ?? 0,
-        outSymVal: lab.outSymVal ?? 0,
-        declareSymVal: lab.declareSymVal ?? 0,
-        assignSymVal: lab.assignSymVal ?? 0,
-        ifSymVal: lab.ifSymVal ?? 0,
-        forSymVal: lab.forSymVal ?? 0,
-        whileSymVal: lab.whileSymVal ?? 0,
+        inSymVal: lab.inSymVal,
+        outSymVal: lab.outSymVal,
+        declareSymVal: lab.declareSymVal,
+        assignSymVal: lab.assignSymVal,
+        ifSymVal: lab.ifSymVal,
+        forSymVal: lab.forSymVal,
+        whileSymVal: lab.whileSymVal,
       }
     : undefined;
 
   // --- Action Handler: Start Trial ---
   const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    
-    // 1. Set Loading State
     setIsStarting(true);
 
     try {
-      const currentLabId = labIdParam; // ใช้ ID จาก URL หรือ Default
-
-      // 2. Call API: POST /trial/start
-      // (Backend จะสร้าง Flowchart และ trialId ให้เอง)
+      const currentLabId = labIdParam; 
       const result = await apiStartTrial(currentLabId);
-
       console.log("Start Trial Response:", result);
 
       if (result && result.ok && result.trialId) {
-        // 3. Success: Redirect to /Dolab/[trialId]
         router.push(`/dolabtrial/${result.trialId}`);
       } else {
         throw new Error("Invalid response from server (missing trialId)");
@@ -204,133 +196,124 @@ function Trial() {
       console.error("Failed to start lab:", error);
       alert(`Failed to start lab: ${error.message || "Unknown error"}`);
     } finally {
-      // 4. Reset Loading State
       setIsStarting(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full bg-gray-100">
-      <div className="pt-20 pl-52">
+    <div className="min-h-screen w-full bg-gray-50 font-sans text-gray-900">
+      <div className="pt-20 pl-0 md:pl-52 transition-all duration-300">
         <Navbar />
         <div className="flex min-h-screen">
           <Sidebar />
-          <div className="flex-1 flex justify-center p-6 md:p-10">
-            <div className="w-full max-w-5xl bg-white p-6 rounded-lg shadow-md">
+          
+          <main className="flex-1 p-6 md:p-10">
+            <div className="max-w-6xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
               
-              {/* Buttons */}
-              <div className="flex justify-end mb-2 space-x-2">
+              {/* Header: Title & Button */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-200 pb-6 mb-8 gap-4">
+                <div className="flex items-center gap-5">
+                  <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center border border-blue-100 shadow-sm">
+                    {/* ใช้ img หรือ Image component ก็ได้ */}
+                    <img src="/images/lab.png" className="w-10 h-10 object-contain" alt="Lab Icon" />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-bold text-gray-800 tracking-tight">
+                      {labTitle}
+                    </h2>
+                    <div className="flex items-center gap-3 mt-1">
+                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          {totalPoints} Points
+                       </span>
+                       {/* <span className="text-sm text-gray-500">
+                          Due: {formatDueDate(dueText)}
+                       </span> */}
+                    </div>
+                  </div>
+                </div>
+
                 <button
                   onClick={handleClick}
-                  disabled={loading || isStarting} // Disable ตอนโหลดหน้า หรือ ตอนกำลัง Start Trial
-                  className={`px-4 py-2 rounded-full flex items-center justify-center w-28 text-white transition-colors
+                  disabled={loading || isStarting}
+                  className={`px-8 py-3 rounded-xl font-semibold shadow-lg shadow-blue-500/30 transition-all transform hover:-translate-y-0.5
                     ${loading || isStarting 
-                      ? 'bg-gray-400 cursor-not-allowed' 
-                      : 'bg-blue-600 hover:bg-blue-700'}
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed shadow-none' 
+                      : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white'}
                   `}
                 >
-                  {isStarting ? "Starting..." : "Do lab"}
+                  {isStarting ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Starting...
+                    </span>
+                  ) : "Do lab"}
                 </button>
-                {/* <Link
-                  href="/"
-                  className="bg-[#133384] text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-[#1945B7] w-24"
-                >
-                  Submit
-                </Link> */}
               </div>
 
-              {/* Title Section */}
-              <div className="flex justify-between items-center border-b-2 border-gray-300 pb-1 mb-6">
-                <div className="flex items-center">
-                  <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mr-4">
-                    <img src="/images/lab.png" className="w-12 h-14" alt="Lab Icon" />
-                  </div>
-                  <h2 className="text-4xl font-semibold">
-                    {labTitle} <span className="text-xs text-gray-500">({totalPoints} points)</span>
-                  </h2>
-                </div>
-                <p className="text-gray-500 text-sm">
-                  Due: {formatDueDate(dueText)}
-                </p>
-              </div>
-
-              {/* Description & Content */}
-              <div className="ml-0 md:ml-10 mb-6">
-                <p className="mb-6 text-gray-700 whitespace-pre-wrap">
+              {/* Description Content */}
+              <div className="mb-10">
+                <h3 className="text-lg font-bold text-gray-800 mb-3">Problem Description</h3>
+                <div className="bg-gray-50/50 p-6 rounded-xl border border-gray-100 text-gray-700 leading-relaxed whitespace-pre-wrap">
                   {labProblem}
-                </p>
-                <div className="border-b-2 border-gray-300 pb-1 mb-6"></div>
+                </div>
+              </div>
 
-                {loading && <div className="text-center py-4 text-gray-500">Loading lab data...</div>}
-                {error && <div className="text-center py-4 text-red-500">{error}</div>}
+              {loading && <div className="text-center py-12 text-gray-500">Loading lab data...</div>}
+              {error && <div className="text-center py-12 text-red-500 bg-red-50 rounded-xl">{error}</div>}
 
-                {/* Test Case Table */}
-                {!loading && !error && (
-                  <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
+              {/* Test Case Table */}
+              {!loading && !error && (
+                <div className="mb-10">
+                   <h3 className="text-lg font-bold text-gray-800 mb-4">Test Cases</h3>
+                   <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                            No.
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                            Input
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                            Output
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                            Score
-                          </th>
+                          <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">No.</th>
+                          <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Input</th>
+                          <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Expected Output</th>
+                          <th scope="col" className="px-6 py-4 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Score</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {testCases.length > 0 ? (
                           testCases.map((tc, index) => (
-                            <tr
-                              key={tc.no}
-                              className={`transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
-                            >
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-600">
-                                {tc.no}
+                            <tr key={tc.no} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-500">{tc.no}</td>
+                              <td className="px-6 py-4 text-sm text-gray-700 font-mono bg-gray-50/30">
+                                <span className="px-2 py-1 rounded bg-gray-100 text-gray-800 border border-gray-200">{tc.input}</span>
                               </td>
-                              <td className="px-6 py-4 text-sm font-semibold text-gray-700">
-                                <span className="px-2 py-1 rounded text-xs text-gray-800 bg-gray-100">
-                                  {tc.input}
-                                </span>
+                              <td className="px-6 py-4 text-sm text-gray-700 font-mono">
+                                <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-100">{tc.output}</span>
                               </td>
-                              <td className="px-6 py-4 text-sm font-semibold text-gray-700">
-                                <span className="px-2 py-1 rounded text-xs text-blue-800 bg-blue-50">
-                                  {tc.output}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-center">
-                                {tc.score}
-                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-600 text-center">{tc.score}</td>
                             </tr>
                           ))
                         ) : (
                           <tr>
                             <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500">
-                              No testcases found for this lab.
+                              No testcases available.
                             </td>
                           </tr>
                         )}
                       </tbody>
                     </table>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Symbols Section */}
-                {!loading && (
-                  <div className="pt-5">
-                    <h1 className="text-2xl font-bold text-gray-700 mb-2">Symbols</h1>
-                    <SymbolSection labData={symbolLabData} />
-                  </div>
-                )}
-              </div>
+              {/* Symbols Section */}
+              {!loading && (
+                <div className="pt-2">
+                  <h3 className="text-lg font-bold text-gray-800 mb-2">Available Symbols</h3>
+                  <SymbolSection labData={symbolLabData} />
+                </div>
+              )}
             </div>
-          </div>
+          </main>
         </div>
       </div>
     </div>

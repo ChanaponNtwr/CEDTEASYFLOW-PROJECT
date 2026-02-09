@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { FaChevronDown, FaPenSquare } from "react-icons/fa";
+import React, { useState, useRef, useEffect } from "react";
+import { FaChevronDown, FaPlus } from "react-icons/fa";
 
 interface FilterActionsProps {
   onCreateClick?: () => void;
@@ -12,14 +12,27 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<
     "all" | "oldest" | "newest" | "todo"
-  >("all");
+  >("newest"); // Default to newest for better UX
+  
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const filterOptions = [
-    { value: "all", label: "All" },
-    { value: "oldest", label: "Oldest" },
-    { value: "newest", label: "Newest" },
+    { value: "all", label: "All Items" },
+    { value: "newest", label: "Newest First" },
+    { value: "oldest", label: "Oldest First" },
     { value: "todo", label: "To Do" },
   ];
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleFilterSelect = (
     filter: "all" | "oldest" | "newest" | "todo"
@@ -29,50 +42,63 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
     setIsOpen(false);
   };
 
-  return (
-    <div className="flex justify-end space-x-4 mb-6">
-      <div className="relative">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="bg-red-500 text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-red-600 transition-all duration-200 min-w-[120px] h-10"
-        >
-          {filterOptions.find((opt) => opt.value === selectedFilter)?.label ||
-            "All"}
-          <FaChevronDown
-            className={`ml-2 w-4 h-4 transition-transform duration-200 ease-in-out ${
-              isOpen ? "rotate-180" : "rotate-0"
-            }`}
-          />
-        </button>
+  const currentLabel = filterOptions.find((opt) => opt.value === selectedFilter)?.label;
 
-        {isOpen && (
-          <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg z-10 border border-gray-100">
-            {filterOptions.map((option) => (
-              <button
-                key={option.value}
-                onClick={() =>
-                  handleFilterSelect(
-                    option.value as "all" | "oldest" | "newest" | "todo"
-                  )
-                }
-                className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 transition-all duration-200 first:rounded-t-lg last:rounded-b-lg"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
+      <h2 className="text-xl font-bold text-gray-800">Assignments</h2>
+      
+      <div className="flex items-center space-x-3">
+        {/* Dropdown Filter */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="flex items-center justify-between space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm min-w-[140px]"
+          >
+            <span className="text-sm font-medium">{currentLabel}</span>
+            <FaChevronDown
+              className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${
+                isOpen ? "rotate-180" : "rotate-0"
+              }`}
+            />
+          </button>
+
+          {isOpen && (
+            <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl z-20 border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="py-1">
+                {filterOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() =>
+                      handleFilterSelect(
+                        option.value as "all" | "oldest" | "newest" | "todo"
+                      )
+                    }
+                    className={`block w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                        selectedFilter === option.value 
+                        ? "bg-blue-50 text-blue-600 font-medium" 
+                        : "text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Create/Import Button */}
+        {onCreateClick && (
+          <button
+            onClick={onCreateClick}
+            className="flex items-center justify-center space-x-2 px-5 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 active:scale-95 transition-all shadow-md shadow-blue-200"
+          >
+            <FaPlus className="w-3.5 h-3.5" />
+            <span className="text-sm font-semibold">Create</span>
+          </button>
         )}
       </div>
-
-      {onCreateClick && (
-        <button
-          onClick={onCreateClick}
-          className="bg-blue-600 text-white px-4 py-2 rounded-full flex items-center justify-center hover:bg-blue-700 transition-all duration-200 min-w-[120px] h-10"
-        >
-          <FaPenSquare className="w-5 h-5 mr-2" />
-          Import
-        </button>
-      )}
     </div>
   );
 }

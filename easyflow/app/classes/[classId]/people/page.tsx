@@ -25,7 +25,7 @@ interface UIUser {
 function Addpeople() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const router = useRouter(); // ✅ Import router
+  const router = useRouter(); 
   const { data: session, status } = useSession();
 
   const currentUserId = session?.user 
@@ -48,7 +48,7 @@ function Addpeople() {
 
   const classId = resolveClassId();
 
-  const [activeTab, setActiveTab] = useState<string>("Classwork");
+  const [activeTab, setActiveTab] = useState<string>("People"); 
   const [teachers, setTeachers] = useState<UIUser[]>([]);
   const [tas, setTAs] = useState<UIUser[]>([]);
   const [students, setStudents] = useState<UIUser[]>([]);
@@ -56,7 +56,7 @@ function Addpeople() {
   const [error, setError] = useState<string | null>(null);
   
   const [canManage, setCanManage] = useState<boolean>(false);
-  const [amIOwner, setAmIOwner] = useState<boolean>(false); // ✅ เพิ่ม state เพื่อเช็คว่าเป็น Owner ไหม
+  const [amIOwner, setAmIOwner] = useState<boolean>(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRole, setModalRole] = useState<"Teacher" | "TA" | "Students">("Teacher");
@@ -130,11 +130,12 @@ function Addpeople() {
     setModalRole(role);
     setModalOpen(true);
   };
+
   const closeModal = () => setModalOpen(false);
 
   const handleRoleChange = async (targetUserId: number, newRoleStr: "Teacher" | "TA" | "Students") => {
     if(!classId || !currentUserId) return;
-    
+
     let roleId = 2; // Default Student
     if (newRoleStr === "Teacher") roleId = 1;
     else if (newRoleStr === "TA") roleId = 3;
@@ -144,79 +145,85 @@ function Addpeople() {
     if (!window.confirm(confirmMsg)) return;
 
     try {
-        setLoading(true);
-        await apiUpdateUserRole(classId, targetUserId, roleId, currentUserId);
-        alert(`User role updated to ${newRoleStr}`);
-        fetchData(); 
+      setLoading(true);
+      await apiUpdateUserRole(classId, targetUserId, roleId, currentUserId);
+      alert(`User role updated to ${newRoleStr}`);
+      fetchData();
     } catch (error) {
-        console.error("Change role failed", error);
-        alert("Failed to update role.");
-        setLoading(false);
+      console.error("Change role failed", error);
+      alert("Failed to update role.");
+      setLoading(false);
     }
   };
 
-  // ✅ ฟังก์ชันจัดการการลบ User หรือ การออกจาก Class
   const handleRemoveUser = async (targetUserId: number) => {
     if (!classId || !currentUserId) return;
 
-    // กรณีที่ 1: ลบตัวเอง (Leave Class)
     if (targetUserId === currentUserId) {
-        if (amIOwner) {
-            alert("Owner cannot leave the class. You must delete the class or transfer ownership.");
-            return;
-        }
+       const confirmLeave = window.confirm("Are you sure you want to leave this class?");
+       if (!confirmLeave) return;
+       try {
+         setLoading(true);
+         await apiLeaveClass(classId, currentUserId);
+         alert("You have left the class.");
+         router.push("/myclass"); 
+       } catch (error) {
+         console.error("Leave class error:", error);
+         alert("Failed to leave class.");
+       } finally {
+         setLoading(false);
+       }
+       return;
+    }
 
-        if (!confirm("Are you sure you want to LEAVE this class?")) return;
+    const confirmRemove = window.confirm("Are you sure you want to remove this user?");
+    if (!confirmRemove) return;
 
-        try {
-            setLoading(true);
-            await apiLeaveClass(classId, currentUserId);
-            alert("You have left the class.");
-            router.push("/myclass"); // กลับไปหน้า Dashboard หรือหน้าอื่น
-        } catch (error) {
-            console.error("Leave class failed:", error);
-            alert("Failed to leave class.");
-            setLoading(false);
-        }
-    } 
-    // กรณีที่ 2: ลบคนอื่น (Kick User) - ต้องมีสิทธิ์ canManage
-    else {
-        if (!canManage) return; 
-
-        if (!confirm("Are you sure you want to remove this user from the class?")) return;
-
-        try {
-            setLoading(true);
-            await apiRemoveUserFromClass(classId, targetUserId, currentUserId);
-            // alert("User removed successfully.");
-            fetchData(); // โหลดข้อมูลใหม่
-        } catch (error) {
-            console.error("Remove user failed:", error);
-            alert("Failed to remove user.");
-            setLoading(false);
-        }
+    try {
+      setLoading(true);
+      await apiRemoveUserFromClass(classId, targetUserId, currentUserId);
+      alert("User removed from class.");
+      fetchData();
+    } catch (error) {
+      console.error("Remove user error:", error);
+      alert("Failed to remove user.");
+      setLoading(false);
     }
   };
 
-  if (!classId) return <div className="pt-20 text-center">Missing Class ID</div>;
-
   return (
-    <div className="pt-20 min-h-screen bg-gray-100">
-      <div className="pl-36">
-        <Navbar />
-        <div className="flex h-screen">
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      
+      <div className="flex pt-16">
+        {/* Sidebar Fixed */}
+        <div className="hidden lg:block w-64 fixed h-[calc(100vh-4rem)] top-16 left-0 overflow-y-auto bg-white border-r border-gray-200 z-10">
           <Sidebar />
-          <div className="flex-1 flex flex-col px-10 py-10 h-screen w-screen overflow-hidden ">
-            <div className="ml-34 mt-10">
-              <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
-            </div>
+        </div>
 
-            {loading && <div className="text-gray-500 mt-4">Loading users...</div>}
-            {error && <div className="text-red-500 mt-4">{error}</div>}
+        {/* Main Content */}
+        <main className="flex-1 lg:pl-64 w-full">
+          {/* ✅ Container: Full width with max constraint for ultra-wide screens */}
+          <div className="max-w-[1920px] mx-auto w-full p-4 sm:p-20 space-y-8">
+            
+            {/* Tabs Section */}
+            <Tabs 
+              activeTab={activeTab} 
+              onTabChange={setActiveTab} 
+            />
 
-            {!loading && !error && (
-              <>
-                {/* ✅ ส่ง Props เพิ่ม: onRemove, canManage, currentUserId */}
+            {/* Content Area */}
+            {loading && teachers.length === 0 ? (
+               <div className="flex justify-center items-center py-20 text-gray-400">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2 mr-3"></div>
+                  Loading people...
+               </div>
+            ) : error ? (
+              <div className="p-4 bg-red-50 text-red-600 border border-red-200 rounded-lg text-center">
+                {error}
+              </div>
+            ) : (
+              <div className="space-y-10 max-w-6xl mx-auto">
                 <PeopleList 
                     title="Teacher" 
                     people={teachers} 
@@ -244,22 +251,22 @@ function Addpeople() {
                     canManage={canManage}
                     currentUserId={currentUserId}
                 />
-              </>
+              </div>
             )}
-
+            
             {/* Modal */}
-            {canManage && (
+            {canManage && classId && (
                 <AddPersonModal
-                visible={modalOpen}
-                onClose={closeModal}
-                role={modalRole}
-                classId={classId}     
-                onUserAdded={fetchData}
-                currentUserId={currentUserId}
+                  visible={modalOpen}
+                  onClose={closeModal}
+                  role={modalRole}
+                  classId={classId}     
+                  onUserAdded={fetchData}
+                  currentUserId={currentUserId}
                 />
             )}
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );

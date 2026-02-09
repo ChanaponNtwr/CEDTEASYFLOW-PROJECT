@@ -1,6 +1,6 @@
 "use client";
-import React from "react";
-import { FaTrash } from "react-icons/fa";
+import React, { useMemo } from "react";
+import { FaTrash, FaUser, FaStar } from "react-icons/fa";
 
 type ClassCardProps = {
   code?: string | number;
@@ -9,9 +9,30 @@ type ClassCardProps = {
   teacher?: string;
   score?: string | number;
   due?: string;
-
-  // ✅ เพิ่ม optional สำหรับลบ (ไม่กระทบที่อื่น)
   onDeleteClick?: () => void;
+};
+
+// ชุดสี Gradient สไตล์ Modern
+const gradients = [
+  "from-blue-500 to-indigo-600",
+  "from-emerald-400 to-teal-600",
+  "from-violet-500 to-purple-600",
+  "from-orange-400 to-pink-600",
+  "from-cyan-400 to-blue-500",
+  "from-rose-400 to-red-500",
+  "from-amber-400 to-orange-500",
+  "from-fuchsia-500 to-pink-600",
+];
+
+// ฟังก์ชันเลือกสีจาก ID หรือ Code (เพื่อให้สีเหมือนเดิมทุกครั้งที่โหลด)
+const getGradient = (id: string | number) => {
+  const str = String(id);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % gradients.length;
+  return gradients[index];
 };
 
 function ClassCard({
@@ -20,86 +41,83 @@ function ClassCard({
   problem = "",
   teacher = "",
   score,
-  due = "",
   onDeleteClick,
 }: ClassCardProps) {
   const headerTitle = title || (code ? `Lab ${code}` : "No Title");
+  
+  // คำนวณสีพื้นหลังเพียงครั้งเดียว
+  const bgGradient = useMemo(() => getGradient(code || Math.random()), [code]);
 
   return (
     <div
       className="
-        relative
-        bg-white rounded-lg overflow-hidden
-        shadow-md hover:shadow-lg
-        hover:scale-[1.02]
-        transition-all duration-200
+        group relative
+        bg-white rounded-2xl overflow-hidden
+        shadow-sm hover:shadow-xl hover:-translate-y-1
+        border border-gray-100
+        transition-all duration-300
         cursor-pointer
+        h-full flex flex-col
       "
       role="button"
       tabIndex={0}
     >
-      {/* ✅ ปุ่มลบ (แสดงเฉพาะถ้ามี onDeleteClick) */}
+      {/* ปุ่มลบ (ซ่อนปกติ แสดงเมื่อ Hover) */}
       {onDeleteClick && (
         <button
           onClick={(e) => {
             e.preventDefault();
-            e.stopPropagation(); // กันไม่ให้ Link ทำงาน
+            e.stopPropagation();
             onDeleteClick();
           }}
           title="Delete Lab"
-          className="absolute top-2 right-2 z-10 bg-white text-red-500 hover:text-red-700 p-2 rounded-full shadow"
-          aria-label="delete-lab"
+          className="
+            absolute top-3 right-3 z-10 
+            bg-white/90 backdrop-blur-sm text-gray-400 hover:text-red-500 
+            w-8 h-8 flex items-center justify-center rounded-full 
+            shadow-sm opacity-0 group-hover:opacity-100 
+            transition-all duration-200 transform scale-90 group-hover:scale-100
+          "
         >
-          <FaTrash size={14} />
+          <FaTrash size={12} />
         </button>
       )}
 
-      {/* Header */}
-      <div className="bg-orange-500 text-white p-4 flex items-center gap-4">
-        <div className="w-12 h-12 bg-white/80 rounded-full flex items-center justify-center">
-          <img src="/images/lab.png" alt="lab icon" className="w-7 h-7" />
-        </div>
-        <span className="text-lg font-semibold truncate">
-          {headerTitle}
-        </span>
+      {/* Header Section with Random Gradient */}
+      <div className={`h-24 bg-gradient-to-r ${bgGradient} p-5 relative`}>
+         {/* Icon Container */}
+         <div className="absolute -bottom-6 left-5 w-12 h-12 bg-white rounded-xl shadow-md flex items-center justify-center p-2 border border-gray-50">
+            <img src="/images/lab.png" alt="lab icon" className="w-full h-full object-contain" />
+         </div>
       </div>
 
-      {/* Divider */}
-      <div className="h-px bg-gray-200" />
-
-      {/* Body */}
-      <div className="p-5 h-36 flex flex-col justify-between">
-        {/* Problem */}
-        <p className="text-gray-800 font-semibold text-sm line-clamp-2">
-          {problem || "No Problem"}
+      {/* Body Section */}
+      <div className="pt-8 pb-5 px-5 flex-1 flex flex-col">
+        {/* Title */}
+        <h3 className="text-lg font-bold text-gray-800 truncate mb-1" title={headerTitle}>
+          {headerTitle}
+        </h3>
+        
+        {/* Problem Description (Short) */}
+        <p className="text-xs text-gray-500 line-clamp-2 mb-4 h-8 leading-relaxed">
+          {problem || "No description provided."}
         </p>
 
-        {/* Meta info */}
-        <div className="mt-3 space-y-1 text-sm text-gray-600">
-          <p>
-            ผู้สร้าง:{" "}
-            <span className="font-medium text-gray-700">
-              {teacher || "ไม่ระบุ"}
-            </span>
-          </p>
-
-          {score !== undefined && (
-            <p>
-              คะแนน:{" "}
-              <span className="font-medium text-gray-700">
-                {score}
+        {/* Footer Info */}
+        <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500">
+           <div className="flex items-center gap-1.5 overflow-hidden">
+              <FaUser className="text-gray-300 flex-shrink-0" />
+              <span className="truncate max-w-[100px] font-medium text-gray-600">
+                {teacher || "Unknown"}
               </span>
-            </p>
-          )}
+           </div>
 
-          {/* (ซ่อนไว้ตามโค้ดเดิม)
-          <p>
-            กำหนดส่ง:{" "}
-            <span className="font-medium text-gray-700">
-              {due || "ไม่ระบุ"}
-            </span>
-          </p>
-          */}
+           {score !== undefined && (
+             <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-md border border-gray-100">
+                
+                <span className="font-bold text-gray-700">{score} pts</span>
+             </div>
+           )}
         </div>
       </div>
     </div>

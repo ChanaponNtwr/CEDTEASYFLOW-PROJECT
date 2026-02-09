@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 
-// ตัด callSymVal และ doSymVal ออกตาม requirement
 interface LabData {
   inSymVal: number;
   outSymVal: number;
@@ -28,7 +27,6 @@ interface SymbolSectionProps {
 }
 
 const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
-  // ตัด call และ do ออกจาก State
   const [symbols, setSymbols] = useState({
     input: { label: "Input", bgColor: "bg-blue-200", textColor: "text-blue-800", count: 0, isUnlimited: false, imageSrc: "/images/input.png" },
     output: { label: "Output", bgColor: "bg-green-200", textColor: "text-green-800", count: 0, isUnlimited: false, imageSrc: "/images/output.png" },
@@ -39,10 +37,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
     for: { label: "For", bgColor: "bg-teal-200", textColor: "text-teal-800", count: 0, isUnlimited: false, imageSrc: "/images/for.png" },
   });
 
-  // Sync State with API Data
   useEffect(() => {
     if (labData) {
-      // Logic: ถ้าค่าเป็น -1 ให้ถือว่าเป็น Unlimited
       const checkUnlimited = (val: number | undefined) => (val === -1);
       const getCount = (val: number | undefined) => (val === -1 ? 0 : val ?? 0);
 
@@ -60,50 +56,76 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
   }, [labData]);
 
   const SymbolItemComponent: React.FC<{ item: SymbolItem }> = ({ item }) => (
-    <div className="flex items-center justify-between w-92 p-2 border-b border-gray-200 ">
-      {/* ซ้าย: รูป + label (คง UI เดิม) */}
-      <div className="flex flex-col items-start">
-        <Image
-          src={item.imageSrc}
-          alt={item.label}
-          width={150}
-          height={90}
-          className={`${item.bgColor} ${item.textColor} rounded`}
-        />
+    <div className="group flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:shadow-lg hover:border-gray-300 transition-all duration-200">
+      <div className="flex items-center gap-5">
+        {/* ปรับขนาด Container รูปตรงนี้ (w-24 h-14) ใหญ่ขึ้นชัดเจน */}
+        <div className="w-24 h-14 flex items-center justify-center bg-gray-50 rounded-lg p-1 border border-gray-100 overflow-hidden relative">
+             <Image
+              src={item.imageSrc}
+              alt={item.label}
+              fill // ใช้ fill เพื่อให้รูปขยายเต็มพื้นที่ Container
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              className="object-contain p-1 group-hover:scale-110 transition-transform duration-300"
+            />
+        </div>
+        <span className="text-base font-bold text-gray-700">{item.label}</span>
       </div>
 
-      {/* ขวา: แสดงจำนวน หรือ Unlimited เท่านั้น (เอาปุ่มและ checkbox ออก แต่คง class จัดตำแหน่งเดิมไว้) */}
-      <div className="flex items-center gap-3 ml-4">
-        <span className={`text-sm font-medium ${item.isUnlimited ? 'text-gray-500' : 'text-gray-800'}`}>
-           {item.isUnlimited ? "Unlimited" : item.count}
-        </span>
+      <div className="">
+        {item.isUnlimited ? (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200 uppercase tracking-wide">
+                Unlimited
+            </span>
+        ) : (
+            <span className="inline-flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold bg-blue-50 text-blue-600 border border-blue-100 shadow-sm">
+                {item.count}
+            </span>
+        )}
       </div>
     </div>
   );
 
   return (
-    <div className="w-full bg-white p-4 rounded-lg shadow-md">
-      {/* Input/Output + Variables */}
-      <div className="flex gap-16 overflow-x-auto mb-4">
-        <div className="flex flex-col gap-2">
-          <h3 className="text-lg font-medium text-gray-700 mb-2">Input / Output</h3>
-          <SymbolItemComponent item={symbols.input} />
-          <SymbolItemComponent item={symbols.output} />
+    <div className="w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8"> {/* เพิ่ม Gap เป็น 8 */}
+        
+        {/* Column 1: Input / Output */}
+        <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100">
+          <div className="flex items-center gap-3 mb-5">
+             <div className="w-1.5 h-5 bg-blue-500 rounded-full shadow-sm shadow-blue-200"></div>
+             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Input / Output</h3>
+          </div>
+          <div className="space-y-4">
+            <SymbolItemComponent item={symbols.input} />
+            <SymbolItemComponent item={symbols.output} />
+          </div>
         </div>
 
-        <div className="flex flex-col gap-2 ml-16">
-          <h3 className="text-lg font-medium text-gray-700 mb-2">Variables</h3>
-          <SymbolItemComponent item={symbols.declare} />
-          <SymbolItemComponent item={symbols.assign} />
+        {/* Column 2: Variables */}
+        <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100">
+           <div className="flex items-center gap-3 mb-5">
+             <div className="w-1.5 h-5 bg-yellow-500 rounded-full shadow-sm shadow-yellow-200"></div>
+             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Variables</h3>
+          </div>
+          <div className="space-y-4">
+            <SymbolItemComponent item={symbols.declare} />
+            <SymbolItemComponent item={symbols.assign} />
+          </div>
         </div>
-      </div>
 
-      {/* Control (ตัด call, do ออก) */}
-      <div className="flex flex-col gap-2">
-        <h3 className="text-lg font-medium text-gray-700 mb-2">Control</h3>
-        <SymbolItemComponent item={symbols.if} />
-        <SymbolItemComponent item={symbols.while} />
-        <SymbolItemComponent item={symbols.for} />
+        {/* Column 3: Control */}
+        <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100">
+           <div className="flex items-center gap-3 mb-5">
+             <div className="w-1.5 h-5 bg-pink-500 rounded-full shadow-sm shadow-pink-200"></div>
+             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Control Flow</h3>
+          </div>
+          <div className="space-y-4">
+            <SymbolItemComponent item={symbols.if} />
+            <SymbolItemComponent item={symbols.while} />
+            <SymbolItemComponent item={symbols.for} />
+          </div>
+        </div>
+
       </div>
     </div>
   );

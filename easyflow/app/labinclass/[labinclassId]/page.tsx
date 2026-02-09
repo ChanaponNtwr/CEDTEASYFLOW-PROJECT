@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
-import { FaFilter } from "react-icons/fa";
+import { FaFilter, FaCheck, FaTimes, FaSearch, FaChevronDown } from "react-icons/fa"; 
+import { IoCheckmarkCircle, IoCloseCircle, IoRemoveCircleOutline } from "react-icons/io5";
 import Link from "next/link";
 import SymbolSection from "./_components/SymbolSection";
 import { useSession } from "next-auth/react";
@@ -110,57 +111,43 @@ function LabInClass() {
           whileSymVal: remoteLab?.whileSymVal ?? 0,
       });
 
-      // --- Fetch Submissions (Details) ---
+      // --- Fetch Submissions ---
       const subResp = await apiGetSubmissionDetailsByLab(String(labId));
       const rawData = subResp?.data ?? subResp ?? [];
       const rawSubs = Array.isArray(rawData) ? rawData : [];
 
       const mappedStudents: StudentSubmission[] = rawSubs.map((item: any) => {
-          // 1. หาชื่อนักเรียน (เพิ่ม item.userName)
           const userObj = item.user || item.User || item.student || item.Student || item;
           const join = (f: any, l: any) => `${f || ""} ${l || ""}`.trim();
 
           let studentName = "Unknown Student";
-          if (item.userName) studentName = item.userName; // ✅ เพิ่มบรรทัดนี้ตาม JSON
+          if (item.userName) studentName = item.userName;
           else if (userObj.firstname || userObj.lastname) studentName = join(userObj.firstname, userObj.lastname);
           else if (userObj.firstName || userObj.lastName) studentName = join(userObj.firstName, userObj.lastName);
           else if (userObj.name) studentName = userObj.name;
           else if (userObj.username) studentName = userObj.username;
           else if (userObj.email) studentName = userObj.email;
 
-          // 2. ดึงข้อมูลผลลัพธ์ (API ใช้ key 'testcases' แทน 'results')
-          // ให้ใช้ item.testcases ถ้ามี ถ้าไม่มีค่อยหา results
           const rawResults = item.testcases || item.results || item.submission?.results || [];
 
-          // 3. ✅✅ หา STATUS 
-          // JSON นี้ไม่มี status อยู่ข้างนอกสุด ต้องไปขุดมาจากใน testcases[0]
           let finalStatus = "PENDING"; 
-
-          // ลองหาจากข้างนอกก่อน
           if (item.status) finalStatus = item.status;
           else if (item.submission?.status) finalStatus = item.submission.status;
           else if (Array.isArray(item.submissions) && item.submissions.length > 0) finalStatus = item.submissions[0].status;
 
-          // ถ้าข้างนอกหาไม่เจอ (ยังเป็น PENDING) ให้ลองดูใน testcases ตัวแรก
           if ((!finalStatus || finalStatus === "PENDING") && rawResults.length > 0) {
               const firstTc = rawResults[0];
               if (firstTc && firstTc.status) {
-                  finalStatus = firstTc.status; // ✅ ดึง "CONFIRMED" จากตรงนี้
+                  finalStatus = firstTc.status;
               }
           }
 
-          // 4. คะแนนรวม
           const score = item.totalScore ?? item.submission?.score ?? 0;
           const submissionId = item.flowchartId ?? item.submission?.id ?? item.submissionId ?? undefined;
 
-          // 5. Map Results
           const results: TestResult[] = tcs.map((tc) => {
-              // หาผลลัพธ์ที่ตรงกับ testcaseId
               const match = rawResults.find((r: any) => r.testcaseId === tc.testcaseId);
-              
               const rStatus = match?.status ?? "PENDING";
-              
-              // JSON ใช้ 'scoreAwarded'
               let rScore = 0;
               if (match?.scoreAwarded !== undefined) rScore = Number(match.scoreAwarded);
               else if (match?.score !== undefined) rScore = Number(match.score);
@@ -173,7 +160,6 @@ function LabInClass() {
               };
           });
 
-          // หา ID นักเรียน
           const studentId = item.userId ?? userObj.id ?? userObj.userId ?? userObj.studentId;
 
           return {
@@ -273,235 +259,298 @@ function LabInClass() {
       : students.filter((student) => student.status.toLowerCase() === filterStatus.toLowerCase());
 
   const isAllChecked = filteredStudents.length > 0 && filteredStudents.every((s) => s.selected);
+  const selectedCount = students.filter(s => s.selected).length;
 
   const filterOptions = ["All", "Confirmed", "Pass", "Submitted", "Pending", "Fail"];
 
   const renderStatusBadge = (status: string) => {
       const s = String(status || "").toUpperCase();
-      let badgeClass = "bg-gray-100 text-gray-600 border-gray-200"; 
+      let badgeStyle = "bg-gray-100 text-gray-600 border-gray-200"; 
+      let dotColor = "bg-gray-400";
 
       if (["PASS", "PASSED", "CONFIRMED", "GRADED", "SUCCESS"].includes(s)) {
-          badgeClass = "bg-green-100 text-green-700 border-green-200";
+          badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200";
+          dotColor = "bg-emerald-500";
       }
       else if (["FAIL", "FAILED", "REJECTED", "WRONG"].includes(s)) {
-          badgeClass = "bg-red-100 text-red-700 border-red-200";
+          badgeStyle = "bg-red-50 text-red-700 border-red-200";
+          dotColor = "bg-red-500";
       }
       else if (["SUBMITTED", "SUBMIT"].includes(s)) {
-          badgeClass = "bg-blue-100 text-blue-700 border-blue-200";
+          badgeStyle = "bg-blue-50 text-blue-700 border-blue-200";
+          dotColor = "bg-blue-500";
       }
       else if (["PENDING", "WAITING", "UNKNOWN"].includes(s) || s === "") {
-          badgeClass = "bg-yellow-100 text-yellow-700 border-yellow-200";
+          badgeStyle = "bg-amber-50 text-amber-700 border-amber-200";
+          dotColor = "bg-amber-500";
       }
 
       return (
-          <span className={`px-3 py-1 rounded-full text-xs font-bold border capitalize ${badgeClass}`}>
-              {status || "Pending"}
+          <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border inline-flex items-center gap-2 capitalize ${badgeStyle}`}>
+              <span className={`w-2 h-2 rounded-full ${s === "PENDING" ? "animate-pulse" : ""} ${dotColor}`}></span>
+              {status?.toLowerCase() || "pending"}
           </span>
       );
   };
 
-  if (loading && !labData) return <div className="p-20 text-center text-gray-500">Loading data...</div>;
-  if (!labData) return <div className="p-20 text-center text-red-500">Lab not found.</div>;
+  if (loading && !labData) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-gray-400 gap-3">
+        <div className=""></div>
+        <p className="">Loading data...</p>
+    </div>
+  );
+  
+  if (!labData) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 text-red-500 font-medium">
+        Lab not found.
+    </div>
+  );
 
   return (
-    <div className="min-h-screen w-full bg-gray-100">
-      <div className="pt-20 pl-52">
+    <div className="min-h-screen w-full bg-[#F9FAFB]">
+      <div className="pt-20 pl-0 md:pl-64 transition-all duration-300">
         <Navbar />
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <div className="flex-1 flex justify-center p-6 md:p-10">
-            <div className="w-full max-w-6xl bg-white p-6 rounded-lg shadow-md">
-              
-              <div className="flex justify-between items-center border-b-2 border-gray-300 pb-1 mb-6 mt-4">
-                <div className="flex items-center">
-                  <div className="w-20 h-20 bg-[#EEEEEE] rounded-full flex items-center justify-center mr-4">
-                    <img src="/images/lab.png" className="w-12 h-14 object-contain" alt="Lab Icon" />
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-800">{labData.labname}</h2>
-                    <span className="text-sm font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md mt-1 inline-block">
-                        Total Score: {labData.totalScore} points
-                    </span>
-                  </div>
-                </div>
+        <Sidebar />
+        
+        <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+            
+          {/* Header Section */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-center gap-5">
+              <div className="w-14 h-14 bg-gradient-to-br from-red-50 to-white rounded-xl flex items-center justify-center flex-shrink-0 border border-red-100 shadow-sm">
+                <img src="/images/lab.png" className="w-7 h-auto object-contain" alt="Lab Icon" />
               </div>
-
-              <div className="ml-0 md:ml-10">
-                <p className="mb-6 text-gray-700 whitespace-pre-wrap leading-relaxed">
-                  {labData.detail || "No details provided."}
-                </p>
-
-                {labData.testCases.length > 0 && (
-                  <div className="mb-8">
-                    <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-                       <span>📋 Test Cases</span>
-                       <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{labData.testCases.length} items</span>
-                    </h3>
-                    <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">No.</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Input</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Output</th>
-                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Score</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {labData.testCases.map((tc, index) => (
-                            <tr key={tc.testcaseId || index} className={`hover:bg-gray-50 transition-colors ${index % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}>
-                              <td className="px-6 py-3 text-sm text-gray-600 font-medium">{tc.no}</td>
-                              <td className="px-6 py-3 text-sm text-gray-700">
-                                <code className="bg-gray-100 px-2 py-1 rounded text-xs font-mono border border-gray-200">{tc.input}</code>
-                              </td>
-                              <td className="px-6 py-3 text-sm text-gray-700">
-                                <code className="bg-blue-50 px-2 py-1 rounded text-xs font-mono text-blue-800 border border-blue-100">{tc.output}</code>
-                              </td>
-                              <td className="px-6 py-3 text-sm text-gray-600 text-center font-semibold">{tc.score}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                <div className="border-b-2 border-gray-300 pb-1 mb-6"></div>
-
-                <div className="flex justify-between items-center mb-6 pt-5">
-                  <div className="relative flex items-center">
-                    <FaFilter className="absolute left-3 text-white text-sm pointer-events-none" />
-                    <select
-                      className="pl-9 pr-8 py-2 border rounded-full bg-[#B92627] text-white border-red-700 appearance-none cursor-pointer hover:bg-[#a02122] transition-colors focus:ring-2 focus:ring-red-300 focus:outline-none"
-                      value={filterStatus}
-                      onChange={(e) => setFilterStatus(e.target.value)}
-                    >
-                      {filterOptions.map((opt) => (
-                        <option key={opt} className="bg-white text-black" value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                       <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <button
-                        className={`px-5 py-2 rounded-full font-medium transition-all shadow-sm
-                        ${students.some((s) => s.selected)
-                            ? "bg-red-600 text-white hover:bg-red-700 active:scale-95 border border-red-700"
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
-                        }`}
-                        onClick={handleRejectAll}
-                        disabled={!students.some((s) => s.selected)}
-                    >
-                        Reject Selected
-                    </button>
-
-                    <button
-                        className={`px-5 py-2 rounded-full font-medium transition-all shadow-sm
-                        ${students.some((s) => s.selected)
-                            ? "bg-[#2E8B57] text-white hover:bg-[#267347] active:scale-95 border border-green-600"
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
-                        }`}
-                        onClick={handleSubmitAll}
-                        disabled={!students.some((s) => s.selected)}
-                    >
-                        Submit Selected
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex-1 mb-8 overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-4 text-left w-10">
-                            <input
-                                type="checkbox"
-                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                checked={isAllChecked}
-                                onChange={(e) => handleSelectAll(e.target.checked)}
-                            />
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Name</th>
-                        {labData.testCases.map((tc, idx) => (
-                             <th key={idx} className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider min-w-[80px]">
-                                TC {tc.no}
-                             </th>
-                        ))}
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Score</th>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredStudents.length === 0 ? (
-                          <tr><td colSpan={10} className="px-6 py-12 text-center text-gray-500">No students found.</td></tr>
-                      ) : (
-                          filteredStudents.map((student, index) => {
-                            const originalIndex = students.findIndex((s) => s.studentId === student.studentId);
-                            return (
-                              <tr key={student.studentId} className={`hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <input
-                                    type="checkbox"
-                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                    checked={student.selected}
-                                    onChange={() => handleSelectStudent(originalIndex)}
-                                  />
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    {renderStatusBadge(student.status)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                    {student.name}
-                                </td>
-                                {labData.testCases.map((_, idx) => {
-                                    const res = student.results[idx];
-                                    const isPass = res?.status === "PASS" || res?.status === "CONFIRMED";
-                                    const scoreText = `${res?.score ?? 0}/${res?.maxScore ?? 0}`;
-                                    let textColor = "text-gray-400";
-                                    if (isPass) textColor = "text-green-600 font-bold";
-                                    else if (res?.status === "FAIL") textColor = "text-red-600 font-bold";
-
-                                    return (
-                                        <td key={idx} className="px-4 py-4 whitespace-nowrap text-center text-xs">
-                                            <span className={textColor}>{scoreText}</span>
-                                        </td>
-                                    );
-                                })}
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700">
-                                    {student.score} / {student.maxScore}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                  <button 
-                                    onClick={() => handleViewStudent(student.submissionId)}
-                                    className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                                        student.submissionId 
-                                        ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm" 
-                                        : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    }`}
-                                    disabled={!student.submissionId}
-                                  >
-                                    View
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="pt-5">
-                  <h1 className="text-2xl font-bold text-gray-700 mb-4">Symbol Configuration</h1>
-                  <SymbolSection labData={labData} />
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 leading-tight">{labData.labname}</h1>
+                <div className="flex items-center gap-3 mt-1.5 text-sm">
+                    {/* <span className="bg-gray-100 px-2 py-0.5 rounded text-xs font-medium text-gray-600">ID: {labData.labId}</span> */}
+                    <span className="text-gray-300">|</span>
+                    <span className="font-medium text-gray-700">{labData.totalScore} Points</span>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Details Section (Full Width) */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center gap-2 mb-4 border-b border-gray-50 pb-3">
+                <div className="w-1 h-5 bg-red-500 rounded-full"></div>
+                <h3 className="text-base font-bold text-gray-800">Problem Description</h3>
+            </div>
+            <p className="text-gray-600 whitespace-pre-wrap leading-relaxed text-sm">
+                {labData.detail || "No details provided."}
+            </p>
+
+            {/* Test Cases Table (Inside Details) */}
+            {labData.testCases.length > 0 && (
+                <div className="mt-6 border rounded-xl overflow-hidden border-gray-100">
+                    <div className="px-4 py-3 bg-gray-50/50 text-xs font-semibold text-gray-500 border-b border-gray-100 uppercase tracking-wider">
+                        Test Cases Reference
+                    </div>
+                    <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-100">
+                        <thead className="bg-white">
+                            <tr>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">No.</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Input</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Output</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">Score</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                            {labData.testCases.map((tc, index) => (
+                                <tr key={index}>
+                                    <td className="px-4 py-2 text-xs text-gray-500">{tc.no}</td>
+                                    <td className="px-4 py-2 text-xs font-mono text-gray-700 bg-gray-50/30">{tc.input}</td>
+                                    <td className="px-4 py-2 text-xs font-mono text-blue-600">{tc.output}</td>
+                                    <td className="px-4 py-2 text-xs text-center font-bold text-gray-900">{tc.score}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            )}
+          </div>
+
+          {/* Student Submissions Table (Full Width) */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+            
+            {/* Toolbar */}
+            <div className="p-5 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <div className="relative group">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-red-500 transition-colors">
+                            <FaFilter />
+                        </div>
+                        <select
+                          className="pl-10 pr-10 py-2.5 text-sm border-gray-200 bg-gray-50 rounded-xl text-gray-700 focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all cursor-pointer hover:bg-gray-100 hover:border-gray-300 border w-full sm:w-48 appearance-none"
+                          value={filterStatus}
+                          onChange={(e) => setFilterStatus(e.target.value)}
+                        >
+                          {filterOptions.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-gray-400">
+                           <FaChevronDown size={10} />
+                        </div>
+                    </div>
+                    <div className="h-8 w-[1px] bg-gray-200 hidden sm:block"></div>
+                    <div className="text-sm text-gray-500 font-medium hidden sm:block">
+                        Total: <span className="text-gray-900">{filteredStudents.length}</span>
+                    </div>
+                </div>
+
+                <div className="flex gap-3 w-full sm:w-auto">
+                    <button
+                        className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200
+                        ${selectedCount > 0
+                            ? "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 shadow-sm"
+                            : "bg-gray-50 text-gray-300 border border-transparent cursor-not-allowed"
+                        }`}
+                        onClick={handleRejectAll}
+                        disabled={selectedCount === 0}
+                    >
+                        <FaTimes size={14} /> Reject ({selectedCount})
+                    </button>
+
+                    <button
+                        className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm
+                        ${selectedCount > 0
+                            ? "bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-md hover:-translate-y-0.5"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        }`}
+                        onClick={handleSubmitAll}
+                        disabled={selectedCount === 0}
+                    >
+                        <FaCheck size={14} /> Pass ({selectedCount})
+                    </button>
+                </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-100">
+                <thead className="bg-gray-50/50">
+                  <tr>
+                    <th className="px-6 py-4 text-left w-14">
+                        <div className="flex items-center">
+                            <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer transition-colors"
+                                checked={isAllChecked}
+                                onChange={(e) => handleSelectAll(e.target.checked)}
+                            />
+                        </div>
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-40">Status</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider min-w-[200px]">Student Info</th>
+                    {labData.testCases.map((tc, idx) => (
+                         <th key={idx} className="px-2 py-4 text-center text-xs font-bold text-gray-400 uppercase tracking-wider w-16">
+                            <span className="block" title={`Input: ${tc.input}`}>TC{tc.no}</span>
+                         </th>
+                    ))}
+                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider w-28">Score</th>
+                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-28">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {filteredStudents.length === 0 ? (
+                      <tr><td colSpan={10} className="px-6 py-16 text-center text-gray-400 italic bg-gray-50/30">No students found matching your filter.</td></tr>
+                  ) : (
+                      filteredStudents.map((student, index) => {
+                        const originalIndex = students.findIndex((s) => s.studentId === student.studentId);
+                        return (
+                          <tr key={student.studentId} className={`group hover:bg-gray-50 transition-colors duration-150 ${student.selected ? 'bg-red-50/40' : ''}`}>
+                            <td className="px-6 py-4 whitespace-nowrap align-middle">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                                checked={student.selected}
+                                onChange={() => handleSelectStudent(originalIndex)}
+                              />
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap align-middle">
+                                {renderStatusBadge(student.status)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap align-middle">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-semibold text-gray-900">{student.name}</span>
+                                    {/* <span className="text-xs text-gray-400 font-mono mt-0.5">{student.studentId}</span> */}
+                                </div>
+                            </td>
+                            
+                            {/* Dynamic Test Case Columns */}
+                            {labData.testCases.map((_, idx) => {
+                                const res = student.results[idx];
+                                const isPass = res?.status === "PASS" || res?.status === "CONFIRMED";
+                                const isFail = res?.status === "FAIL" || res?.status === "REJECTED";
+                                
+                                return (
+                                    <td key={idx} className="px-2 py-4 whitespace-nowrap text-center align-middle">
+                                        <div className="flex justify-center">
+                                            {isPass ? (
+                                                <IoCheckmarkCircle className="text-emerald-500 text-xl" />
+                                            ) : isFail ? (
+                                                <IoCloseCircle className="text-red-400 text-xl" />
+                                            ) : (
+                                                <div className="w-5 h-5 rounded-full border-2 border-gray-200 flex items-center justify-center">
+                                                    <span className="w-1.5 h-1.5 bg-gray-300 rounded-full"></span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </td>
+                                );
+                            })}
+                            
+                            <td className="px-6 py-4 whitespace-nowrap text-right align-middle">
+                                <div className="inline-flex items-baseline gap-1">
+                                    <span className={`font-bold text-base ${student.score === student.maxScore ? 'text-emerald-600' : 'text-gray-900'}`}>
+                                        {student.score}
+                                    </span>
+                                    <span className="text-gray-400 text-xs font-medium">/ {student.maxScore}</span>
+                                </div>
+                            </td>
+                            
+                            <td className="px-6 py-4 whitespace-nowrap text-center align-middle">
+                              <button 
+                                onClick={() => handleViewStudent(student.submissionId)}
+                                disabled={!student.submissionId}
+                                className={`text-xs px-4 py-2 rounded-lg font-medium transition-all border ${
+                                    student.submissionId 
+                                    ? "border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 bg-white shadow-sm" 
+                                    : "border-transparent text-gray-300 bg-gray-50 cursor-not-allowed"
+                                }`}
+                              >
+                                Review
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            <div className="bg-gray-50 border-t border-gray-100 px-6 py-4 text-xs text-gray-500 flex justify-between items-center">
+                <span>Showing <span className="font-semibold text-gray-700">{filteredStudents.length}</span> students</span>
+                <span className={`${selectedCount > 0 ? 'text-red-600 font-medium' : ''}`}>
+                    {selectedCount > 0 ? `${selectedCount} selected` : 'No items selected'}
+                </span>
+            </div>
+          </div>
+
+{/* Configuration Section (Moved to Bottom) */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-10"> {/* เพิ่ม mb-10 ให้มีระยะห่างจากขอบล่างจอ */}
+               <div className="flex items-center gap-2 mb-6 border-b border-gray-50 pb-3">
+                    <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
+                    <h2 className="text-lg font-bold text-gray-800">Configuration</h2>
+               </div>
+               <SymbolSection labData={labData} />
+          </div>
+
         </div>
       </div>
     </div>

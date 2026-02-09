@@ -1,15 +1,13 @@
-// AssignmentItem.tsx
-"use client"; // Mark as client component for Next.js App Router
+"use client"; 
 
-import { FaFileAlt, FaEdit, FaTrash } from "react-icons/fa";
+import { FaCode, FaEdit, FaTrash, FaRegCalendarAlt } from "react-icons/fa";
 
-// Define prop types using TypeScript
 interface AssignmentItemProps {
   title?: string;
   due?: string;
-  description?: string; // ✅ เพิ่ม prop นี้
-  onEditClick?: () => void; // Optional handler for Edit button
-  onDeleteClick?: () => void; // Optional handler for Delete button
+  description?: string;
+  onEditClick?: () => void;
+  onDeleteClick?: () => void;
 }
 
 function AssignmentItem({
@@ -20,35 +18,43 @@ function AssignmentItem({
   onDeleteClick,
 }: AssignmentItemProps) {
   return (
-    <div className="relative h-32 bg-white p-4 rounded-lg shadow-md hover:bg-gray-100 transition-all cursor-pointer flex items-center justify-between">
+    <div className="group relative bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-100 transition-all duration-200 cursor-pointer flex items-start sm:items-center justify-between gap-4">
+      
+      {/* Decorative Left Strip (Optional visual indicator) */}
+      <div className="absolute left-0 top-4 bottom-4 w-1 bg-blue-500 rounded-r-full opacity-0 group-hover:opacity-100 transition-opacity" />
+
       {/* Left Content */}
-      <div className="flex items-center flex-1 overflow-hidden">
-        <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mr-4 shrink-0">
-          <FaFileAlt className="w-8 h-8 text-gray-500" />
+      <div className="flex items-start sm:items-center flex-1 overflow-hidden gap-4">
+        {/* Icon Container */}
+        <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0 shadow-inner">
+          <FaCode className="w-6 h-6" />
         </div>
 
-        <div className="overflow-hidden">
+        <div className="flex-1 min-w-0">
           {/* Title */}
-          <p className="text-gray-800 font-semibold text-lg truncate">
+          <h3 className="text-gray-800 font-bold text-lg truncate group-hover:text-blue-700 transition-colors">
             {title}
-          </p>
+          </h3>
 
-          {/* Description (Problem Solving) */}
+          {/* Description */}
           {description && (
-            <p className="text-gray-600 text-sm truncate">
+            <p className="text-gray-500 text-sm truncate mt-0.5 font-medium">
               {description}
             </p>
           )}
 
-          {/* Due Date */}
-          <p className="text-gray-500 text-sm">
-            {due}
-          </p>
+          {/* Meta Info (Mobile View mostly, but good for structure) */}
+          <div className="flex items-center mt-1.5 text-xs text-gray-400 font-medium">
+            <FaRegCalendarAlt className="mr-1.5" />
+            <span className={due.includes("No due") ? "text-gray-400" : "text-orange-500"}>
+               {due.includes("No due") ? due : `Due: ${due}`}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Right Edit/Delete Buttons */}
-      <div className="ml-4 flex items-center space-x-2">
+      {/* Right Actions */}
+      <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
         {onEditClick && (
           <button
             onClick={(e) => {
@@ -56,11 +62,10 @@ function AssignmentItem({
               e.stopPropagation();
               onEditClick();
             }}
+            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
             title="Edit"
-            className="text-gray-500 hover:text-gray-700 p-2 rounded"
-            aria-label="edit-assignment"
           >
-            <FaEdit />
+            <FaEdit size={18} />
           </button>
         )}
 
@@ -71,11 +76,10 @@ function AssignmentItem({
               e.stopPropagation();
               onDeleteClick();
             }}
+            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
             title="Delete"
-            className="text-red-500 hover:text-red-700 p-2 rounded"
-            aria-label="delete-assignment"
           >
-            <FaTrash />
+            <FaTrash size={18} />
           </button>
         )}
       </div>

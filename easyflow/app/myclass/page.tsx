@@ -1,4 +1,3 @@
-// app/.../Myclass.tsx
 "use client";
 import React, { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
@@ -13,20 +12,27 @@ import {
   apiDeleteClass,
 } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
-import { BookOpen } from "lucide-react";
+import { FaPlus, FaChalkboardTeacher, FaBookReader } from "react-icons/fa";
 
 export type ClassItem = {
   id: number | string;
   code: string;
+  title: string;
   teacher: string;
   due: string;
   problem: string;
   isOwner: boolean;
 };
 
+const getAvatarUrl = (name: string) => {
+  return `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(
+    name
+  )}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffdfbf,ffd5dc`;
+};
+
 function Myclass() {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [myClasses, setMyClasses] = useState<ClassItem[]>([]);
   const [joinedClasses, setJoinedClasses] = useState<ClassItem[]>([]);
@@ -43,25 +49,32 @@ function Myclass() {
     room: "",
   });
 
-  // ================= โหลดข้อมูล =================
+  // ================= Load Classes =================
   const loadClasses = async () => {
     if (!currentUserId) return;
+    setLoading(true);
 
     try {
       const res: any = await apiGetClasses();
 
       if (res.ok && Array.isArray(res.classes)) {
+        
+        // ✅ เพิ่มส่วนนี้: เรียงลำดับจากวันที่ล่าสุดไปเก่าสุด (Newest First)
+        const sortedClasses = res.classes.sort((a: any, b: any) => {
+          return new Date(b.createAt).getTime() - new Date(a.createAt).getTime();
+        });
+
         const ownedList: ClassItem[] = [];
         const joinedList: ClassItem[] = [];
 
-        res.classes.forEach((c: any) => {
+        // วนลูปข้อมูลที่เรียงแล้ว
+        sortedClasses.forEach((c: any) => {
           const myUserClassEntry = c.userClasses?.find(
             (uc: any) => Number(uc.userId) === currentUserId
           );
           if (!myUserClassEntry) return;
 
           let teacherName = "";
-
           const ownerEntry = c.userClasses?.find((uc: any) => {
             const r = uc.role?.roleName?.toLowerCase() || "";
             return ["owner", "teacher", "creator"].includes(r);
@@ -70,12 +83,7 @@ function Myclass() {
           if (ownerEntry && Number(ownerEntry.userId) === currentUserId) {
             teacherName = session?.user?.name || "Me";
           } else if (ownerEntry && ownerEntry.user) {
-            const u = ownerEntry.user;
-            teacherName =
-              u.name ||
-              (u.fname ? `${u.fname} ${u.lname || ""}`.trim() : null) ||
-              u.username ||
-              u.email;
+            teacherName = ownerEntry.user.name || ownerEntry.user.username || "Unknown";
           } else {
             teacherName = "Unknown Teacher";
           }
@@ -84,33 +92,38 @@ function Myclass() {
             ? new Date(c.createAt).toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
+                year: "numeric",
               })
             : "";
 
           const myRole = myUserClassEntry.role?.roleName?.toLowerCase();
-          const isOwner = myRole === "owner";
+          const isOwner = ["owner", "teacher", "creator"].includes(myRole);
 
           const classObj: ClassItem = {
             id: c.classId ?? c.id,
-            code: c.classname ?? "Unnamed",
+            code: String(c.classId ?? c.id),
+            title: c.classname ?? "Untitled Class",
             teacher: teacherName,
-            due: `Created ${createdDate}`,
-            problem: c.classname ?? "",
+            due: createdDate,
+            problem: c.meta?.room ? `Room ${c.meta.room}` : "No Room",
             isOwner,
           };
 
-          if (["owner", "teacher", "creator"].includes(myRole)) {
+          if (isOwner) {
             ownedList.push(classObj);
           } else {
             joinedList.push(classObj);
           }
         });
 
+        // ✅ ไม่ต้องใช้ .reverse() แล้ว เพราะ sort มาตั้งแต่ต้น
         setMyClasses(ownedList);
         setJoinedClasses(joinedList);
       }
     } catch (err) {
       console.error("Failed to fetch classes:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -119,13 +132,10 @@ function Myclass() {
     loadClasses();
   }, [currentUserId, status]);
 
-  // ================= Delete Class =================
+  // ================= Actions =================
   const handleDeleteClass = async (classId: string | number) => {
     if (!currentUserId) return;
-
-    const confirmed = confirm(
-      "คุณต้องการลบ Class นี้ถาวรใช่หรือไม่?\nการกระทำนี้ไม่สามารถย้อนกลับได้"
-    );
+    const confirmed = confirm("Are you sure you want to delete this class?");
     if (!confirmed) return;
 
     try {
@@ -134,7 +144,7 @@ function Myclass() {
         prev.filter((c) => String(c.id) !== String(classId))
       );
     } catch {
-      alert("ลบ Class ไม่สำเร็จ");
+      alert("Failed to delete class.");
     }
   };
 
@@ -147,149 +157,139 @@ function Myclass() {
   const handleCreateClass = async () => {
     const { className, section, room } = formData;
     if (!className || !section || !room) return;
-
     const payload = {
-      classname: `${className} ${section}`,
+      classname: `${className} (${section})`,
       testcases: [],
       currentUserId,
       meta: { room },
     };
-
-    setIsCreating(true);
     try {
       const result = await apiCreateClass(payload);
       if (result?.ok) {
-        setMyClasses((prev) => [
-          {
-            id: result.class?.classId ?? result.class?.id,
-            code: payload.classname,
-            teacher: session?.user?.name || "You",
-            due: "Just now",
-            problem: payload.classname,
-            isOwner: true,
-          },
-          ...prev,
-        ]);
+        loadClasses();
         closeModal();
       }
-    } finally {
-      setIsCreating(false);
+    } catch (err) {
+      alert("Failed to create class");
     }
   };
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-500">
-        Loading user session...
+      <div className="min-h-screen w-full bg-[#F9FAFB] flex items-center justify-center">
+        <div className="animate-pulse text-gray-400">Loading session...</div>
       </div>
     );
   }
 
   return (
-    <div className="pt-20 min-h-screen">
-      <div className="pl-60">
+    <div className="min-h-screen w-full bg-[#F9FAFB]">
+      <div className="pt-20 pl-0 md:pl-64 transition-all duration-300">
         <Navbar />
-        <div className="flex">
-          <Sidebar />
-          <div className="flex-1 flex flex-col p-20">
+        <Sidebar />
 
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-gray-300 pb-4 mb-6">
-              <h2 className="text-4xl font-semibold">My Class</h2>
+        <div className="p-8 max-w-7xl mx-auto min-h-screen flex flex-col space-y-12">
+          {/* ================= My Teaching Classes ================= */}
+          <div>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                  <FaChalkboardTeacher className="text-blue-600" />
+                  My Teaching Classes
+                </h2>
+                <p className="text-gray-500 mt-1 text-sm ml-1">
+                  Classes you manage and teach
+                </p>
+              </div>
 
-              {/* แสดงปุ่ม Create เฉพาะตอนมี Class */}
-              {myClasses.length > 0 && (
-                <button
-                  onClick={openModal}
-                  className="bg-[#0D3ACE] text-white px-4 py-2 rounded-lg hover:bg-[#0B2EA6]"
-                >
-                  + Create Class
-                </button>
-              )}
+              <button
+                onClick={openModal}
+                className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 font-medium"
+              >
+                <FaPlus size={14} /> Create New Class
+              </button>
             </div>
 
-            {/* My Class Content */}
-            {myClasses.length === 0 ? (
-              <div className="flex flex-col items-center justify-center flex-1 text-gray-500 mt-20">
-                <div className="bg-blue-100 text-blue-600 p-6 rounded-full mb-6">
-                  <BookOpen size={48} />
-                </div>
-
-                <p className="text-xl font-medium mb-2">
-                  ยังไม่มี Class สำหรับบัญชีนี้
+            {myClasses.length === 0 && !loading ? (
+              <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-10 text-center">
+                <p className="text-gray-500">
+                  You haven't created any classes yet.
                 </p>
-                <p className="text-sm mb-6 text-center">
-                  เริ่มต้นสร้าง Class เพื่อจัดการนักเรียนและ Lab ของคุณ
-                </p>
-
-                <button
-                  onClick={openModal}
-                  className="bg-[#0D3ACE] text-white px-6 py-3 rounded-lg hover:bg-[#0B2EA6]"
-                >
-                  + Create Class
-                </button>
               </div>
             ) : (
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {myClasses.map((c, index) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {myClasses.map((c) => (
                   <Link
-                    href={`/classes/${encodeURIComponent(String(c.id))}`}
-                    key={`my-${index}`}
+                    key={`my-${c.id}`}
+                    href={`/classes/${c.id}`}
+                    className="block h-full"
                   >
                     <ClassCard
-                      {...c}
-                      onDeleteClick={
-                        c.isOwner ? () => handleDeleteClass(c.id) : undefined
-                      }
+                      code={c.code}
+                      title={c.title}
+                      teacher={c.teacher}
+                      due={c.due}
+                      problem={c.problem}
+                      profileImage={getAvatarUrl(c.teacher)}
+                      onDeleteClick={() => handleDeleteClass(c.id)}
                     />
                   </Link>
                 ))}
               </div>
             )}
+          </div>
 
-            {/* Joined Class */}
-           <h2 className="text-4xl font-semibold border-b border-gray-300 pb-1 mt-12 pb-4 mb-6">
-              Joined Class
-            </h2>
+          {/* ================= Enrolled Classes (แสดงตลอด) ================= */}
+          <div className="pt-8 border-t border-gray-200">
+            <div className="mb-6">
+              <h2 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                <FaBookReader className="text-emerald-600" />
+                Enrolled Classes
+              </h2>
+              <p className="text-gray-500 mt-1 text-sm ml-1">
+                Classes you are learning in
+              </p>
+            </div>
 
-            {joinedClasses.length === 0 ? (
-              <div className="flex flex-col items-center justify-center text-gray-500 py-20">
-                <div className="bg-gray-100 text-gray-500 p-6 rounded-full mb-6">
-                  <BookOpen size={48} />
-                </div>
-
-                <p className="text-xl font-medium mb-2">
-                  ยังไม่มี Class ที่เข้าร่วมสำหรับบัญชีนี้
-                </p>
-                <p className="text-sm text-center">
-                 ลองเข้าร่วมเพื่อเริ่มทำแบบฝึกหัดและเรียนรู้ไปพร้อมกัน
+            {/* เช็คว่าถ้าไม่มีข้อมูล ให้แสดง Empty State แทน */}
+            {joinedClasses.length === 0 && !loading ? (
+              <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-10 text-center">
+                <p className="text-gray-500">
+                  You haven't joined any classes yet.
                 </p>
               </div>
             ) : (
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {joinedClasses.map((c, index) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {joinedClasses.map((c) => (
                   <Link
-                    href={`/classes/${encodeURIComponent(String(c.id))}`}
-                    key={`joined-${index}`}
+                    key={`join-${c.id}`}
+                    href={`/classes/${c.id}`}
+                    className="block h-full"
                   >
-                    <ClassCard_Other {...c} />
+                    <ClassCard_Other
+                      code={c.code}
+                      title={c.title}
+                      teacher={c.teacher}
+                      due={c.due}
+                      problem={c.problem}
+                      profileImage={getAvatarUrl(c.teacher)}
+                    />
                   </Link>
                 ))}
               </div>
             )}
-            </div>
           </div>
         </div>
-
-        <CreateClassModal
-          isOpen={isModalOpen}
-          onClose={closeModal}
-          onCreate={handleCreateClass}
-          formData={formData}
-          setFormData={setFormData}
-        />
       </div>
-    
+
+      <CreateClassModal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        onCreate={handleCreateClass}
+        formData={formData}
+        setFormData={setFormData}
+      />
+    </div>
   );
 }
 
