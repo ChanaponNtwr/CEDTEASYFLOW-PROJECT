@@ -1,4 +1,3 @@
-// app/profile/page.tsx
 "use client";
 
 import { useSession, signIn } from "next-auth/react";
@@ -6,8 +5,9 @@ import Navbar from "@/components/Navbar";
 import FilterActions from "./_components/FilterActions";
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { getUserBannerColor } from "@/app/utils/userColor";
 
-// API import — ปรับ path ถ้าของคุณอยู่ที่อื่น
+// API import
 import { apiGetFlowchartsByUser } from "@/app/service/FlowchartService";
 
 type UIFlowchart = {
@@ -92,6 +92,7 @@ export default function Profile() {
     return flowcharts;
   }, [flowcharts, filter]);
 
+  // ---------------- AUTH STATE ----------------
   if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -105,38 +106,58 @@ export default function Profile() {
     return null;
   }
 
+  // ---------------- USER DATA ----------------
   const user = session.user;
+
+  const userSeed =
+    (user as any)?.id ??
+    (user as any)?.userId ??
+    user?.email ??
+    "default-user";
+
+  const bannerColor = getUserBannerColor(userSeed);
+
   const defaultImage = "https://img5.pic.in.th/file/secure-sv1/Ellipse-270.png";
   const userImage = user?.image ?? defaultImage;
 
+  // ---------------- UI ----------------
   return (
     <div style={{ backgroundColor: "#F5F2F0" }} className="min-h-screen w-full">
       <Navbar />
 
       <div className="flex justify-center mt-8">
-        <div style={{ transform: "scale(0.9)", transformOrigin: "top center", display: "inline-block" }}>
+        <div
+          style={{ transform: "scale(0.9)", transformOrigin: "top center" }}
+          className="inline-block"
+        >
           <div className="relative w-[1920px] mx-auto bg-[#F5F2F0] overflow-hidden">
-            <div className="absolute top-[118px] left-[15px] w-[1880px] h-[274px] bg-[rgba(13,58,206,0.45)] rounded-t-[40px]" />
+            {/* ✅ RANDOM COLOR BANNER */}
+            <div
+              className="absolute top-[118px] left-[15px] w-[1880px] h-[274px] rounded-t-[40px]"
+              style={{ backgroundColor: bannerColor }}
+            />
+
             <div className="absolute top-[392px] left-[15px] w-[1880px] h-[388px] bg-[#FBFBFB] rounded-b-[40px]" />
 
             <img
-              key={userImage}
               src={userImage}
               alt="user"
               className="absolute top-[269px] left-[84px] w-[246px] h-[246px] rounded-full border-[9px] border-white bg-[#E3B8FF] object-cover"
             />
+
             <div className="absolute top-[550px] left-[84px] text-[42px] font-bold text-black">
               {user.name}
             </div>
-            <div className="absolute top-[610px] left-[84px] text-[30px] font-normal text-black">
+
+            <div className="absolute top-[610px] left-[84px] text-[30px] text-black">
               Email: {user.email}
             </div>
 
             <div className="absolute top-[682px] left-[84px] flex items-center gap-4">
-              <button className="bg-[#EE7A2E] text-white text-[25px] font-medium rounded-full px-10 py-3 shadow-md hover:brightness-110 transition cursor-pointer">
+              <button className="bg-[#EE7A2E] text-white text-[25px] rounded-full px-10 py-3 shadow-md hover:brightness-110 transition">
                 Upgrade
               </button>
-              <p className="w-[260px] text-black text-[20px] font-semibold leading-6">
+              <p className="w-[260px] text-black text-[20px] font-semibold">
                 Upgrade your package to add more students
               </p>
             </div>
@@ -150,9 +171,7 @@ export default function Profile() {
               <div className="absolute top-10 right-10">
                 <FilterActions
                   onFilterChange={handleFilterChange}
-                  onCreateClick={() => {
-                    console.log("Create clicked");
-                  }}
+                  onCreateClick={() => console.log("Create clicked")}
                 />
               </div>
 
@@ -161,7 +180,7 @@ export default function Profile() {
                   <div
                     key={flowchart.id}
                     onClick={() => router.push(`/Dolab/${flowchart.id}`)}
-                    className="flex flex-col items-center w-[238px] hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                    className="flex flex-col items-center w-[238px] cursor-pointer hover:scale-[1.02] transition"
                   >
                     <img
                       src={flowchart.image}
