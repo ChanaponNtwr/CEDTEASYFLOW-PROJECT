@@ -82,7 +82,8 @@ export default function TopBarControls({
   const [inputNodeId, setInputNodeId] = useState<string | number | null>(null);
   const [inputVarName, setInputVarName] = useState<string | null>(null);
 
-  const outputResumeRef = useRef<(() => void) | null>(null);
+  // outputResumeRef no longer used for pause, but kept for cleanup compatibility
+  const outputResumeRef = useRef<(() => void) | null>(null); 
   const [pendingHighlightAfterOutput, setPendingHighlightAfterOutput] = useState<string | number | null>(null);
 
   const runAllActiveRef = useRef(false);
@@ -213,7 +214,7 @@ export default function TopBarControls({
     });
   };
 
-  // ---------- FIXED: highlight node that produced outputs immediately ----------
+  // ---------- Highlight node that produced outputs immediately ----------
   const handleResponseOutputs = (resp: ExecuteResponse | undefined | null, autoContinue = false): boolean => {
     const respOutputs = resp?.result?.context?.output ?? resp?.context?.output ?? [];
     if (Array.isArray(respOutputs) && respOutputs.length > 0) {
@@ -221,7 +222,6 @@ export default function TopBarControls({
       const producerRaw = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
       const producerId = producerRaw !== null && typeof producerRaw !== "undefined" ? String(producerRaw) : null;
 
-      // highlight the node that produced this output immediately so user sees which node emitted the output
       safeHighlight(producerId);
 
       const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
@@ -231,7 +231,6 @@ export default function TopBarControls({
         // keep expected behavior: caller can set pendingHighlightAfterOutput to the next node
         return true;
       }
-      console.log("Auto-continue: output recorded", respOutputs);
     }
     return false;
   };
@@ -349,13 +348,14 @@ export default function TopBarControls({
       // outputs
       const hadOutputs = handleResponseOutputs(resp);
       if (hadOutputs) {
-        setPendingHighlightAfterOutput(nextId);
-        return;
+        // Just highlight the next node, no pause logic for step unless we want to emphasize
+        safeHighlight(nextId);
+        // Note: we removed button pause logic, so we just proceed conceptually
+      } else {
+        const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+        const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
+        safeHighlight(currentNodeId);
       }
-
-      const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-      const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
-      safeHighlight(currentNodeId);
 
       if (nextType === "IN" || nextType === "INPUT") {
         const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
@@ -433,22 +433,13 @@ export default function TopBarControls({
       let nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      // <-- CHANGED: force auto-continue inside runAll so all outputs are appended (no pause)
-      if (handleResponseOutputs(resp, true)) {
-        if (!autoPlayInputs) {
-          setPendingHighlightAfterOutput(nextId);
-          await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
-          outputResumeRef.current = null;
-          setPendingHighlightAfterOutput(null);
-          if (nextId) safeHighlight(nextId);
-        } else {
-          if (nextId) safeHighlight(nextId);
-        }
-      } else {
-        const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-        safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
-      }
+      // Handle outputs (Stream mode: No pause)
+      handleResponseOutputs(resp, true);
+      
+      // Always highlight next
+      if (nextId) safeHighlight(nextId);
 
+      // Re-read next info
       nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
@@ -533,23 +524,11 @@ export default function TopBarControls({
         let nextIdRawLoop = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         let nextIdLoop = nextIdRawLoop !== null && typeof nextIdRawLoop !== "undefined" ? String(nextIdRawLoop) : null;
 
-        // <-- CHANGED: force auto-continue inside runAll so all outputs are appended (no pause)
-        if (handleResponseOutputs(resp, true)) {
-          setPendingHighlightAfterOutput(nextIdLoop);
-          if (!autoPlayInputs) {
-            await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
-            outputResumeRef.current = null;
-            setPendingHighlightAfterOutput(null);
-            if (nextIdLoop) safeHighlight(nextIdLoop);
-          } else {
-            setPendingHighlightAfterOutput(null);
-            if (nextIdLoop) safeHighlight(nextIdLoop);
-          }
-        } else {
-          const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-          const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
-          safeHighlight(loopNodeId);
-        }
+        // Stream outputs (no pause)
+        handleResponseOutputs(resp, true);
+        
+        // Highlight current/next
+        if (nextIdLoop) safeHighlight(nextIdLoop);
 
         if (nextTypeLoop === "IN" || nextTypeLoop === "INPUT") {
           const resolvedVarName = await getFirstVarNameForNode(nextIdLoop ?? null);
@@ -682,19 +661,15 @@ export default function TopBarControls({
       safeHighlight(currentNodeId);
 
       const hadOutputs = handleResponseOutputs(resp);
-      if (hadOutputs) {
-        const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
-        const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
-        setPendingHighlightAfterOutput(nextId);
-        setExpectingInput(false);
+      // Even if outputs, we don't pause anymore for manual step logic in submitInput unless explicitly desired.
+      // But we will respect the auto-detect "next is input" logic.
+
+      if (nextType === "IN" || nextType === "INPUT") {
+        const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
+        pushSystemMessage(`กรุณากรอกค่า ${resolvedVarName2 ?? "input"}`);
+        setExpectingInput(true);
       } else {
-        if (nextType === "IN" || nextType === "INPUT") {
-          const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
-          pushSystemMessage(`กรุณากรอกค่า ${resolvedVarName2 ?? "input"}`);
-          setExpectingInput(true);
-        } else {
-          setExpectingInput(false);
-        }
+        setExpectingInput(false);
       }
 
       if (runAllWaitingForInputRef.current) {
@@ -710,16 +685,6 @@ export default function TopBarControls({
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const acknowledgeOutputs = () => {
-    const pending = pendingHighlightAfterOutput;
-    setPendingHighlightAfterOutput(null);
-    try {
-      if (outputResumeRef.current) outputResumeRef.current();
-    } catch (e) {}
-    outputResumeRef.current = null;
-    setTimeout(() => safeHighlight(pending ?? null), 80);
   };
 
   const cancelInput = () => {
@@ -1136,6 +1101,12 @@ export default function TopBarControls({
 
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
     const base = "inline-block text-xs px-2 py-1 rounded-md mb-2";
+    
+    // Highlight Actual value
+    if (r.text.startsWith("Actual:")) {
+       return <div key={idx} className="block text-lg font-bold text-gray-800 mb-1">{r.text}</div>
+    }
+
     switch (r.level) {
       case "error":
         return (
@@ -1321,19 +1292,27 @@ export default function TopBarControls({
       {/* Persistent single chat panel */}
       <div className="fixed bottom-6 right-6 z-50 w-96 max-h-[420px] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white flex items-center justify-between">
-          <div className="font-medium">Interactive Chat</div>
+          <div className="font-medium">Console</div>
           <div className="text-sm opacity-90">{expectingInput ? `Expecting: ${inputVarName ?? "input"}` : "Status"}</div>
         </div>
 
-        <div ref={chatRef} className="p-3 overflow-auto bg-gray-50" style={{ maxHeight: 260 }}>
-          {chatMessages.length === 0 && <div className="text-sm text-gray-400">ระบบพร้อม — กด Step หรือ Run เพื่อเริ่ม</div>}
-          {chatMessages.map((m, i) => (
+        <div ref={chatRef} className="p-3 overflow-auto bg-gray-50" style={{ maxHeight: 260, minHeight: 150 }}>
+          {chatMessages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 opacity-50 py-10">
+               <div className="flex gap-4 text-3xl">
+                 <FaPlay />
+                 <FaStepForward />
+               </div>
+               <div className="text-sm">Press Run or Step to start</div>
+            </div>
+          ) : (
+            chatMessages.map((m, i) => (
             <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[78%] px-3 py-2 rounded-lg whitespace-pre-wrap ${m.sender === "user" ? "bg-blue-600 text-white rounded-br-sm" : "bg-gray-200 text-gray-800 rounded-bl-sm"}`}>
                 {m.text}
               </div>
             </div>
-          ))}
+          )))}
         </div>
 
         <div className="p-3 bg-white border-t border-gray-100">
@@ -1372,13 +1351,12 @@ export default function TopBarControls({
             </div>
           ) : (
             <div className="flex justify-between items-center gap-2">
-              <div className="text-sm text-gray-500">ไม่มีข้อความที่ต้องการการป้อนข้อมูล</div>
+              <div className="text-sm text-gray-500">
+                {chatMessages.length > 0 ? "Output log" : ""}
+              </div>
               <div className="flex gap-2">
                 <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
                   Clear
-                </button>
-                <button onClick={acknowledgeOutputs} className="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700">
-                  Acknowledge
                 </button>
               </div>
             </div>
@@ -1389,7 +1367,7 @@ export default function TopBarControls({
       {showPopup && (
         <div className="absolute z-50 w-120 h-auto rounded-xl bg-white p-4 shadow-xl border border-gray-200 ml-20 mt-3 transform translate-x-[-10%] animate-fadeIn">
           <div className="relative w-full">
-            <div className="text-gray-800 text-sm font-medium font-['Sarabun'] leading-snug mb-4 whitespace-pre-wrap">
+            <div className="text-gray-800 text-lg font-medium font-['Sarabun'] leading-snug mb-4 whitespace-pre-wrap">
               {loadingProblem ? (
                 <div>กำลังโหลดรายละเอียดโจทย์...</div>
               ) : problemDetail ? (
@@ -1441,17 +1419,21 @@ export default function TopBarControls({
                 }
 
                 const statusItems = matchedKey ? testResults[matchedKey] : [];
+                // Determine summary status for the badge
+                const summaryStatusMsg = statusItems.length > 0 ? statusItems[0] : null;
 
                 return (
                   <div key={displayId + "-" + index} className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <div className="text-xs font-semibold text-gray-600">No {displayId}</div>
-                          <div className="text-sm text-gray-500">Input: <span className="font-medium text-gray-700">{inputDisplay}</span></div>
+                        <div className="text-xs font-semibold text-gray-500 mb-1">No {index + 1}</div>
+                        
+                        {/* Improved Input/Output Line */}
+                        <div className="flex items-center flex-wrap gap-2 text-base text-gray-800 font-medium">
+                          <span>Input: {inputDisplay}</span>
+                          <span className="text-gray-300 mx-1">|</span>
+                          <span>Output: {outputDisplay}</span>
                         </div>
-
-                        <div className="mt-2 text-sm text-gray-500">Output: <span className="ml-1 text-gray-700">{outputDisplay}</span></div>
                       </div>
 
                       <div className="flex gap-4">
@@ -1466,13 +1448,7 @@ export default function TopBarControls({
                             {statusItems.length === 0 ? (
                               <div className="inline-block text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200">Not run</div>
                             ) : (
-                              (() => {
-                                const statusMsg = statusItems[0];
-                                if (statusMsg) {
-                                  return renderSummaryBadge(statusMsg.level, statusMsg.text);
-                                }
-                                return renderSummaryBadge(null);
-                              })()
+                                renderSummaryBadge(summaryStatusMsg?.level, summaryStatusMsg?.text)
                             )}
                           </div>
                         </div>
@@ -1482,11 +1458,17 @@ export default function TopBarControls({
                     {/* expanded messages under card */}
                     <div className="mt-3 border-t border-gray-200 pt-3">
                       <div className="flex flex-col">
-                        {(statusItems ?? []).map((r, idx) => (
-                          <div key={idx} className="mb-2">
-                            {renderBadge(r, idx)}
-                          </div>
-                        ))}
+                        {(statusItems ?? []).map((r, idx) => {
+                            // Filter out redundant status text (e.g., "PASS", "FAIL") because the badge shows it
+                            if (summaryStatusMsg && r.text === summaryStatusMsg.text && !r.text.startsWith("Actual")) {
+                                return null;
+                            }
+                            return (
+                                <div key={idx} className="mb-2">
+                                    {renderBadge(r, idx)}
+                                </div>
+                            );
+                        })}
                       </div>
                     </div>
                   </div>

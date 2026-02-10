@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { FaTrash, FaUserPlus, FaEllipsisV, FaUserTie, FaUserGraduate, FaChalkboardTeacher } from "react-icons/fa";
+import { FaTrash, FaUserPlus, FaEllipsisV, FaUserTie, FaUserGraduate, FaChalkboardTeacher, FaInbox } from "react-icons/fa";
 
 type Person = { 
   id: number; 
@@ -94,9 +94,12 @@ const PeopleList: React.FC<PeopleListProps> = ({
       {/* People List */}
       <div className="space-y-3">
         {people.length === 0 ? (
-          <div className="p-8 text-center bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">
-            No {title} found in this class.
-          </div>
+                  <div className="flex flex-col items-center justify-center py-6 ">
+                      <FaUserTie className="w-16 h-16 mb-4 text-gray-200" />
+                      <p className="text-sm text-gray-400">
+                        No {title} available in this course
+                      </p>
+                    </div>
         ) : (
           people.map((person, idx) => {
             const isMe = person.id === currentUserId;
