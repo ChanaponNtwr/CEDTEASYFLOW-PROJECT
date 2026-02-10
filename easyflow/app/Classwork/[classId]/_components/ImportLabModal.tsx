@@ -319,7 +319,7 @@ function ImportLabModal({
                 className="px-8 py-2.5 text-white bg-blue-600 hover:bg-blue-700 rounded-xl font-medium shadow-lg shadow-blue-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                 disabled={loading}
               >
-                {loading ? "Processing..." : (isEditMode ? "Save Changes" : "Import Lab")}
+                {loading ? "Processing..." : (isEditMode ? "Save" : "Import Lab")}
               </button>
             </div>
           </motion.div>

@@ -12,7 +12,7 @@ import {
   apiDeleteClass,
 } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
-import { FaPlus, FaChalkboardTeacher, FaBookReader } from "react-icons/fa";
+import { FaPlus, FaChalkboardTeacher, FaBookReader, FaInbox } from "react-icons/fa";
 
 export type ClassItem = {
   id: number | string;
@@ -33,6 +33,7 @@ const getAvatarUrl = (name: string) => {
 function Myclass() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null); // ✅ เพิ่ม State Error
 
   const [myClasses, setMyClasses] = useState<ClassItem[]>([]);
   const [joinedClasses, setJoinedClasses] = useState<ClassItem[]>([]);
@@ -53,13 +54,13 @@ function Myclass() {
   const loadClasses = async () => {
     if (!currentUserId) return;
     setLoading(true);
+    setError(null); // ✅ Reset Error ก่อนโหลด
 
     try {
       const res: any = await apiGetClasses();
 
       if (res.ok && Array.isArray(res.classes)) {
-        
-        // ✅ เพิ่มส่วนนี้: เรียงลำดับจากวันที่ล่าสุดไปเก่าสุด (Newest First)
+        // เรียงลำดับจากวันที่ล่าสุดไปเก่าสุด
         const sortedClasses = res.classes.sort((a: any, b: any) => {
           return new Date(b.createAt).getTime() - new Date(a.createAt).getTime();
         });
@@ -67,7 +68,6 @@ function Myclass() {
         const ownedList: ClassItem[] = [];
         const joinedList: ClassItem[] = [];
 
-        // วนลูปข้อมูลที่เรียงแล้ว
         sortedClasses.forEach((c: any) => {
           const myUserClassEntry = c.userClasses?.find(
             (uc: any) => Number(uc.userId) === currentUserId
@@ -116,12 +116,15 @@ function Myclass() {
           }
         });
 
-        // ✅ ไม่ต้องใช้ .reverse() แล้ว เพราะ sort มาตั้งแต่ต้น
         setMyClasses(ownedList);
         setJoinedClasses(joinedList);
+      } else {
+        // กรณี API ตอบกลับมาแต่ไม่ ok หรือไม่มี classes
+        // อาจจะไม่ได้ถือเป็น Error ร้ายแรง แต่ถ้าต้องการ Handle ก็ใส่ setError ได้
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch classes:", err);
+      setError(err?.message || "Failed to load classes."); // ✅ Set Error message
     } finally {
       setLoading(false);
     }
@@ -174,6 +177,7 @@ function Myclass() {
     }
   };
 
+  // Loading Session (Full Screen)
   if (status === "loading") {
     return (
       <div className="min-h-screen w-full bg-[#F9FAFB] flex items-center justify-center">
@@ -189,16 +193,17 @@ function Myclass() {
         <Sidebar />
 
         <div className="p-8 max-w-7xl mx-auto min-h-screen flex flex-col space-y-12">
-          {/* ================= My Teaching Classes ================= */}
+          
+          {/* ================= My Courses Section ================= */}
           <div>
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
               <div>
                 <h2 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
                   <FaChalkboardTeacher className="text-blue-600" />
-                  My Teaching Classes
+                  My Courses
                 </h2>
                 <p className="text-gray-500 mt-1 text-sm ml-1">
-                  Classes you manage and teach
+                  Manage your active courses and student lists
                 </p>
               </div>
 
@@ -210,75 +215,109 @@ function Myclass() {
               </button>
             </div>
 
-            {myClasses.length === 0 && !loading ? (
-              <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-10 text-center">
-                <p className="text-gray-500">
-                  You haven't created any classes yet.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {myClasses.map((c) => (
-                  <Link
-                    key={`my-${c.id}`}
-                    href={`/classes/${c.id}`}
-                    className="block h-full"
-                  >
-                    <ClassCard
-                      code={c.code}
-                      title={c.title}
-                      teacher={c.teacher}
-                      due={c.due}
-                      problem={c.problem}
-                      profileImage={getAvatarUrl(c.teacher)}
-                      onDeleteClick={() => handleDeleteClass(c.id)}
-                    />
-                  </Link>
-                ))}
-              </div>
-            )}
+            {/* ✅ ใช้ Logic Loading ที่คุณต้องการ */}
+            <div className="min-h-[300px]">
+              {loading ? (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
+                  Loading class details...
+                </div>
+              ) : error ? (
+                <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-center">
+                  Error: {error}
+                </div>
+              ) : (
+                <>
+                  {myClasses.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 ">
+                      <FaInbox className="w-16 h-16 mb-4 text-gray-200" />
+                      <p className="text-sm text-gray-400">
+                        No courses have been created
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                      {myClasses.map((c) => (
+                        <Link
+                          key={`my-${c.id}`}
+                          href={`/classes/${c.id}`}
+                          className="block h-full"
+                        >
+                          <ClassCard
+                            code={c.code}
+                            title={c.title}
+                            teacher={c.teacher}
+                            due={c.due}
+                            problem={c.problem}
+                            profileImage={getAvatarUrl(c.teacher)}
+                            onDeleteClick={() => handleDeleteClass(c.id)}
+                          />
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
-          {/* ================= Enrolled Classes (แสดงตลอด) ================= */}
+          {/* ================= Enrolled Courses Section ================= */}
           <div className="pt-8 border-t border-gray-200">
             <div className="mb-6">
               <h2 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
                 <FaBookReader className="text-emerald-600" />
-                Enrolled Classes
+                Enrolled Courses
               </h2>
               <p className="text-gray-500 mt-1 text-sm ml-1">
-                Classes you are learning in
+                Access the courses you are currently attending
               </p>
             </div>
 
-            {/* เช็คว่าถ้าไม่มีข้อมูล ให้แสดง Empty State แทน */}
-            {joinedClasses.length === 0 && !loading ? (
-              <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-10 text-center">
-                <p className="text-gray-500">
-                  You haven't joined any classes yet.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {joinedClasses.map((c) => (
-                  <Link
-                    key={`join-${c.id}`}
-                    href={`/classes/${c.id}`}
-                    className="block h-full"
-                  >
-                    <ClassCard_Other
-                      code={c.code}
-                      title={c.title}
-                      teacher={c.teacher}
-                      due={c.due}
-                      problem={c.problem}
-                      profileImage={getAvatarUrl(c.teacher)}
-                    />
-                  </Link>
-                ))}
-              </div>
-            )}
+            {/* ✅ ใช้ Logic Loading แบบเดียวกัน หรือแยกตามต้องการ (ที่นี่ใช้ตัวแปร loading ตัวเดียวกัน) */}
+            <div className="min-h-[300px]">
+              {loading ? (
+                 <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
+                   Loading enrolled courses...
+                 </div>
+              ) : error ? (
+                 <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-center">
+                   Error: {error}
+                 </div>
+              ) : (
+                <>
+                  {joinedClasses.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 ">
+                      <FaInbox className="w-16 h-16 mb-4 text-gray-200" />
+                      <p className="text-sm text-gray-400">
+                        You are not currently enrolled in any courses
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                      {joinedClasses.map((c) => (
+                        <Link
+                          key={`join-${c.id}`}
+                          href={`/classes/${c.id}`}
+                          className="block h-full"
+                        >
+                          <ClassCard_Other
+                            code={c.code}
+                            title={c.title}
+                            teacher={c.teacher}
+                            due={c.due}
+                            problem={c.problem}
+                            profileImage={getAvatarUrl(c.teacher)}
+                          />
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
+
         </div>
       </div>
 

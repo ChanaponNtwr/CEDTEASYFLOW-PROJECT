@@ -27,12 +27,18 @@ const getInitials = (name: string) => {
 };
 
 function Sidebar() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession(); // เพิ่ม status เพื่อเช็ค state ของ session ได้ละเอียดขึ้น
   const [teachingClasses, setTeachingClasses] = useState<any[]>([]);
   const [enrolledClasses, setEnrolledClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // ✅ Logic Fix: ถ้าไม่มี User (ไม่ได้ Login) ให้หยุด Load ทันที เพื่อแสดง Empty State
+    if (status !== "loading" && !session?.user) {
+      setLoading(false);
+      return;
+    }
+
     const fetchData = async () => {
       if (!session?.user) return;
       
@@ -42,16 +48,15 @@ function Sidebar() {
         const currentUserId = user.id || user.userId || user.sub;
 
         const data = await apiGetClasses();
-        console.log("Sidebar API Data:", data); // 🔍 ดู Log ตรงนี้ใน Console (F12)
+        // console.log("Sidebar API Data:", data); 
         
         const teach: any[] = [];
         const enroll: any[] = [];
 
         if (data && Array.isArray(data.classes)) {
           data.classes.forEach((cls: any) => {
-            // Check for valid ID immediately
             const validId = cls.id || cls._id || cls.classId;
-            if (!validId) return; // ถ้าไม่มี ID ข้ามไปเลย
+            if (!validId) return;
 
             const myRelation = cls.userClasses?.find(
               (uc: any) => 
@@ -80,10 +85,13 @@ function Sidebar() {
       }
     };
 
-    fetchData();
-  }, [session]);
+    if (status === "authenticated") {
+        fetchData();
+    } else if (status === "unauthenticated") {
+        setLoading(false);
+    }
+  }, [session, status]);
 
-  // ฟังก์ชันช่วยดึง ID (กันเหนียว)
   const getClassId = (cls: any) => {
     return cls.id || cls._id || cls.classId;
   };
@@ -91,24 +99,24 @@ function Sidebar() {
   return (
     <div className="w-64 h-screen bg-white shadow-md p-4 fixed left-0 top-20 overflow-y-auto pb-20 z-40">
       
-      {/* ---------------- TEACHING Section ---------------- */}
+      {/* ---------------- MY COURSES Section (Formerly TEACHING) ---------------- */}
       <div className="mb-6">
         <div className="flex items-center mb-2 bg-blue-600 px-2 py-3 rounded shadow-sm">
           <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center mr-2">
             <FaUser className="text-blue-600 w-4 h-4" />
           </div>
-          <h3 className="text-white font-semibold tracking-wide">TEACHING</h3>
+          <h3 className="text-white font-semibold tracking-wide uppercase">MY COURSES</h3>
         </div>
         
         <ul>
           {loading ? (
              <li className="text-gray-400 text-sm px-2 animate-pulse">Loading...</li>
           ) : teachingClasses.length === 0 ? (
-             <li className="text-gray-400 text-sm px-2">No classes teaching</li>
+             <li className="text-gray-400 text-sm px-2">No active courses</li>
           ) : (
             teachingClasses.map((cls, index) => {
               const cId = getClassId(cls);
-              if (!cId) return null; // ถ้าไม่มี ID ไม่ต้องเรนเดอร์
+              if (!cId) return null;
 
               return (
                 <Link 
@@ -137,24 +145,24 @@ function Sidebar() {
         </ul>
       </div>
 
-      {/* ---------------- ENROLLED Section ---------------- */}
+      {/* ---------------- ENROLLED COURSES Section (Formerly ENROLLED) ---------------- */}
       <div>
         <div className="flex items-center mb-2 bg-blue-600 px-2 py-3 rounded shadow-sm">
           <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center mr-2">
             <FaBook className="text-blue-600 w-4 h-4" />
           </div>
-          <h3 className="text-white font-semibold tracking-wide">ENROLLED</h3>
+          <h3 className="text-white font-semibold tracking-wide uppercase">ENROLLED</h3>
         </div>
 
         <ul>
         {loading ? (
              <li className="text-gray-400 text-sm px-2 animate-pulse">Loading...</li>
           ) : enrolledClasses.length === 0 ? (
-             <li className="text-gray-400 text-sm px-2">No classes enrolled</li>
+             <li className="text-gray-400 text-sm px-2">No enrolled courses</li>
           ) : (
             enrolledClasses.map((cls, index) => {
               const cId = getClassId(cls);
-              if (!cId) return null; // ถ้าไม่มี ID ไม่ต้องเรนเดอร์
+              if (!cId) return null;
 
               return (
                 <Link 

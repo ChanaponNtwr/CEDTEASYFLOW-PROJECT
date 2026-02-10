@@ -9,7 +9,7 @@ import {
   apiTrialReset,
   apiRunTrialTestcases,
   apiGetTrialTestcases,
-  apiGetLab, // <--- 1. เพิ่ม import apiGetLab
+  apiGetLab,
 } from "@/app/service/FlowchartService";
 
 type Variable = { name: string; value: any };
@@ -86,7 +86,7 @@ export default function TopBarControls({
   const runAllActiveRef = useRef(false);
   const runAllWaitingForInputRef = useRef<(() => void) | null>(null);
 
-  // --- 2. เพิ่ม State สำหรับเก็บข้อมูล Lab ---
+  // --- State สำหรับเก็บข้อมูล Lab ---
   const [labInfo, setLabInfo] = useState<{ name?: string; detail?: string } | null>(null);
 
   const togglePopup = () => setShowPopup((v) => !v);
@@ -101,7 +101,7 @@ export default function TopBarControls({
   useEffect(() => {
     let mounted = true;
 
-    // 1. Fetch Variables AND Lab Info
+    // Fetch Variables AND Lab Info
     const fetchVars = async () => {
       if (initialVariables && initialVariables.length > 0) {
         setFetchedVariables(initialVariables);
@@ -113,7 +113,7 @@ export default function TopBarControls({
         setFetchingVars(true);
         const resp = await apiGetTrialFlowchart(effectiveId);
         
-        // --- 3. Logic การดึงข้อมูล Lab ---
+        // --- Logic การดึงข้อมูล Lab ---
         if (mounted) {
             // พยายามหา labId จาก response ถ้าไม่มีให้ Default เป็น 19 ตามโจทย์
             const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 19; 
@@ -222,11 +222,10 @@ export default function TopBarControls({
       const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
       setChatMessages((m) => [...m, ...mapped]);
 
-      if (!autoContinue) {
-        // set pending highlight and wait for user to press Acknowledge
-        return true;
-      }
-      console.log("Auto-continue: output recorded", respOutputs);
+      // Note: Acknowledge button removed, so we treat it as auto-continue for flow purposes
+      // or simply rely on the user to click Step/Run again if paused.
+      // Returning true here allows highlighting the next node.
+      return true; 
     }
     return false;
   };
@@ -335,7 +334,6 @@ export default function TopBarControls({
         const msg = err?.response?.data?.message ?? err?.message ?? String(err);
         console.warn("apiExecuteTrial error (step):", msg);
 
-        // detect input-missing patterns and switch to expectingInput
         if (/input missing/i.test(msg) || /no input provider/i.test(msg)) {
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
@@ -344,15 +342,11 @@ export default function TopBarControls({
           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
           return;
         }
-
-        // otherwise rethrow
         throw err;
       }
 
       if (!resp) return;
 
-      // <-- NEW: เพิ่มการตรวจจับแบบครอบคลุมสำหรับกรณี backend คืน node.type = "IN" -->
-      // backend บางตัวส่งชนิด node ที่ top-level: resp.node.type
       const possibleNodeType =
         (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.nextNodeType ?? resp?.result?.node?.type ?? null) as
           | string
@@ -365,7 +359,6 @@ export default function TopBarControls({
       setStepCount((s) => s + 1);
 
       if (nodeTypeStr && (nodeTypeStr === "IN" || nodeTypeStr === "INPUT" || nodeTypeStr.includes("INPUT") || resp?.paused === true)) {
-        // if backend indicates current node is input, stop and prompt user
         const inputNodeIdRaw = resp?.node?.id ?? resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         const inputNodeIdResolved = inputNodeIdRaw !== null && typeof inputNodeIdRaw !== "undefined" ? String(inputNodeIdRaw) : null;
         const resolvedVarName = await getFirstVarNameForNode(inputNodeIdResolved ?? null);
@@ -374,10 +367,8 @@ export default function TopBarControls({
         setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
         setInputValue("");
         setExpectingInput(true);
-        // หยุด progression — ผู้ใช้ต้องกรอกข้อมูลใน chat panel
         return;
       }
-      // <-- จบการตรวจจับพิเศษ -->
 
       const backendDone = Boolean(resp?.result?.done ?? resp?.done ?? false);
       const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
@@ -390,6 +381,9 @@ export default function TopBarControls({
       const hadOutputs = handleResponseOutputs(resp);
       if (hadOutputs) {
         setPendingHighlightAfterOutput(nextId);
+        // Previously we paused here. Now since Acknowledge is removed, we just highlight.
+        // User can press Step again.
+        if (nextId) safeHighlight(nextId);
         return;
       }
 
@@ -418,12 +412,11 @@ export default function TopBarControls({
         try {
           await apiTrialReset(effectiveId as any);
         } catch (err) {
-          console.warn("apiTrialReset failed during auto-reset, trying apiExecuteTrial reset", err);
-          try {
-            await apiExecuteTrial(effectiveId as any, { action: "reset" });
-          } catch (e) {
-            console.warn("fallback apiExecuteTrial reset also failed", e);
-          }
+            try {
+                await apiExecuteTrial(effectiveId as any, { action: "reset" });
+            } catch (e) {
+                console.warn("fallback apiExecuteTrial reset also failed", e);
+            }
         }
 
         setLastResponse(null);
@@ -465,8 +458,6 @@ export default function TopBarControls({
         resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: firstCallVars, forceAdvanceBP })) as ExecuteResponse;
       } catch (err: any) {
         const msg = err?.response?.data?.message ?? err?.message ?? String(err);
-        console.warn("apiExecuteTrial error (runAll first step):", msg);
-
         if (/input missing/i.test(msg) || /no input provider/i.test(msg)) {
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
@@ -474,11 +465,8 @@ export default function TopBarControls({
           setExpectingInput(true);
           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
 
-          // wait for user input (handleSubmitInput will resolve runAllWaitingForInputRef)
           await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
           runAllWaitingForInputRef.current = null;
-
-          // after user submitted, lastResponse should be set by handleSubmitInput
           resp = lastResponse ?? null;
         } else {
           throw err;
@@ -491,7 +479,6 @@ export default function TopBarControls({
         setStepCount((s) => s + 1);
       }
 
-      // Check current node type (fix for skipping first node if it is input)
       const currentType = (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? "").toString().toUpperCase();
       if ((currentType === "IN" || currentType === "INPUT" || resp?.paused) && !autoPlayInputs) {
            const inputNodeIdRaw = resp?.node?.id ?? resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
@@ -514,15 +501,14 @@ export default function TopBarControls({
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
       if (handleResponseOutputs(resp, autoPlayInputs)) {
-        if (!autoPlayInputs) {
-          setPendingHighlightAfterOutput(nextId);
-          await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
-          outputResumeRef.current = null;
-          setPendingHighlightAfterOutput(null);
-          if (nextId) safeHighlight(nextId);
-        } else {
-          if (nextId) safeHighlight(nextId);
-        }
+        // NOTE: removed autoPlayInputs check for pausing. 
+        // We do NOT pause on output anymore since the Acknowledge button is removed.
+        setPendingHighlightAfterOutput(nextId);
+        // Give a small delay to let user see output if they are running continuously?
+        // For now, we just proceed or highlight.
+        if (nextId) safeHighlight(nextId);
+        
+        // Ensure we don't block.
       } else {
         const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
         safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
@@ -531,7 +517,6 @@ export default function TopBarControls({
       nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      // If next is input node, handle similarly (autoPlayInputs or pause)
       if (nextType === "IN" || nextType === "INPUT") {
         const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
         const defaultVal = resolveDefaultValueForVar(resolvedVarName ?? null);
@@ -563,19 +548,12 @@ export default function TopBarControls({
         try {
           const endId = await pickEndNodeId();
           if (endId) safeHighlight(endId);
-        } catch (err) {
-          console.warn("runAll done: failed to pick end node", err);
-        }
+        } catch (err) {}
 
         try {
           await apiTrialReset(effectiveId as any);
         } catch (err) {
-          console.warn("reset without advance failed (runAll)", err);
-          try {
-            await apiExecuteTrial(effectiveId as any, { action: "reset" });
-          } catch (e) {
-            console.warn("fallback reset also failed (runAll)", e);
-          }
+            try { await apiExecuteTrial(effectiveId as any, { action: "reset" }); } catch (e) {}
         }
 
         setLastResponse(null);
@@ -599,25 +577,16 @@ export default function TopBarControls({
           resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: [], forceAdvanceBP })) as ExecuteResponse;
         } catch (err: any) {
           const msg = err?.response?.data?.message ?? err?.message ?? String(err);
-          console.warn("apiExecuteTrial error (runAll loop):", msg);
-
           if (/input missing/i.test(msg) || /no input provider/i.test(msg)) {
             const m = String(msg).match(/'([^']+)'/);
             const varName = m ? m[1] : null;
             setInputVarName(varName);
             setExpectingInput(true);
             setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
-
-            // wait for user input before continuing
             await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
             runAllWaitingForInputRef.current = null;
-
-            // after input submitted, pick up lastResponse (handleSubmitInput sets lastResponse)
             resp = lastResponse ?? null;
-            if (!resp) {
-              // still nothing — try next loop iteration
-              continue;
-            }
+            if (!resp) continue;
           } else {
             throw err;
           }
@@ -634,7 +603,6 @@ export default function TopBarControls({
         const inferredDoneLoop = isEndType(nextTypeLoop);
         const finalDoneLoop = backendDoneLoop || inferredDoneLoop;
 
-        // Check CURRENT node in loop too
         const currentTypeLoop = (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? "").toString().toUpperCase();
         if ((currentTypeLoop === "IN" || currentTypeLoop === "INPUT" || resp?.paused) && !autoPlayInputs) {
              const inputNodeIdResolved = resp?.node?.id ? String(resp.node.id) : null;
@@ -654,22 +622,15 @@ export default function TopBarControls({
 
         if (handleResponseOutputs(resp, autoPlayInputs)) {
           setPendingHighlightAfterOutput(nextId);
-          if (!autoPlayInputs) {
-            await new Promise<void>((resolve) => (outputResumeRef.current = resolve));
-            outputResumeRef.current = null;
-            setPendingHighlightAfterOutput(null);
-            if (nextId) safeHighlight(nextId);
-          } else {
-            setPendingHighlightAfterOutput(null);
-            if (nextId) safeHighlight(nextId);
-          }
+          // Removed blocking wait for outputResumeRef here as well
+          setPendingHighlightAfterOutput(null);
+          if (nextId) safeHighlight(nextId);
         } else {
           const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
           const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
           safeHighlight(loopNodeId);
         }
         
-        // Refresh nextType after pause handling
         nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
 
         if (nextTypeLoop === "IN" || nextTypeLoop === "INPUT") {
@@ -707,19 +668,12 @@ export default function TopBarControls({
           try {
             const endId = await pickEndNodeId();
             if (endId) safeHighlight(endId);
-          } catch (err) {
-            console.warn("runAll loop: failed to pick end node", err);
-          }
+          } catch (err) {}
 
           try {
             await apiTrialReset(effectiveId as any);
           } catch (err) {
-            console.warn("reset without advance failed (runAll loop)", err);
-            try {
-              await apiExecuteTrial(effectiveId as any, { action: "reset" });
-            } catch (e) {
-              console.warn("fallback reset also failed (runAll loop)", e);
-            }
+            try { await apiExecuteTrial(effectiveId as any, { action: "reset" }); } catch (e) {}
           }
 
           setLastResponse(null);
@@ -741,15 +695,11 @@ export default function TopBarControls({
       setIsLoading(false);
       runAllActiveRef.current = false;
       if (runAllWaitingForInputRef.current) {
-        try {
-          runAllWaitingForInputRef.current();
-        } catch { }
+        try { runAllWaitingForInputRef.current(); } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
-        try {
-          outputResumeRef.current();
-        } catch { }
+        try { outputResumeRef.current(); } catch { }
         outputResumeRef.current = null;
       }
     }
@@ -772,8 +722,6 @@ export default function TopBarControls({
       const resolvedVarName = inputVarName ?? resolvedFromFlow ?? currentVars[0]?.name ?? null;
 
       if (!resolvedVarName) {
-        console.warn("No variable name found for input. lastResponse:", lastResponse, "fetchedVariables:", fetchedVariables, "targetNodeId:", targetNodeId);
-        setErrorMsg("ไม่พบชื่อตัวแปรสำหรับการป้อนข้อมูล — โปรดตรวจสอบ response จาก backend หรือ flowchart node");
         setIsLoading(false);
         return;
       }
@@ -802,7 +750,6 @@ export default function TopBarControls({
       safeHighlight(currentNodeId);
 
       // --- FIX: เพิ่มการตรวจสอบว่า Node ปัจจุบันที่ backend หยุดเป็น Input หรือไม่ ---
-      // ป้องกันกรณีที่ใส่ค่า a เสร็จแล้ว backend ขยับไป b (Input) ทันที
       const currentType = (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? null);
       const currentTypeStr = currentType ? String(currentType).toUpperCase().trim() : null;
 
@@ -834,7 +781,6 @@ export default function TopBarControls({
         const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
         setPendingHighlightAfterOutput(nextId);
-        // expectingInput already false
       } else {
         if (nextType === "IN" || nextType === "INPUT") {
           const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
@@ -845,7 +791,6 @@ export default function TopBarControls({
         }
       }
 
-      // If runAll is paused waiting for input, resume it
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
@@ -861,6 +806,7 @@ export default function TopBarControls({
     }
   };
 
+  // Acknowledge logic removed from button but kept for reference or internal state clearing
   const acknowledgeOutputs = () => {
     const pending = pendingHighlightAfterOutput;
     setPendingHighlightAfterOutput(null);
@@ -997,36 +943,34 @@ export default function TopBarControls({
       const newResults: Record<string, { level: TestLevel; text: string }[]> = {};
 
       rawResults.forEach((r: any, idx: number) => {
-        const rawId =
-          r.testcaseId ??
-          r.testcase_id ??
-          r.id ??
-          r.tcId ??
-          r.testcase?.id ??
-          r.testcase?.testcaseId ??
-          (typeof r === "object" && r?.inputVal ? idx + 1 : undefined);
-
-        const tcId = String(rawId ?? idx + 1);
-
-        let statusRaw =
-          r.status ??
-          r.result?.status ??
-          r.statusCode ??
-          r.status_code ??
-          r.state ??
-          r.outcome ??
-          r.verdict ??
-          r.status?.name ??
-          r.status?.code ??
-          null;
+        // Use sequential index as key to match display
+        const tcId = String(idx + 1);
 
         let status = "UNKNOWN";
-        if (statusRaw === null || typeof statusRaw === "undefined") {
-          status = "UNKNOWN";
-        } else if (typeof statusRaw === "string" || typeof statusRaw === "number") {
-          status = String(statusRaw).toUpperCase();
-        } else if (typeof statusRaw === "object") {
-          status = (statusRaw.name ?? statusRaw.code ?? JSON.stringify(statusRaw)).toString().toUpperCase();
+
+        if (typeof r.passed === "boolean") {
+          status = r.passed ? "PASS" : "FAIL";
+        } 
+        else {
+          let statusRaw =
+            r.status ??
+            r.result?.status ??
+            r.statusCode ??
+            r.status_code ??
+            r.state ??
+            r.outcome ??
+            r.verdict ??
+            r.status?.name ??
+            r.status?.code ??
+            null;
+
+          if (statusRaw !== null && typeof statusRaw !== "undefined") {
+            if (typeof statusRaw === "string" || typeof statusRaw === "number") {
+              status = String(statusRaw).toUpperCase();
+            } else if (typeof statusRaw === "object") {
+              status = (statusRaw.name ?? statusRaw.code ?? JSON.stringify(statusRaw)).toString().toUpperCase();
+            }
+          }
         }
 
         const errorMessage =
@@ -1039,16 +983,6 @@ export default function TopBarControls({
           (Array.isArray(r.errors) ? r.errors.join("; ") : undefined) ??
           null;
 
-        const expected =
-          r.expected ??
-          r.expectedVal ??
-          r.expected_val ??
-          r.expectedOutput ??
-          r.expected_output ??
-          r.expectedResult ??
-          r.expected_result ??
-          r.expected?.output ??
-          null;
         const actual =
           r.actual ??
           r.actualVal ??
@@ -1094,30 +1028,46 @@ export default function TopBarControls({
     }
   };
 
+  // Render Badge now filters out generic FAIL/PASS text from the bottom area
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
-    const base = "inline-block text-xs px-2 py-1 rounded-md mb-2";
+    const base = "inline-block text-base px-2 py-1 rounded-md mb-2 mr-2 font-medium";
+    
+    // Filter out simple status text that is already shown in the right badge
+    if (['PASS', 'FAIL', 'UNKNOWN', 'ERROR', 'SUCCESS'].includes(r.text.toUpperCase())) {
+        return null;
+    }
+
+    // Special styling for "Actual:" text to make it stand out and bigger
+    if (r.text.startsWith("Actual:")) {
+         return (
+          <div key={idx} className={`block text-lg font-bold mt-1 ${r.level === 'error' || r.level === 'info' ? 'text-red-600' : 'text-gray-700'}`}>
+            {r.text}
+          </div>
+        );
+    }
+
     switch (r.level) {
       case "error":
         return (
-          <div key={idx} className={`${base} bg-red-100 text-red-800 border border-red-200`}>
+          <div key={idx} className={`${base} bg-red-50 text-red-700 border border-red-200`}>
             {r.text}
           </div>
         );
       case "warning":
         return (
-          <div key={idx} className={`${base} bg-yellow-100 text-yellow-800 border border-yellow-200`}>
+          <div key={idx} className={`${base} bg-yellow-50 text-yellow-800 border border-yellow-200`}>
             {r.text}
           </div>
         );
       case "info":
         return (
-          <div key={idx} className={`${base} bg-blue-100 text-blue-800 border border-blue-200`}>
+          <div key={idx} className={`${base} bg-blue-50 text-blue-800 border border-blue-200`}>
             {r.text}
           </div>
         );
       case "success":
         return (
-          <div key={idx} className={`${base} bg-green-100 text-green-800 border border-green-200`}>
+          <div key={idx} className={`${base} bg-green-50 text-green-800 border border-green-200`}>
             {r.text}
           </div>
         );
@@ -1127,17 +1077,17 @@ export default function TopBarControls({
   };
 
   const renderSummaryBadge = (level?: TestLevel | null, text?: string) => {
-    const base = "inline-block text-xs px-2 py-1 rounded-md font-semibold";
+    const base = "inline-block text-sm px-3 py-1 rounded-full font-bold uppercase tracking-wider shadow-sm";
     const displayText = text || "";
     switch (level) {
       case "error":
-        return <div className={`${base} bg-red-100 text-red-800 border border-red-200`}>{displayText || "Error"}</div>;
+        return <div className={`${base} bg-red-500 text-white`}>{displayText || "FAIL"}</div>;
       case "warning":
-        return <div className={`${base} bg-yellow-100 text-yellow-800 border border-yellow-200`}>{displayText || "Warning"}</div>;
+        return <div className={`${base} bg-yellow-400 text-yellow-900`}>{displayText || "WARN"}</div>;
       case "info":
-        return <div className={`${base} bg-blue-100 text-blue-800 border border-blue-200`}>{displayText || "Info"}</div>;
+        return <div className={`${base} bg-blue-500 text-white`}>{displayText || "INFO"}</div>;
       case "success":
-        return <div className={`${base} bg-green-100 text-green-800 border border-green-200`}>{displayText || "Success"}</div>;
+        return <div className={`${base} bg-green-500 text-white`}>{displayText || "PASS"}</div>;
       default:
         return null;
     }
@@ -1174,7 +1124,7 @@ export default function TopBarControls({
     return arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
   };
 
-  // ------- UI rendering (unchanged visually) -------
+  // ------- UI rendering -------
   return (
     <div className="absolute z-1 pt-4">
       {/* Control bar */}
@@ -1195,18 +1145,26 @@ export default function TopBarControls({
         </span>
       </div>
 
-      {/* Persistent single chat panel (always visible) */}
+      {/* Persistent single chat panel (Console) */}
       <div className="fixed bottom-6 right-6 z-50 w-96 max-h-[420px] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white flex items-center justify-between">
-          <div className="font-medium">Interactive Chat</div>
-          <div className="text-sm opacity-90">{expectingInput ? `Expecting: ${inputVarName ?? "input"}` : "Status"}</div>
+        <div className="px-4 py-3 bg-blue-800 text-white flex items-center justify-between">
+          <div className="font-medium flex items-center gap-2">Console</div>
+          <div className="text-xs opacity-70 bg-blue-800 px-2 py-0.5 rounded-full">{expectingInput ? "Input Required" : "Idle"}</div>
         </div>
 
         <div ref={chatRef} className="p-3 overflow-auto bg-gray-50" style={{ maxHeight: 260 }}>
-          {chatMessages.length === 0 && <div className="text-sm text-gray-400">ระบบพร้อม — กด Step หรือ Run เพื่อเริ่ม</div>}
+          {chatMessages.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-gray-400 mt-10 mb-10 gap-2">
+                <div className="flex gap-3 text-2xl">
+                    <FaPlay className="text-green-400 opacity-50"/>
+                    <FaStepForward className="text-yellow-400 opacity-50"/>
+                </div>
+                <div className="text-sm">Press Play or Step to start</div>
+            </div>
+          )}
           {chatMessages.map((m, i) => (
             <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[78%] px-3 py-2 rounded-lg whitespace-pre-wrap ${m.sender === "user" ? "bg-blue-600 text-white rounded-br-sm" : "bg-gray-200 text-gray-800 rounded-bl-sm"}`}>
+              <div className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${m.sender === "user" ? "bg-blue-600 text-white rounded-br-sm shadow-sm" : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"}`}>
                 {m.text}
               </div>
             </div>
@@ -1236,29 +1194,25 @@ export default function TopBarControls({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSubmitInput();
                 }}
-                className="flex-1 border border-gray-300 rounded px-3 py-2"
-                placeholder="พิมพ์ค่าที่ต้องการส่ง..."
+                className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
+                placeholder={`Enter value for ${inputVarName}...`}
+                autoFocus
               />
 
-              <button onClick={handleSubmitInput} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                ส่ง
+              <button onClick={handleSubmitInput} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
+                Send
               </button>
-              <button onClick={cancelInput} className="bg-gray-200 text-gray-800 px-3 py-2 rounded hover:bg-gray-300">
-                ยกเลิก
+              <button onClick={cancelInput} className="bg-gray-200 text-gray-800 px-3 py-2 rounded text-sm hover:bg-gray-300">
+                Cancel
               </button>
             </div>
           ) : (
-            <div className="flex justify-between items-center gap-2">
-              <div className="text-sm text-gray-500">ไม่มีข้อความที่ต้องการการป้อนข้อมูล</div>
-              <div className="flex gap-2">
-                <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
-                  Clear
+             <div className="flex justify-between items-center h-[38px]">
+                <span className="text-xs text-gray-400 italic pl-1">Waiting for execution...</span>
+                <button onClick={() => setChatMessages([])} className="text-xs px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600">
+                  Clear Log
                 </button>
-                <button onClick={acknowledgeOutputs} className="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700">
-                  Acknowledge
-                </button>
-              </div>
-            </div>
+             </div>
           )}
         </div>
       </div>
@@ -1266,22 +1220,21 @@ export default function TopBarControls({
       {showPopup && (
         <div className="absolute z-50 w-120 h-auto rounded-xl bg-white p-4 shadow-xl border border-gray-200 ml-20 mt-3 transform translate-x-[-10%] animate-fadeIn">
           <div className="relative w-full">
-            {/* 4. แก้ไขส่วนแสดงผลโจทย์ให้ใช้ข้อมูลจาก API (labInfo) */}
             <div className="text-gray-800 text-sm font-medium font-['Sarabun'] leading-snug mb-4 whitespace-pre-wrap">
               {labInfo ? (
                 <>
-                  <div className="font-bold mb-1 text-base">{labInfo.name}</div>
-                  <div>{labInfo.detail}</div>
+                  <div className="font-bold mb-1 text-lg">{labInfo.name}</div>
+                  <div className="text-gray-600">{labInfo.detail}</div>
                 </>
               ) : (
                 "Loading Lab Problem..."
               )}
             </div>
 
-            {/* Non-table testcases layout */}
-            <div className="space-y-3 max-h-96 overflow-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300">
+            <div className="space-y-4 max-h-96 overflow-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300">
               {labTestcases.map((tc, index) => {
-                const displayId = String(tc.testcaseId ?? tc.testcase_id ?? tc.id ?? tc.tcId ?? (index + 1));
+                // Use Index + 1 for display ID as requested
+                const displayId = String(index + 1);
 
                 const rawInput = parseVal(tc.inputVal ?? tc.input ?? tc.in ?? tc.input_values ?? []);
                 const rawOutput = parseVal(tc.outputVal ?? tc.output ?? tc.out ?? tc.output_values ?? []);
@@ -1297,32 +1250,36 @@ export default function TopBarControls({
                 const outputDisplay = format(rawOutput);
 
                 return (
-                  <div key={displayId} className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
+                  <div key={displayId} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between gap-4">
+                      
+                      {/* Left: Content */}
                       <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <div className="text-xs font-semibold text-gray-600">No {displayId}</div>
-                          <div className="text-sm text-gray-500">Input: <span className="font-medium text-gray-700">{inputDisplay}</span></div>
+                        <div className="flex items-center gap-2 mb-2">
+                           <span className="text-lg font-bold text-gray-800">Test Case #{displayId}</span>
+                        </div>
+                        
+                        {/* Combined Input/Output line with larger font */}
+                        <div className="text-base text-gray-600">
+                           <span className="font-semibold text-gray-800">Input:</span> <span className="mr-3 font-mono bg-gray-50 px-1 rounded">{inputDisplay}</span>
+                           <span className="text-gray-400">|</span>
+                           <span className="ml-3 font-semibold text-gray-800">Output:</span> <span className="font-mono bg-gray-50 px-1 rounded">{outputDisplay}</span>
                         </div>
 
-                        <div className="mt-2 text-sm text-gray-500">Output: <span className="ml-1 text-gray-700">{outputDisplay}</span></div>
-
                         {Array.isArray(tc.inHiddenVal) && tc.inHiddenVal.length > 0 && (
-                          <div className="mt-1 text-xs text-gray-400">Hidden Inputs: {tc.inHiddenVal.join(", ")}</div>
+                          <div className="mt-1 text-sm text-gray-400">Hidden Inputs: {tc.inHiddenVal.join(", ")}</div>
                         )}
                       </div>
 
-                      <div className="flex gap-4">
-                        <div className="w-16 text-center">
-                          <div className="text-xs text-gray-400">Score</div>
-                          <div className="mt-2 text-sm font-semibold text-blue-600">{tc.score ?? 0}</div>
-                        </div>
-
-                        <div className="w-24 text-right">
-                          <div className="text-xs text-gray-400">Status</div>
-                          <div className="mt-2">
+                      {/* Right: Score & Status */}
+                      <div className="flex flex-col items-end gap-2 min-w-[100px]">
+                         <div className="text-sm font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                            Score: {tc.score ?? 0}
+                         </div>
+                         
+                         <div>
                             {(testResults[displayId] ?? []).length === 0 ? (
-                              <div className="inline-block text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200">Not run</div>
+                              <span className="text-sm text-gray-400 font-medium">Not run</span>
                             ) : (
                               (() => {
                                 const items = testResults[displayId] ?? [];
@@ -1333,15 +1290,15 @@ export default function TopBarControls({
                                 return renderSummaryBadge(null);
                               })()
                             )}
-                          </div>
-                        </div>
+                         </div>
                       </div>
                     </div>
 
-                    <div className="mt-3 border-t border-gray-200 pt-3">
+                    {/* Bottom: Result Details (Actual, Error, etc.) */}
+                    <div className="mt-2 pt-2">
                       <div className="flex flex-col">
                         {(testResults[displayId] ?? []).map((r, idx) => (
-                          <div key={idx} className="mb-2">
+                          <div key={idx}>
                             {renderBadge(r, idx)}
                           </div>
                         ))}
@@ -1356,11 +1313,9 @@ export default function TopBarControls({
               <button
                 onClick={handleRunTests}
                 disabled={runningTests}
-                className={`text-sm px-6 py-2 rounded-full ${runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600"}`}>
-                {runningTests ? "Testing..." : "Test"}
+                className={`text-base font-medium px-8 py-2 rounded-full transition-all shadow-sm ${runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600 hover:shadow"}`}>
+                {runningTests ? "Testing..." : "Run Tests"}
               </button>
-
-              {/* <button className="mt-0 bg-blue-900 text-white text-sm px-6 py-2 rounded-full hover:bg-blue-800 transition-colors">Submit</button> */}
             </div>
           </div>
         </div>
