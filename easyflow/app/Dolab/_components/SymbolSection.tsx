@@ -762,87 +762,108 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     if (!cfg) return null;
 
     return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <form onSubmit={cfg.onSubmit}>
-          <div className="flex items-center justify-between">
-            <div className="text-xl font-semibold text-gray-800 mb-4">{cfg.title}</div>
-            {nodeToEdit && (
-              <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">
-                Delete
-              </button>
-            )}
+      <div className="w-[560px] max-w-[80%] mx-auto mt-12 bg-white rounded-xl shadow-2xl p-4 border border-gray-200 overflow-hidden">
+        <form onSubmit={cfg.onSubmit} className="flex flex-col">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-lg font-semibold text-gray-800">{cfg.title}</div>
+              {/* <div className="text-sm text-gray-500 mt-1">{cfg.description}</div> */}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {nodeToEdit && (
+                <button
+                  type="button"
+                  onClick={handleDeleteClick}
+                  className="text-sm text-red-600 hover:underline"
+                >
+                  Delete
+                </button>
+              )}
+              {/* <button
+                type="button"
+                onClick={() => { setActiveModal(null); onCloseModal?.(); }}
+                aria-label="Close"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button> */}
+            </div>
           </div>
 
-          {/* Render fields dynamically */}
-          {cfg.fields.map((f) => {
-            if (f.kind === "group") {
-              return (
-                <div key={f.key} className="grid grid-cols-2 gap-4 ml-6 mb-4">
-                  {f.fields.map((g) => (
-                    <input
-                      key={g.key}
-                      type="text"
-                      placeholder={g.placeholder}
-                      value={g.value}
-                      onChange={(e) => g.setValue(e.target.value)}
-                      className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"
-                    />
-                  ))}
-                </div>
-              );
-            } else if (f.kind === "simple" && f.key === "dataType") {
-              return (
-                <div key={f.key} className="ml-6 mb-4">
-                  <div className="text-gray-700 mb-2">Data Type</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {["Integer", "Float", "String", "Boolean"].map((dt) => (
-                      <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
-                        <input
-                          type="radio"
-                          name="dataType"
-                          value={dt}
-                          checked={declareDataType === dt}
-                          onChange={(e) => setDeclareDataType(e.target.value)}
-                          className="w-4 h-4"
-                        />
-                        {dt}
-                      </label>
+          <div className="mt-5">
+            {/* Render fields dynamically (removed ml offsets so fields align to full width) */}
+            {cfg.fields.map((f) => {
+              if (f.kind === "group") {
+                return (
+                  <div key={f.key} className="grid grid-cols-2 gap-4 mb-4">
+                    {f.fields.map((g) => (
+                      <input
+                        key={g.key}
+                        type="text"
+                        placeholder={g.placeholder}
+                        value={g.value}
+                        onChange={(e) => g.setValue(e.target.value)}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                      />
                     ))}
                   </div>
-                </div>
+                );
+              } else if (f.kind === "simple" && f.key === "dataType") {
+                return (
+                  <div key={f.key} className="mb-4">
+                    <div className="text-gray-700 mb-2 font-medium">Data Type</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {["Integer", "Float", "String", "Boolean"].map((dt) => (
+                        <label key={dt} className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="radio"
+                            name="dataType"
+                            value={dt}
+                            checked={declareDataType === dt}
+                            onChange={(e) => setDeclareDataType(e.target.value)}
+                            className="w-4 h-4"
+                          />
+                          <span>{dt}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              // simple field (default) — full width
+              return (
+                <input
+                  key={f.key}
+                  type="text"
+                  placeholder={f.placeholder}
+                  value={f.value}
+                  onChange={(e) => f.setValue(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                />
               );
-            }
+            })}
+          </div>
 
-            return (
-              <input
-                key={f.key}
-                type="text"
-                placeholder={f.placeholder}
-                value={f.value}
-                onChange={(e) => f.setValue(e.target.value)}
-                className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            );
-          })}
-
-          {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+          {error && <div className="text-red-500 text-sm mb-3">{error}</div>}
 
           {/* conflicts */}
           {conflicts.length > 0 && (
-            <div className="ml-6 mb-2">
-              <div className="text-sm text-gray-700 mb-1">พบตัวแปรซ้ำใน node ต่อไปนี้:</div>
-              <ul className="text-sm space-y-1">
+            <div className="mb-3">
+              <div className="text-sm text-gray-700 mb-2 font-medium">พบตัวแปรซ้ำใน node ต่อไปนี้:</div>
+              <ul className="text-sm space-y-2">
                 {conflicts.map((c: any) => (
-                  <li key={c.nodeId} className="flex items-center gap-2">
+                  <li key={c.nodeId} className="flex items-center gap-3">
                     <div className="flex-1">
-                      <div className="font-medium">{c.label || c.nodeId}</div>
+                      <div className="font-medium text-gray-800">{c.label || c.nodeId}</div>
                       <div className="text-xs text-gray-500">var: {c.varName}{c.foundIn ? ` · found in: ${c.foundIn}` : ""}</div>
                     </div>
 
                     <div>
                       <button
                         type="button"
-                        className="px-2 py-1 text-xs border rounded hover:bg-gray-100"
+                        className="px-3 py-1 text-xs border rounded hover:bg-gray-50"
                         onClick={() => {
                           if (onFocusNode) {
                             onFocusNode(c.nodeId);
@@ -865,18 +886,26 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             </div>
           )}
 
-          <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button type="button" onClick={() => cfg.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
+          <div className="flex items-center justify-end gap-3 mt-4">
+            <button
+              type="button"
+              onClick={() => cfg.onClose()}
+              className="px-6 py-2 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+            >
               Cancel
             </button>
-            <button type="submit" disabled={loading} className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition"
+            >
               {loading ? "Saving..." : "Ok"}
             </button>
           </div>
         </form>
 
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src={cfg.icon} alt="Icon" className="w-50 h-7" />
+        <div className="bg-[#E9E5FF] rounded-b-md mt-6 p-3 flex items-center gap-3">
+          <img src={cfg.icon} alt="Icon" className="w-12 h-7 object-contain" />
           <span className="text-gray-600 text-sm">{cfg.description}</span>
         </div>
       </div>
@@ -888,7 +917,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     <div className="w-full bg-white p-4 flex flex-col gap-4 rounded-lg shadow-lg border-1">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-bold text-gray-700 mb-2">Input / Output</h3>
-        <div className="text-xs text-gray-500">{srLoading ? "Loading shapes..." : (srError ? srError : "Shape counts loaded")}</div>
+        <div className="text-xs text-gray-500">{srLoading ? "Loading shapes..." : (srError ? srError : "")}</div>
       </div>
       <div>
         <div className="flex gap-4">

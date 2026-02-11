@@ -179,7 +179,10 @@ export default function Profile() {
                 {filteredFlowcharts.map((flowchart) => (
                   <div
                     key={flowchart.id}
-                    onClick={() => router.push(`/Dolab/${flowchart.id}`)}
+                    onClick={() =>
+                      // <-- เปลี่ยนตรงนี้: ส่งพารามิเตอร์ disableSubmit=1
+                      router.push(`/Dolab/${flowchart.id}?disableSubmit=1`)
+                    }
                     className="flex flex-col items-center w-[238px] cursor-pointer hover:scale-[1.02] transition"
                   >
                     <img

@@ -51,6 +51,11 @@ interface TopBarControlsProps {
   onHighlightNode?: (nodeId: string | number | null) => void;
   autoPlayInputs?: boolean;
   classId?: number | string | null;
+  /**
+   * เมื่อเป็น true จะซ่อนปุ่ม Submit ทั้งหมด (ไม่สามารถส่งงานได้)
+   * ใช้กรณีเข้า DoLab มาจากหน้า Profile ที่ต้องการห้ามส่งงาน
+   */
+  disableSubmit?: boolean;
 }
 
 export default function TopBarControls({
@@ -61,6 +66,7 @@ export default function TopBarControls({
   onHighlightNode,
   autoPlayInputs = false,
   classId = null,
+  disableSubmit = false,
 }: TopBarControlsProps) {
   const { data: session } = useSession();
 
@@ -800,6 +806,7 @@ export default function TopBarControls({
 
   // ------------------------------------------------------------------
   //  IMPROVED DATA LOADING LOGIC 
+  //  (Added fallback: call apiRunTestcaseFromFlowchart if flowchart didn't contain lab/testcases)
   // ------------------------------------------------------------------
   useEffect(() => {
     if (!flowchartId && !labId && !detectedLabId) {
@@ -834,6 +841,7 @@ export default function TopBarControls({
                     finalLabId = found;
                     setDetectedLabId(found);
                 }
+                console.log("TopBarControls.loadLabData: flowData fetched for fallback check", { flowchartId, found });
             } catch (e) {
                 console.warn("Could not fetch flowchart for LabID extraction", e);
             }
@@ -878,6 +886,7 @@ export default function TopBarControls({
                 else if (Array.isArray(labResp?.testcases)) tcs = labResp.testcases;
                 else if (Array.isArray(labResp)) tcs = labResp;
 
+                console.log("TopBarControls.loadLabData: got labResp", { normalizedId, titleFound: !!title, descFound: !!desc, testcaseCount: tcs.length });
             } catch (err) {
                 console.warn("apiGetLab failed, falling back to embedded data", err);
             }
@@ -888,14 +897,78 @@ export default function TopBarControls({
             const nested = flowData?.flowchart ?? flowData;
             
             if (!title) {
-                title = nested?.assignment?.title ?? nested?.lab?.title ?? nested?.title ?? flowData?.title;
+                title = nested?.assignment?.title ?? nested?.lab?.title ?? nested?.title ?? flowData?.title ?? null;
             }
             if (!desc) {
-                desc = nested?.assignment?.description ?? nested?.lab?.description ?? nested?.description ?? flowData?.description;
+                desc = nested?.assignment?.description ?? nested?.lab?.description ?? nested?.description ?? flowData?.description ?? null;
             }
             if (tcs.length === 0) {
                 tcs = nested?.testcases ?? nested?.lab?.testcases ?? nested?.assignment?.testcases ?? flowData?.testcases ?? [];
             }
+
+            console.log("TopBarControls.loadLabData: fallback from flowData", { titleFound: !!title, descFound: !!desc, testcaseCount: tcs.length });
+        }
+
+        // 5. SECONDARY FALLBACK: If still missing and we have flowchartId, call apiRunTestcaseFromFlowchart (same as pressing Test)
+        if ((!title || (!desc && desc !== "" ) || tcs.length === 0) && flowchartId) {
+          try {
+            console.log("TopBarControls.loadLabData: secondary fallback - calling apiRunTestcaseFromFlowchart", { flowchartId });
+            const runResp = await apiRunTestcaseFromFlowchart(flowchartId);
+            console.log("TopBarControls.loadLabData: apiRunTestcaseFromFlowchart raw response:", runResp);
+
+            const runLabId = runResp?.labId ?? runResp?.lab_id ?? runResp?.session?.labId ?? runResp?.session?.lab_id;
+            if (runLabId) {
+              finalLabId = runLabId;
+              setDetectedLabId(runLabId);
+            }
+
+            // try to read title/desc from runResp if present
+            const maybeLabObj =
+              runResp?.lab ??
+              runResp?.data?.lab ??
+              runResp?.assignment ??
+              runResp?.data ??
+              runResp;
+
+            if (!title) {
+              title =
+                maybeLabObj?.labname ??
+                maybeLabObj?.title ??
+                maybeLabObj?.name ??
+                runResp?.title ??
+                (maybeLabObj?.assignment?.title ?? null) ??
+                null;
+            }
+            if (!desc) {
+              desc =
+                maybeLabObj?.problemSolving ??
+                maybeLabObj?.description ??
+                maybeLabObj?.detail ??
+                (maybeLabObj?.assignment?.description ?? null) ??
+                runResp?.description ??
+                null;
+            }
+
+            // gather testcases from runResp
+            if (Array.isArray(runResp?.testcases)) {
+              tcs = runResp.testcases;
+            } else if (Array.isArray(runResp?.session?.testcases)) {
+              tcs = runResp.session.testcases;
+            } else if (Array.isArray(runResp?.results)) {
+              // map results to synthetic testcases if needed
+              tcs = runResp.results.map((r: any, idx: number) => ({
+                id: r.testcaseId ?? r.id ?? idx + 1,
+                testcaseId: r.testcaseId ?? r.id ?? idx + 1,
+                inputVal: r.inputVal ?? r.input ?? null,
+                outputVal: r.expected ?? r.output ?? null,
+                __generatedFromRun: true,
+              }));
+            }
+
+            console.log("TopBarControls.loadLabData: secondary fallback extracted", { finalLabId, titleFound: !!title, descFound: !!desc, testcaseCount: tcs.length });
+          } catch (e) {
+            console.warn("Secondary fallback apiRunTestcaseFromFlowchart failed", e);
+          }
         }
 
         if (mounted) {
@@ -910,6 +983,7 @@ export default function TopBarControls({
         console.error("Error loading lab data:", err);
         if (mounted) {
              setProblemDetail({ title: "Error loading data", description: "" });
+             setLabTestcases([]);
         }
       } finally {
         if (mounted) {
@@ -1079,25 +1153,16 @@ export default function TopBarControls({
   };
 
   // --- Auto Run Tests when Popup Opens ---
-  // ใช้ autoRunTriggered เพื่อกันการรันซ้ำใน session เดียวกันของ popup
+  // NOTE: changed here — เปิด popup "Problem solving" จะไม่รัน handleRunTests อัตโนมัติอีกต่อไป.
   const autoRunTriggered = useRef(false);
 
   useEffect(() => {
-    // รีเซ็ต flag เมื่อปิด popup เพื่อให้เปิดใหม่แล้วรันใหม่ได้
+    // เคลียร์ flag เมื่อปิด popup เพื่อให้เปิดใหม่ได้โดยไม่กระทบ state อื่น ๆ
     if (!showPopup) {
       autoRunTriggered.current = false;
     }
-    
-    // ถ้ารูป popup เปิดอยู่ และมี flowchartId และยังไม่เคย auto-run ในรอบนี้
-    if (showPopup && flowchartId && !autoRunTriggered.current) {
-        autoRunTriggered.current = true;
-        // เช็คว่าถ้ายังไม่มีผลลัพธ์ (หรือต้องการรันทุกครั้ง) ให้สั่งรันเลย
-        if (Object.keys(testResults).length === 0 && !runningTests) {
-            handleRunTests();
-        }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPopup, flowchartId]);
+    // intentionally DO NOT auto-run tests here.
+  }, [showPopup]);
 
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
     const base = "inline-block text-xs px-2 py-1 rounded-md mb-2";
@@ -1204,6 +1269,14 @@ export default function TopBarControls({
   };
 
   const handleSubmit = async () => {
+    // Safety guard: ถ้า disableSubmit ถูกเปิด ให้หยุดและไม่ส่งงาน (ป้องกันกรณีเรียกจากที่อื่น)
+    if (disableSubmit) {
+      // ไม่แจ้ง alert รุนแรง — แค่ log เงียบ ๆ หรือแสดง toast ตามต้องการ
+      console.warn("Submission blocked because disableSubmit=true");
+      alert("ส่งงานถูกปิดใช้งานสำหรับหน้าจอนี้");
+      return;
+    }
+
     if (submitting) return;
     setSubmitting(true);
     setErrorMsg(null);
@@ -1299,12 +1372,19 @@ export default function TopBarControls({
         <div ref={chatRef} className="p-3 overflow-auto bg-gray-50" style={{ maxHeight: 260, minHeight: 150 }}>
           {chatMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 opacity-50 py-10">
-               <div className="flex gap-4 text-3xl">
-                 <FaPlay />
-                 <FaStepForward />
-               </div>
-               <div className="text-sm">Press Run or Step to start</div>
+              <div className="flex items-center gap-3 text-sm">
+                <span>Press Run</span>
+                <FaPlay />
+                <span className="">or</span>
+                <span>Step</span>
+                <FaStepForward />
+                <span className="">or</span>
+                <span>Stop</span>
+                <FaStop />
+                <span className="">to start</span>
+              </div>
             </div>
+
           ) : (
             chatMessages.map((m, i) => (
             <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
@@ -1484,13 +1564,21 @@ export default function TopBarControls({
                 {runningTests ? "Testing..." : "Test"}
               </button>
 
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className={`mt-0 text-sm px-6 py-2 rounded-full text-white transition-colors ${submitting ? "bg-gray-400 cursor-not-allowed" : "bg-blue-900 hover:bg-blue-800"}`}
-              >
-                {submitting ? "Submitting..." : "Submit"}
-              </button>
+              {/* หาก disableSubmit === true จะซ่อนปุ่ม Submit ทั้งหมดตามคำขอ */}
+              {!disableSubmit ? (
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className={`mt-0 text-sm px-6 py-2 rounded-full text-white transition-colors ${submitting ? "bg-gray-400 cursor-not-allowed" : "bg-blue-900 hover:bg-blue-800"}`}
+                >
+                  {submitting ? "Submitting..." : "Submit"}
+                </button>
+              ) : (
+                // ถ้าต้องการให้แสดงข้อความเล็ก ๆ ว่า submit ถูกปิด ให้คงข้อความนี้ไว้
+                <div className="">
+                  
+                </div>
+              )}
             </div>
           </div>
         </div>

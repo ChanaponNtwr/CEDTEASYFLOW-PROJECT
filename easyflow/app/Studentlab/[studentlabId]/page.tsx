@@ -28,6 +28,7 @@ interface TestCase {
   input: string;
   output: string;
   score: number;
+  raw?: any;
   [k: string]: any;
 }
 
@@ -53,10 +54,13 @@ interface RemoteLab {
 
 interface SubmissionResult {
   testcaseId?: number;
-  status: string;
+  status?: string;
   output?: string;
-  score?: number;
+  scoreAwarded?: number;
+  maxScore?: number;
   userId?: number;
+  raw?: any;
+  [k: string]: any;
 }
 
 // --- Helpers ---
@@ -102,6 +106,32 @@ const parseVal = (val: any): any => {
 const flattenDeep = (arr: any[]): any[] =>
   arr.reduce((acc, v) => (Array.isArray(v) ? acc.concat(flattenDeep(v)) : acc.concat(v)), []);
 
+// Utility: build results map keyed by testcase id (string)
+function buildResultsMap(submissions: any[]): Record<string, SubmissionResult> {
+  const map: Record<string, SubmissionResult> = {};
+  if (!Array.isArray(submissions)) return map;
+  submissions.forEach((s: any, idx: number) => {
+    const id =
+      s.testcaseId ??
+      s.testcase_id ??
+      s.id ??
+      s.tcId ??
+      (s.testcase && (s.testcase.id ?? s.testcase.testcaseId)) ??
+      null;
+    const key = id !== null && typeof id !== "undefined" ? String(id) : String(idx + 1);
+    map[key] = {
+      testcaseId: id,
+      status: s.status ?? s.result ?? s.verdict ?? s.outcome ?? s.state ?? null,
+      output: s.output ?? s.actual ?? s.resultOutput ?? null,
+      scoreAwarded: s.scoreAwarded ?? s.score ?? s.points ?? s.awarded ?? 0,
+      maxScore: s.maxScore ?? s.max_score ?? s.pointsTotal ?? null,
+      userId: s.userId ?? s.user_id ?? null,
+      raw: s,
+    };
+  });
+  return map;
+}
+
 // --- Main ---
 export default function StudentLabPage() {
   const params = useParams();
@@ -117,7 +147,8 @@ export default function StudentLabPage() {
 
   const [isStarting, setIsStarting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [tcResults, setTcResults] = useState<SubmissionResult[]>([]);
+  // NOTE: use a map keyed by testcase id for robust lookup
+  const [tcResults, setTcResults] = useState<Record<string, SubmissionResult>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
@@ -131,7 +162,7 @@ export default function StudentLabPage() {
       setLoading(true);
       setError(null);
       setIsSubmitted(false);
-      setTcResults([]);
+      setTcResults({});
 
       try {
         const labResp = await apiGetLab(labIdResolved);
@@ -163,7 +194,7 @@ export default function StudentLabPage() {
             no: typeof tc.no === "number" ? tc.no : idx + 1,
             input: format(rawInput) || "-",
             output: format(rawOutput) || "-",
-            score: Number(tc.score ?? tc.points ?? 0),
+            score: Number(tc.score ?? tc.points ?? tc.maxScore ?? 0),
             raw: tc,
           } as TestCase;
         });
@@ -176,22 +207,28 @@ export default function StudentLabPage() {
 
           try {
             const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
-            const allSubs = apiResponse?.data?.[0]?.submissions || apiResponse?.submissions || apiResponse?.data || [];
+            const allSubs =
+              apiResponse?.data?.[0]?.submissions ??
+              apiResponse?.submissions ??
+              apiResponse?.data ??
+              apiResponse ??
+              [];
             const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
             const mySubs = (arrSubs ?? []).filter(
-              (s: any) => Number(s.userId) === currentUserId
+              (s: any) => Number(s.userId) === currentUserId || Number(s.user_id) === currentUserId
             );
 
             if (mySubs.length > 0) {
-              setTcResults(mySubs);
+              const map = buildResultsMap(mySubs);
+              setTcResults(map);
               setIsSubmitted(true);
             } else {
-              setTcResults([]);
+              setTcResults({});
               setIsSubmitted(false);
             }
           } catch {
             setIsSubmitted(false);
-            setTcResults([]);
+            setTcResults({});
           }
         }
 
@@ -263,16 +300,22 @@ export default function StudentLabPage() {
 
       try {
         const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
-        const allSubs = apiResponse?.data?.[0]?.submissions || apiResponse?.submissions || apiResponse?.data || [];
+        const allSubs =
+          apiResponse?.data?.[0]?.submissions ??
+          apiResponse?.submissions ??
+          apiResponse?.data ??
+          apiResponse ??
+          [];
         const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
-        const mySubs = (arrSubs ?? []).filter((s: any) => Number(s.userId) === Number(userId));
+        const mySubs = (arrSubs ?? []).filter((s: any) => Number(s.userId) === Number(userId) || Number(s.user_id) === Number(userId));
 
         if (mySubs.length > 0) {
-          setTcResults(mySubs);
+          const map = buildResultsMap(mySubs);
+          setTcResults(map);
           setIsSubmitted(true);
         } else {
-          setTcResults([]);
-          setIsSubmitted(true);
+          setTcResults({});
+          setIsSubmitted(true); // no detailed results, but mark submitted
         }
       } catch {
         setIsSubmitted(true);
@@ -298,16 +341,22 @@ export default function StudentLabPage() {
     try {
       await apiCancelSubmission(Number(labIdResolved), Number(userId));
       setIsSubmitted(false);
-      setTcResults([]);
+      setTcResults({});
       
       try {
         const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
-        const allSubs = apiResponse?.data?.[0]?.submissions || apiResponse?.submissions || apiResponse?.data || [];
+        const allSubs =
+          apiResponse?.data?.[0]?.submissions ??
+          apiResponse?.submissions ??
+          apiResponse?.data ??
+          apiResponse ??
+          [];
         const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
-        const mySubs = (arrSubs ?? []).filter((s: any) => Number(s.userId) === Number(userId));
+        const mySubs = (arrSubs ?? []).filter((s: any) => Number(s.userId) === Number(userId) || Number(s.user_id) === Number(userId));
         if (mySubs.length > 0) {
+          const map = buildResultsMap(mySubs);
           setIsSubmitted(true);
-          setTcResults(mySubs);
+          setTcResults(map);
         }
       } catch { /* ignore */ }
 
@@ -335,7 +384,7 @@ export default function StudentLabPage() {
     whileSymVal: lab.whileSymVal ?? 0,
   } : undefined;
 
-  const renderStatusBadge = (status: string) => {
+  const renderStatusBadge = (status: string | undefined) => {
     if (!status) return <span className="text-gray-300 font-mono">-</span>;
     const s = String(status).toUpperCase();
     
@@ -478,10 +527,24 @@ export default function StudentLabPage() {
                         <tbody className="bg-white divide-y divide-gray-100 text-sm">
                           {testCases.length > 0 ? (
                             testCases.map((tc, index) => {
-                                const result = tcResults[index];
-                                const status = result?.status || "";
-                                const obtainedScore = result?.score ?? 0;
-                                const maxScore = tc.score;
+                                // Determine testcase id key for lookup
+                                const raw = tc.raw ?? {};
+                                const tcIdCandidate =
+                                  raw.testcaseId ??
+                                  raw.testcase_id ??
+                                  raw.id ??
+                                  raw.tcId ??
+                                  raw.testcase?.id ??
+                                  raw.testcase?.testcaseId ??
+                                  tc.no ??
+                                  (index + 1);
+                                const tcKey = String(tcIdCandidate);
+
+                                // Lookup result from map
+                                const result = tcResults[tcKey];
+                                const status = result?.status ?? "";
+                                const obtainedScore = Number(result?.scoreAwarded ?? result?.score ?? 0);
+                                const maxScore = tc.score ?? Number(result?.maxScore ?? 0);
 
                                 return (
                                   <tr key={tc.no} className="hover:bg-gray-50/80 transition-colors">
