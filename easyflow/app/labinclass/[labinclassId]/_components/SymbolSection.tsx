@@ -73,7 +73,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
 
       <div className="">
         {item.isUnlimited ? (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200 uppercase tracking-wide">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
                 Unlimited
             </span>
         ) : (

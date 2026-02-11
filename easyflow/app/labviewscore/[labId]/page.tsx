@@ -242,7 +242,7 @@ export default function Labviewscore() {
                 <div className="flex items-center gap-3 w-full md:w-auto">
                     <Link
                         href={`/editlab/${labIdResolved}`}
-                        className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700  hover:shadow-md hover:-translate-y-0.5 transition-all shadow-sm"
                     >
                         <FaEdit /> Edit
                     </Link>

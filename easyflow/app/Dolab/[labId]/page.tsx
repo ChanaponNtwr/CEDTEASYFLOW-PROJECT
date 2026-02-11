@@ -58,7 +58,7 @@ type Props = {
 const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
   // 1. ดึง Params ผ่าน Hook
   const paramsHook = useParams();
-  const searchParams = useSearchParams(); // ✅ เพิ่ม: ดึง Query Params (?labId=...)
+  const searchParams = useSearchParams(); // ✅ เพิ่ม: ดึง Query Params (?labId=..., ?disableSubmit=1)
 
   // ✅ เพิ่ม State สำหรับเก็บ labId
   const [labId, setLabId] = useState<number | null>(null);
@@ -83,6 +83,11 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
     return Array.isArray(fromHook) ? fromHook[0] : fromHook || "";
   }, [propId, paramsHook]);
 
+  // อ่าน disableSubmit จาก query string (เช่น ?disableSubmit=1)
+  const disableSubmitFromQS = useMemo(() => {
+    return searchParams?.get("disableSubmit") === "1";
+  }, [searchParams]);
+
   // ✅ Effect ใหม่: พยายามหา Lab ID จาก URL หรือ API
   useEffect(() => {
     // 1. ถ้ามี ?labId=xx มากับ URL ให้ใช้เลย (เร็วสุด)
@@ -102,7 +107,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
             resp?.lab_id ?? 
             resp?.assignmentId ?? 
             resp?.assignment_id ??
-            resp?.flowchart?.labId ??
+            resp?.flowchart?.labId ?? 
             resp?.flowchart?.lab_id ??
             resp?.data?.labId;
 
@@ -224,6 +229,8 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
           flowchartId={Number(resolvedFlowchartId)} 
           // ✅ ส่ง labId เข้าไป (ถ้ามีค่า)
           labId={labId}
+          // ✅ ส่ง disableSubmit ถ้ามี ?disableSubmit=1
+          disableSubmit={disableSubmitFromQS}
           onHighlightNode={highlightNode} 
         />
         {loading && <div className="mt-2 text-sm text-blue-600">Loading flowchart ID: {resolvedFlowchartId}...</div>}

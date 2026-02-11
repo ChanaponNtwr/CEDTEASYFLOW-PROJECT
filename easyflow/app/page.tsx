@@ -4,6 +4,7 @@ import Navbar from '@/components/Navbar';
 import Image from 'next/image';
 import Link from 'next/link'; // 1. นำเข้า Link
 import { motion } from "framer-motion";
+import { useSession } from "next-auth/react"; // <-- เพิ่ม
 
 // Types
 type ParticleCanvasProps = { enabled?: boolean; amount?: number };
@@ -190,6 +191,9 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
 }
 
 export default function Home() {
+  // useSession สำหรับเช็คสถานะ login
+  const { data: session } = useSession();
+
   return (
     <div className="h-screen w-screen overflow-hidden relative" style={{ background: 'black' }}>
       {/* Background Image with subtle zoom */}
@@ -238,28 +242,44 @@ export default function Home() {
             Our Intuitive Drag-And-Drop Editor
           </motion.p>
 
-          {/* 2. แก้ไขตรงนี้: 
-             - ใช้ Link ครอบ
-             - เปลี่ยน motion.button เป็น motion.div หรือ motion.span เพื่อความถูกต้องของ HTML 
-               (ปุ่ม button อยู่ใน Link a ไม่ถูกต้องตามหลัก semantic แต่ div ใน a ทำได้)
-          */}
-          <Link href="/trial">
-            <motion.div 
-              className="inline-block text-2xl mt-6 px-6 py-3 bg-yellow-500 text-white font-bold rounded-full cursor-pointer shadow-lg"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.9, duration: 0.5 }}
-              whileHover={{
-                scale: 1.1,
-                boxShadow: "0px 0px 20px rgba(255,255,0,0.6)",
-                y: -3,
-                transition: { type: "spring", stiffness: 300 },
-              }}
-              whileTap={{ scale: 0.95 }}
-            >
-              Get Started
-            </motion.div>
-          </Link>
+          {/* ปุ่มจะแสดง Get Started เมื่อล็อกเอาท์ — ถ้าล็อกอินแล้วจะแสดง Upgrade */}
+          {session ? (
+            <Link href="/upgrade">
+              <motion.div 
+                className="inline-block text-2xl mt-6 px-6 py-3 bg-yellow-500 text-white font-bold rounded-full cursor-pointer shadow-lg"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.9, duration: 0.5 }}
+                whileHover={{
+                  scale: 1.1,
+                  boxShadow: "0px 0px 20px rgba(255,255,0,0.6)",
+                  y: -3,
+                  transition: { type: "spring", stiffness: 300 },
+                }}
+                whileTap={{ scale: 0.95 }}
+              >
+                Upgrade
+              </motion.div>
+            </Link>
+          ) : (
+            <Link href="/trial">
+              <motion.div 
+                className="inline-block text-2xl mt-6 px-6 py-3 bg-yellow-500 text-white font-bold rounded-full cursor-pointer shadow-lg"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.9, duration: 0.5 }}
+                whileHover={{
+                  scale: 1.1,
+                  boxShadow: "0px 0px 20px rgba(255,255,0,0.6)",
+                  y: -3,
+                  transition: { type: "spring", stiffness: 300 },
+                }}
+                whileTap={{ scale: 0.95 }}
+              >
+                Get Started
+              </motion.div>
+            </Link>
+          )}
 
           <motion.p
             className="ml-2 mt-2 text-xl"

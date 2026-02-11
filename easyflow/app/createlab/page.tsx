@@ -289,7 +289,7 @@ export default function Createlab() {
               <div className="flex-1 space-y-6">
                 <div className="flex flex-col md:flex-row gap-4">
                   <div className="flex-1">
-                    <label className="block text-sm font-medium">Name</label>
+                    <label className="text-lg font-medium mb-4">Name</label>
                     <input
                       type="text"
                       value={name}
@@ -311,7 +311,7 @@ export default function Createlab() {
                 </div>
 
                 <div>
-  <label className="block text-sm font-medium">
+  <label className="text-lg font-medium mb-4">
     Problem Solving
     <span className="ml-2 text-xs text-gray-400">
       ({problem.length}/2500)

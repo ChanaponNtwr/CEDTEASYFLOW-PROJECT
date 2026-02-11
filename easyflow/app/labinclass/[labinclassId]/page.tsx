@@ -49,8 +49,8 @@ interface TestResult {
 }
 
 interface StudentSubmission {
-  studentId: number | string;
-  submissionId?: number;
+  studentId: number | string | undefined;
+  submissionId?: number | string;
   name: string;
   status: string; 
   score: number;
@@ -146,7 +146,10 @@ function LabInClass() {
           const submissionId = item.flowchartId ?? item.submission?.id ?? item.submissionId ?? undefined;
 
           const results: TestResult[] = tcs.map((tc) => {
-              const match = rawResults.find((r: any) => r.testcaseId === tc.testcaseId);
+              const match = rawResults.find((r: any) => {
+                  if (r.testcaseId !== undefined) return r.testcaseId === tc.testcaseId;
+                  return false;
+              });
               const rStatus = match?.status ?? "PENDING";
               let rScore = 0;
               if (match?.scoreAwarded !== undefined) rScore = Number(match.scoreAwarded);
@@ -198,10 +201,18 @@ function LabInClass() {
     setStudents(updated);
   };
 
-  const handleSelectStudent = (index: number) => {
-    const updated = [...students];
-    updated[index].selected = !updated[index].selected;
-    setStudents(updated);
+  // toggle selection by stable key (prefer submissionId, fallback to studentId)
+  const handleSelectStudent = (key: string | number | undefined) => {
+    if (key === undefined) return;
+    setStudents((prev) =>
+      prev.map((s) => {
+        const myKey = s.submissionId ?? s.studentId;
+        if (String(myKey) === String(key)) {
+          return { ...s, selected: !s.selected };
+        }
+        return s;
+      })
+    );
   };
 
   const handleSubmitAll = async () => {
@@ -212,19 +223,41 @@ function LabInClass() {
     const selectedStudents = students.filter(s => s.selected);
     if (selectedStudents.length === 0) return;
 
-    if (!confirm(`ยืนยันการให้ผ่าน (Pass) นักเรียน ${selectedStudents.length} คน?`)) return;
+    // split into those with valid userId and those without
+    const withUserId = selectedStudents.filter(s => s.studentId !== undefined && s.studentId !== null && s.studentId !== "");
+    const withoutUserId = selectedStudents.filter(s => !(s.studentId !== undefined && s.studentId !== null && s.studentId !== ""));
 
-    try {
-        await Promise.all(selectedStudents.map(async (student) => {
-            if (student.studentId) {
-                await apiConfirmSubmission(String(labId), String(student.studentId), String(reviewerId));
-            }
-        }));
-        alert("Success!");
-        await fetchData(); 
-    } catch (error: any) {
-        alert(`Error: ${error.message}`);
+    if (withUserId.length === 0) {
+      alert("ไม่มี studentId ที่ถูกต้องสำหรับการส่งคำขอ Pass — ยกเลิกการทำงาน");
+      return;
     }
+
+    let proceed = true;
+    if (withoutUserId.length > 0) {
+      proceed = confirm(`${withUserId.length} รายการจะถูกส่งสำหรับการ 'Pass' แต่ ${withoutUserId.length} รายการจะถูกข้าม (ไม่มี userId). ดำเนินการต่อหรือไม่?`);
+    } else {
+      proceed = confirm(`ยืนยันการให้ผ่าน (Pass) นักเรียน ${withUserId.length} คน?`);
+    }
+    if (!proceed) return;
+
+    const failed: Array<{ id: string | number | undefined; error: any }> = [];
+    await Promise.all(withUserId.map(async (student) => {
+      try {
+        // call API with studentId (user id). This avoids FK violation from sending submissionId as userId.
+        await apiConfirmSubmission(String(labId), String(student.studentId), String(reviewerId));
+      } catch (err) {
+        console.error("confirm error for", student.studentId, err);
+        failed.push({ id: student.studentId ?? student.submissionId, error: err });
+      }
+    }));
+
+    if (failed.length > 0) {
+      alert(`บางรายการไม่สำเร็จ: ${failed.length} รายการ (ดู console สำหรับรายละเอียด)`);
+    } else {
+      alert("Success!");
+    }
+
+    await fetchData();
   };
 
   const handleRejectAll = async () => {
@@ -235,22 +268,42 @@ function LabInClass() {
     const selectedStudents = students.filter(s => s.selected);
     if (selectedStudents.length === 0) return;
 
-    if (!confirm(`ยืนยันการปฏิเสธ (Reject) นักเรียน ${selectedStudents.length} คน?`)) return;
+    const withUserId = selectedStudents.filter(s => s.studentId !== undefined && s.studentId !== null && s.studentId !== "");
+    const withoutUserId = selectedStudents.filter(s => !(s.studentId !== undefined && s.studentId !== null && s.studentId !== ""));
 
-    try {
-        await Promise.all(selectedStudents.map(async (student) => {
-            if (student.studentId) {
-                await apiRejectSubmission(String(labId), String(student.studentId), String(reviewerId));
-            }
-        }));
-        alert("Rejected successfully");
-        await fetchData();
-    } catch (error: any) {
-        alert(`Error: ${error.message}`);
+    if (withUserId.length === 0) {
+      alert("ไม่มี studentId ที่ถูกต้องสำหรับการส่งคำขอ Reject — ยกเลิกการทำงาน");
+      return;
     }
+
+    let proceed = true;
+    if (withoutUserId.length > 0) {
+      proceed = confirm(`${withUserId.length} รายการจะถูกส่งสำหรับการ 'Reject' แต่ ${withoutUserId.length} รายการจะถูกข้าม (ไม่มี userId). ดำเนินการต่อหรือไม่?`);
+    } else {
+      proceed = confirm(`ยืนยันการปฏิเสธ (Reject) นักเรียน ${withUserId.length} คน?`);
+    }
+    if (!proceed) return;
+
+    const failed: Array<{ id: string | number | undefined; error: any }> = [];
+    await Promise.all(withUserId.map(async (student) => {
+      try {
+        await apiRejectSubmission(String(labId), String(student.studentId), String(reviewerId));
+      } catch (err) {
+        console.error("reject error for", student.studentId, err);
+        failed.push({ id: student.studentId ?? student.submissionId, error: err });
+      }
+    }));
+
+    if (failed.length > 0) {
+      alert(`บางรายการไม่สำเร็จ: ${failed.length} รายการ (ดู console สำหรับรายละเอียด)`);
+    } else {
+      alert("Rejected successfully");
+    }
+
+    await fetchData();
   };
 
-  const handleViewStudent = (submissionId?: number) => {
+  const handleViewStudent = (submissionId?: number | string) => {
       if (submissionId) router.push(`/Dolab/${submissionId}`);
   };
 
@@ -261,7 +314,8 @@ function LabInClass() {
   const isAllChecked = filteredStudents.length > 0 && filteredStudents.every((s) => s.selected);
   const selectedCount = students.filter(s => s.selected).length;
 
-  const filterOptions = ["All", "Confirmed", "Pass", "Submitted", "Pending", "Fail"];
+  // <-- Added "Error" option here -->
+  const filterOptions = ["All", "Confirmed", "Pass", "Submitted", "Pending", "Fail", "Error"];
 
   const renderStatusBadge = (status: string) => {
       const s = String(status || "").toUpperCase();
@@ -272,7 +326,8 @@ function LabInClass() {
           badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200";
           dotColor = "bg-emerald-500";
       }
-      else if (["FAIL", "FAILED", "REJECTED", "WRONG"].includes(s)) {
+      // <-- include ERROR in fail group so it shows red -->
+      else if (["FAIL", "FAILED", "REJECTED", "WRONG", "ERROR"].includes(s)) {
           badgeStyle = "bg-red-50 text-red-700 border-red-200";
           dotColor = "bg-red-500";
       }
@@ -323,7 +378,6 @@ function LabInClass() {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 leading-tight">{labData.labname}</h1>
                 <div className="flex items-center gap-3 mt-1.5 text-sm">
-                    {/* <span className="bg-gray-100 px-2 py-0.5 rounded text-xs font-medium text-gray-600">ID: {labData.labId}</span> */}
                     <span className="text-gray-300">|</span>
                     <span className="font-medium text-gray-700">{labData.totalScore} Points</span>
                 </div>
@@ -460,15 +514,18 @@ function LabInClass() {
                       <tr><td colSpan={10} className="px-6 py-16 text-center text-gray-400 italic bg-gray-50/30">No students found matching your filter.</td></tr>
                   ) : (
                       filteredStudents.map((student, index) => {
-                        const originalIndex = students.findIndex((s) => s.studentId === student.studentId);
+                        // use submissionId as primary key, fallback to studentId, then index
+                        const uniqueKey = student.submissionId ?? student.studentId ?? index;
+                        const keyForStudent = student.submissionId ?? student.studentId;
+
                         return (
-                          <tr key={student.studentId} className={`group hover:bg-gray-50 transition-colors duration-150 ${student.selected ? 'bg-red-50/40' : ''}`}>
+                          <tr key={String(uniqueKey)} className={`group hover:bg-gray-50 transition-colors duration-150 ${student.selected ? 'bg-red-50/40' : ''}`}>
                             <td className="px-6 py-4 whitespace-nowrap align-middle">
                               <input
                                 type="checkbox"
                                 className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer"
-                                checked={student.selected}
-                                onChange={() => handleSelectStudent(originalIndex)}
+                                checked={!!student.selected}
+                                onChange={() => handleSelectStudent(keyForStudent)}
                               />
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap align-middle">
@@ -477,28 +534,26 @@ function LabInClass() {
                             <td className="px-6 py-4 whitespace-nowrap align-middle">
                                 <div className="flex flex-col">
                                     <span className="text-sm font-semibold text-gray-900">{student.name}</span>
-                                    {/* <span className="text-xs text-gray-400 font-mono mt-0.5">{student.studentId}</span> */}
                                 </div>
                             </td>
                             
-                            {/* Dynamic Test Case Columns */}
-                            {labData.testCases.map((_, idx) => {
-                                const res = student.results[idx];
+                            {/* Dynamic Test Case Columns - SHOW SCORE AS "got / max" */}
+                            {labData.testCases.map((tc, idx2) => {
+                                const res = student.results[idx2];
+                                const got = (res?.score !== undefined && res?.score !== null) ? res.score : 0;
+                                const max = (res?.maxScore !== undefined && res?.maxScore !== null) ? res.maxScore : tc.score;
+
                                 const isPass = res?.status === "PASS" || res?.status === "CONFIRMED";
                                 const isFail = res?.status === "FAIL" || res?.status === "REJECTED";
-                                
+
+                                let scoreTextClasses = "text-sm font-mono text-gray-700";
+                                if (got === max && max > 0) scoreTextClasses = "text-sm font-mono font-semibold text-emerald-600";
+                                else if ((isFail || got === 0) && !isPass) scoreTextClasses = "text-sm font-mono text-red-600";
+
                                 return (
-                                    <td key={idx} className="px-2 py-4 whitespace-nowrap text-center align-middle">
-                                        <div className="flex justify-center">
-                                            {isPass ? (
-                                                <IoCheckmarkCircle className="text-emerald-500 text-xl" />
-                                            ) : isFail ? (
-                                                <IoCloseCircle className="text-red-400 text-xl" />
-                                            ) : (
-                                                <div className="w-5 h-5 rounded-full border-2 border-gray-200 flex items-center justify-center">
-                                                    <span className="w-1.5 h-1.5 bg-gray-300 rounded-full"></span>
-                                                </div>
-                                            )}
+                                    <td key={idx2} className="px-2 py-4 whitespace-nowrap text-center align-middle">
+                                        <div className="flex justify-center items-center">
+                                            <span className={scoreTextClasses}>{got}/{max}</span>
                                         </div>
                                     </td>
                                 );
@@ -543,7 +598,7 @@ function LabInClass() {
           </div>
 
 {/* Configuration Section (Moved to Bottom) */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-10"> {/* เพิ่ม mb-10 ให้มีระยะห่างจากขอบล่างจอ */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-10">
                <div className="flex items-center gap-2 mb-6 border-b border-gray-50 pb-3">
                     <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
                     <h2 className="text-lg font-bold text-gray-800">Configuration</h2>
