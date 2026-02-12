@@ -956,11 +956,12 @@ export default function TopBarControls({
               tcs = runResp.session.testcases;
             } else if (Array.isArray(runResp?.results)) {
               // map results to synthetic testcases if needed
+              // NOTE: we intentionally DO NOT include actual values here (per request)
               tcs = runResp.results.map((r: any, idx: number) => ({
                 id: r.testcaseId ?? r.id ?? idx + 1,
                 testcaseId: r.testcaseId ?? r.id ?? idx + 1,
                 inputVal: r.inputVal ?? r.input ?? null,
-                outputVal: r.expected ?? r.output ?? null,
+                outputVal: null,
                 __generatedFromRun: true,
               }));
             }
@@ -1071,16 +1072,8 @@ export default function TopBarControls({
           (Array.isArray(r.errors) ? r.errors.join("; ") : undefined) ??
           null;
 
-        const actual =
-          r.actual ??
-          r.actualVal ??
-          r.actual_val ??
-          r.output ??
-          r.outputVal ??
-          r.output_val ??
-          r.resultOutput ??
-          r.result_output ??
-          null;
+        // We intentionally ignore "actual" values entirely (do not add them to messages)
+        // const actual = ... (not used)
 
         let level: TestLevel = "info";
         if (["PASS", "PASSED", "OK", "SUCCESS"].includes(status)) level = "success";
@@ -1092,15 +1085,6 @@ export default function TopBarControls({
 
         if (errorMessage) {
           messages.push({ level: "error", text: String(errorMessage) });
-        }
-
-        if (actual !== null && typeof actual !== "undefined") {
-          try {
-            const aStr = Array.isArray(actual) ? actual.join(", ") : String(actual);
-            messages.push({ level: "info", text: `Actual: ${aStr}` });
-          } catch {
-            messages.push({ level: "info", text: `Actual: ${String(actual)}` });
-          }
         }
 
         const altKeys = new Set<string>();
@@ -1130,13 +1114,12 @@ export default function TopBarControls({
         });
 
         keys.forEach((k) => {
-          const msgs = newResults[k];
-          const actualMsg = msgs.find((m) => m.text?.startsWith("Actual:"))?.text?.replace(/^Actual:\s*/, "") ?? null;
+          // We intentionally do NOT populate outputVal from any 'actual' value.
           synthetic.push({
             id: k,
             testcaseId: k,
             inputVal: null,
-            outputVal: actualMsg ?? null,
+            outputVal: null,
             score: 0,
             __generatedFromResults: true,
           });
@@ -1167,10 +1150,7 @@ export default function TopBarControls({
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
     const base = "inline-block text-xs px-2 py-1 rounded-md mb-2";
     
-    // Highlight Actual value
-    if (r.text.startsWith("Actual:")) {
-       return <div key={idx} className="block text-lg font-bold text-gray-800 mb-1">{r.text}</div>
-    }
+    // No more 'Actual:' branch — actual values are not shown.
 
     switch (r.level) {
       case "error":
@@ -1540,7 +1520,7 @@ export default function TopBarControls({
                       <div className="flex flex-col">
                         {(statusItems ?? []).map((r, idx) => {
                             // Filter out redundant status text (e.g., "PASS", "FAIL") because the badge shows it
-                            if (summaryStatusMsg && r.text === summaryStatusMsg.text && !r.text.startsWith("Actual")) {
+                            if (summaryStatusMsg && r.text === summaryStatusMsg.text) {
                                 return null;
                             }
                             return (

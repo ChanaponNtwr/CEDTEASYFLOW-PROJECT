@@ -1007,14 +1007,15 @@ export default function TopBarControls({
           messages.push({ level: "error", text: String(errorMessage) });
         }
 
-        if (actual !== null && typeof actual !== "undefined") {
-          try {
-            const aStr = Array.isArray(actual) ? actual.join(", ") : String(actual);
-            messages.push({ level: "info", text: `Actual: ${aStr}` });
-          } catch {
-            messages.push({ level: "info", text: `Actual: ${String(actual)}` });
-          }
-        }
+        // <-- REMOVED: pushing "Actual: ..." message so Actual lines are not shown in UI
+        // if (actual !== null && typeof actual !== "undefined") {
+        //   try {
+        //     const aStr = Array.isArray(actual) ? actual.join(", ") : String(actual);
+        //     messages.push({ level: "info", text: `Actual: ${aStr}` });
+        //   } catch {
+        //     messages.push({ level: "info", text: `Actual: ${String(actual)}` });
+        //   }
+        // }
 
         newResults[tcId] = messages;
       });
@@ -1147,19 +1148,25 @@ export default function TopBarControls({
 
       {/* Persistent single chat panel (Console) */}
       <div className="fixed bottom-6 right-6 z-50 w-96 max-h-[420px] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 bg-blue-800 text-white flex items-center justify-between">
+        <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white flex items-center justify-between">
           <div className="font-medium flex items-center gap-2">Console</div>
-          <div className="text-xs opacity-70 bg-blue-800 px-2 py-0.5 rounded-full">{expectingInput ? "Input Required" : "Idle"}</div>
+          <div className="text-sm opacity-90">{expectingInput ? `Expecting: ${inputVarName ?? "input"}` : "Status"}</div>
         </div>
 
-        <div ref={chatRef} className="p-3 overflow-auto bg-gray-50" style={{ maxHeight: 260 }}>
+        <div ref={chatRef} className="p-3 overflow-auto bg-gray-50" style={{ maxHeight: 260, minHeight: 150 }}>
           {chatMessages.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400 mt-10 mb-10 gap-2">
-                <div className="flex gap-3 text-2xl">
-                    <FaPlay className="text-green-400 opacity-50"/>
-                    <FaStepForward className="text-yellow-400 opacity-50"/>
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 opacity-50 py-10">
+                <div className="flex items-center gap-3 text-sm">
+                  <span>Press Run</span>
+                  <FaPlay />
+                  <span className="">or</span>
+                  <span>Step</span>
+                  <FaStepForward />
+                  <span className="">or</span>
+                  <span>Stop</span>
+                  <FaStop />
+                  <span className="">to start</span>
                 </div>
-                <div className="text-sm">Press Play or Step to start</div>
             </div>
           )}
           {chatMessages.map((m, i) => (
@@ -1195,23 +1202,27 @@ export default function TopBarControls({
                   if (e.key === "Enter") handleSubmitInput();
                 }}
                 className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
-                placeholder={`Enter value for ${inputVarName}...`}
+                placeholder="พิมพ์ค่าที่ต้องการส่ง..."
                 autoFocus
               />
 
               <button onClick={handleSubmitInput} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
-                Send
+                ส่ง
               </button>
               <button onClick={cancelInput} className="bg-gray-200 text-gray-800 px-3 py-2 rounded text-sm hover:bg-gray-300">
-                Cancel
+                ยกเลิก
               </button>
             </div>
           ) : (
              <div className="flex justify-between items-center h-[38px]">
-                <span className="text-xs text-gray-400 italic pl-1">Waiting for execution...</span>
-                <button onClick={() => setChatMessages([])} className="text-xs px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600">
-                  Clear Log
-                </button>
+                <span className="text-sm text-gray-500">
+                  {chatMessages.length > 0 ? "Output log" : ""}
+                </span>
+                <div className="flex gap-2">
+                  <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
+                    Clear
+                  </button>
+                </div>
              </div>
           )}
         </div>
@@ -1219,19 +1230,23 @@ export default function TopBarControls({
 
       {showPopup && (
         <div className="absolute z-50 w-120 h-auto rounded-xl bg-white p-4 shadow-xl border border-gray-200 ml-20 mt-3 transform translate-x-[-10%] animate-fadeIn">
-          <div className="relative w-full">
-            <div className="text-gray-800 text-sm font-medium font-['Sarabun'] leading-snug mb-4 whitespace-pre-wrap">
+         <div className="relative w-full">
+            {/* Title & description: allow long text to wrap and scroll if too tall */}
+            <div className="text-gray-800 text-lg font-medium font-['Sarabun'] leading-snug mb-4 whitespace-pre-wrap break-words">
               {labInfo ? (
                 <>
-                  <div className="font-bold mb-1 text-lg">{labInfo.name}</div>
-                  <div className="text-gray-600">{labInfo.detail}</div>
+                  <div className="font-bold mb-1">{labInfo.name}</div>
+                  <div className="text-gray-600 max-h-40 overflow-auto break-words whitespace-pre-wrap pr-2">
+                    {labInfo.detail}
+                  </div>
                 </>
               ) : (
-                "Loading Lab Problem..."
+                "กำลังโหลดรายละเอียดโจทย์..."
               )}
             </div>
 
             <div className="space-y-4 max-h-96 overflow-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300">
+              {labTestcases.length === 0 && <div className="text-sm text-gray-400">ยังไม่มี Testcases ให้แสดง</div>}
               {labTestcases.map((tc, index) => {
                 // Use Index + 1 for display ID as requested
                 const displayId = String(index + 1);
@@ -1314,8 +1329,17 @@ export default function TopBarControls({
                 onClick={handleRunTests}
                 disabled={runningTests}
                 className={`text-base font-medium px-8 py-2 rounded-full transition-all shadow-sm ${runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600 hover:shadow"}`}>
-                {runningTests ? "Testing..." : "Run Tests"}
+                {runningTests ? "Testing..." : "Test"}
               </button>
+
+              {/* Submit: visual parity with original UI but disabled in trial build (no submit handler available here) */}
+              {/* <button
+                disabled
+                title="Submission disabled in trial"
+                className="text-base font-medium px-6 py-2 rounded-full bg-blue-900 text-white opacity-60 cursor-not-allowed"
+              >
+                Submit
+              </button> */}
             </div>
           </div>
         </div>
