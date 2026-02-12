@@ -39,7 +39,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
       bgColor: "bg-blue-200",
       textColor: "text-blue-800",
       count: 0,
-      isUnlimited: false,
+      isUnlimited: true,
       imageSrc: "/images/input.png",
     },
     output: {
@@ -47,7 +47,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
       bgColor: "bg-green-200",
       textColor: "text-green-800",
       count: 0,
-      isUnlimited: false,
+      isUnlimited: true,
       imageSrc: "/images/output.png",
     },
     declare: {
@@ -55,7 +55,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
       bgColor: "bg-yellow-200",
       textColor: "text-yellow-800",
       count: 0,
-      isUnlimited: false,
+      isUnlimited: true,
       imageSrc: "/images/declare.png",
     },
     assign: {
@@ -63,7 +63,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
       bgColor: "bg-yellow-200",
       textColor: "text-yellow-800",
       count: 0,
-      isUnlimited: false,
+      isUnlimited: true,
       imageSrc: "/images/assign.png",
     },
     if: {
@@ -71,7 +71,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
       bgColor: "bg-pink-200",
       textColor: "text-pink-800",
       count: 0,
-      isUnlimited: false,
+      isUnlimited: true,
       imageSrc: "/images/if.png",
     },
     while: {
@@ -79,7 +79,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
       bgColor: "bg-indigo-200",
       textColor: "text-indigo-800",
       count: 0,
-      isUnlimited: false,
+      isUnlimited: true,
       imageSrc: "/images/while.png",
     },
     for: {
@@ -87,7 +87,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
       bgColor: "bg-teal-200",
       textColor: "text-teal-800",
       count: 0,
-      isUnlimited: false,
+      isUnlimited: true,
       imageSrc: "/images/for.png",
     },
   });

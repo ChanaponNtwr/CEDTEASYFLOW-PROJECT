@@ -156,7 +156,7 @@ export default function Profile() {
               Email: {user.email}
             </div>
 
-            <div className="absolute top-[682px] left-[84px] flex items-center gap-4">
+            {/* <div className="absolute top-[682px] left-[84px] flex items-center gap-4">
               <Link href="/upgrade">
                 <motion.div
                   className="inline-block text-2xl px-6 py-3 bg-yellow-500 text-white font-bold rounded-full cursor-pointer shadow-lg"
@@ -174,7 +174,7 @@ export default function Profile() {
               <p className="w-[260px] text-black text-[20px] font-semibold">
                 Upgrade your package to add more students
               </p>
-            </div>
+            </div> */}
 
             {/* Flowchart Section */}
             <div className="relative w-[1880px] bg-[#FBFBFB] rounded-[40px] p-10 mt-[800px] mx-auto min-h-[400px]">

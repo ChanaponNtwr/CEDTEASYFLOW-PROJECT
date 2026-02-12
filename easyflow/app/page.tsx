@@ -245,21 +245,7 @@ export default function Home() {
           {/* ปุ่มจะแสดง Get Started เมื่อล็อกเอาท์ — ถ้าล็อกอินแล้วจะแสดง Upgrade */}
           {session ? (
             <Link href="/upgrade">
-              <motion.div 
-                className="inline-block text-2xl mt-6 px-6 py-3 bg-yellow-500 text-white font-bold rounded-full cursor-pointer shadow-lg"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.9, duration: 0.5 }}
-                whileHover={{
-                  scale: 1.1,
-                  boxShadow: "0px 0px 20px rgba(255,255,0,0.6)",
-                  y: -3,
-                  transition: { type: "spring", stiffness: 300 },
-                }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Upgrade
-              </motion.div>
+          
             </Link>
           ) : (
             <Link href="/trial">
@@ -280,15 +266,6 @@ export default function Home() {
               </motion.div>
             </Link>
           )}
-
-          <motion.p
-            className="ml-2 mt-2 text-xl"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1.1, duration: 0.5 }}
-          >
-            Get Started for Free
-          </motion.p>
         </header>
       </motion.div>
     </div>
