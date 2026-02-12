@@ -1,3 +1,4 @@
+// app/(somepath)/Editlab.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -38,7 +39,8 @@ function Editlab() {
     console.log("📌 [Editlab Debug]");
     console.log("   - Resolved LAB_ID:", LAB_ID);
     console.log("   - User ID from Session:", session?.user);
-  }, [LAB_ID, session]);
+    console.log("   - returnPath param:", searchParams?.get("returnPath"));
+  }, [LAB_ID, session, searchParams]);
 
   const [labName, setLabName] = useState<string>("");
   const [dateline, setDateline] = useState<string>("");
@@ -224,11 +226,19 @@ function Editlab() {
     }, 0);
   };
 
-  const handleCancel = () => {
-    router.push("/mylab");
+  // ---- NAV: check returnPath param first; if absent fallback to labinfo path ----
+  const rawReturn = searchParams?.get("returnPath");
+  const decodedReturn = rawReturn ? decodeURIComponent(rawReturn) : null;
+  const getLabUrl = () => {
+    if (decodedReturn && decodedReturn !== "") return decodedReturn;
+    return LAB_ID ? `/labinfo/${String(LAB_ID)}` : "/mylab";
   };
+  const handleCancel = () => {
+    router.push(getLabUrl());
+  };
+  // --------------------------------------------------------
 
-  // ✅ แก้ไขฟังก์ชัน handleSave
+  // ✅ แก้ไขฟังก์ชัน handleSave ให้กลับตาม returnPath ถ้ามี
   const handleSave = async () => {
     if (!LAB_ID) {
       alert("Missing labId");
@@ -273,7 +283,7 @@ function Editlab() {
         // แต่ถ้า Backend รับ YYYY-MM-DD ก็ใช้ค่าเดิม
       }
 
-const payload: any = {
+      const payload: any = {
         labId: LAB_ID,
         labname: labName,
         testcases: testcasesPayload,
@@ -288,12 +298,8 @@ const payload: any = {
         forSymVal: symbols.for,
       };
 
-      // 🔴 ลองเปลี่ยนชื่อ key ตรงนี้
       if (dateline) {
-         // ลองส่งเป็น dueDate แทน dateline
          payload.dueDate = dateline; 
-         // หรือถ้า backend ต้องการ dateline จริงๆ ให้ใช้บรรทัดล่าง
-         // payload.dateline = dateline;
       }
       
       if (problemSolving) payload.problemSolving = problemSolving;
@@ -303,13 +309,12 @@ const payload: any = {
       await apiUpdateLab(LAB_ID, payload);
 
       alert("Saved successfully!");
-      router.push("/mylab");
-
+      // ---- NAV: go back to returnPath or to labinfo ----
+      router.push(getLabUrl());
+      // --------------------------------------------------------
     } catch (err: any) {
       console.error("Save failed detail:", err);
       
-      // ✅ เพิ่มการดึงข้อความ Error จาก Backend มาแสดง
-      // เพื่อดูว่า 400 Bad Request เพราะอะไรกันแน่
       const responseData = err?.response?.data;
       const errorMessage = 
           responseData?.message || 
@@ -331,7 +336,7 @@ const payload: any = {
             {/* Action Buttons */}
             <div className="flex justify-end space-x-4 mb-6">
               <Link
-                href="/mylab"
+                href={getLabUrl()}
                 className="bg-[#D21F3C] text-white px-4 py-2 rounded-full flex items-center hover:bg-[#B81C35]"
               >
                 Cancel
@@ -360,15 +365,6 @@ const payload: any = {
                       className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm"
                     />
                   </div>
-                  {/* <div className="w-full md:w-1/4">
-                    <label className="block text-sm font-medium text-gray-700">Dateline</label>
-                    <input
-                      type="date"
-                      value={dateline}
-                      onChange={(e) => setDateline(e.target.value)}
-                      className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm"
-                    />
-                  </div> */}
                 </div>
 
                 <div>

@@ -208,6 +208,10 @@ export default function Labviewscore() {
       }
     : undefined;
 
+  // Build a safe returnPath (use current pathname if available)
+  const currentPath = pathname ?? `/labviewscore/${labIdResolved}`;
+  const encodedReturnPath = encodeURIComponent(currentPath);
+
   // --- Render Main UI ---
   return (
     <div className="min-h-screen w-full bg-[#F9FAFB]">
@@ -240,8 +244,9 @@ export default function Labviewscore() {
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto">
+                    {/* pass returnPath so Editlab will route back here after Save/Cancel */}
                     <Link
-                        href={`/editlab/${labIdResolved}`}
+                        href={`/editlab/${labIdResolved}?returnPath=${encodedReturnPath}`}
                         className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700  hover:shadow-md hover:-translate-y-0.5 transition-all shadow-sm"
                     >
                         <FaEdit /> Edit

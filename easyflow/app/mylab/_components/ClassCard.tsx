@@ -99,7 +99,7 @@ function ClassCard({
         </h3>
         
         {/* Problem Description (Short) */}
-        <p className="text-xs text-gray-500 line-clamp-2 mb-4 h-8 leading-relaxed">
+        <p className="text-xs text-gray-500 line-clamp-2 mb-4 h-12 leading-relaxed">
           {problem || "No description provided."}
         </p>
 
