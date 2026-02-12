@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
-import { FaPlus, FaCalendarAlt, FaClock } from "react-icons/fa";
+import { FaPlus, FaCalendarAlt, FaClock, FaChevronRight } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
@@ -208,6 +208,74 @@ function ImportLabModal({
 
   const todayStr = new Date().toISOString().split("T")[0];
 
+  // --- New UI helper (only for rendering) ---
+  const renderSelectedPreview = () => {
+    if (!selectedLabel) {
+      return (
+        <div className="flex items-center text-gray-400 group-hover:text-blue-500">
+          <FaPlus className="mr-2" />
+          <span>Choose from My Labs</span>
+        </div>
+      );
+    }
+
+    // If string is like "3 Labs Selected" -> show count pill
+    const matchCount = selectedLabel.match(/^(\d+)\s+Labs\s+Selected$/i);
+    if (matchCount) {
+      const count = parseInt(matchCount[1], 10);
+      return (
+        <div className="flex items-center justify-between w-full">
+          <div className="flex items-center">
+            <div className="flex items-center text-blue-700 font-semibold">
+              <FaPlus className="mr-2 w-3 h-3" />
+              <span>{count} Labs Selected</span>
+            </div>
+          </div>
+          <div className="text-sm text-gray-500 flex items-center gap-2">
+            <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs">{count}</span>
+            <FaChevronRight className="text-gray-400" />
+          </div>
+        </div>
+      );
+    }
+
+    // Otherwise assume comma-separated names
+    const names = selectedLabel.split(",").map(s => s.trim()).filter(Boolean);
+    const visible = names.slice(0, 2);
+    const more = names.length - visible.length;
+
+    return (
+      <div className="flex items-center justify-between w-full">
+        <div className="flex items-center gap-2 overflow-hidden">
+          <FaPlus className="text-blue-600 mr-1" />
+          <div className="flex gap-2 items-center min-w-0">
+            {visible.map((n, idx) => (
+              <div
+                key={idx}
+                className="px-3 py-1.5 text-sm bg-blue-50 text-blue-800 rounded-full font-medium truncate"
+                style={{ maxWidth: 160 }}
+                title={n}
+              >
+                {n}
+              </div>
+            ))}
+            {more > 0 && (
+              <div className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-full font-medium">
+                +{more}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500">Edit</span>
+          <FaChevronRight className="text-gray-400" />
+        </div>
+      </div>
+    );
+  };
+  // --- end helper ---
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -247,20 +315,13 @@ function ImportLabModal({
                   <button
                     type="button"
                     onClick={handleOpenSelectlab}
-                    className={`w-full h-14 border-2 border-dashed rounded-xl flex items-center justify-center transition-all duration-200 group
-                      ${selectedLabel ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-blue-400 hover:bg-gray-50"}
+                    className={`w-full h-14 border-2 rounded-xl flex items-center justify-center transition-all duration-200 group
+                      ${selectedLabel ? "border-blue-200 bg-white shadow-sm" : "border-dashed border-gray-300 hover:border-blue-400 hover:bg-gray-50"}
                     `}
                   >
-                    {selectedLabel ? (
-                      <span className="text-blue-700 font-semibold flex items-center">
-                        <FaPlus className="mr-2 w-3 h-3" /> {selectedLabel}
-                      </span>
-                    ) : (
-                      <div className="flex items-center text-gray-400 group-hover:text-blue-500">
-                        <FaPlus className="mr-2" />
-                        <span>Choose from My Labs</span>
-                      </div>
-                    )}
+                    <div className="w-full px-3">
+                      {renderSelectedPreview()}
+                    </div>
                   </button>
                 </div>
               )}

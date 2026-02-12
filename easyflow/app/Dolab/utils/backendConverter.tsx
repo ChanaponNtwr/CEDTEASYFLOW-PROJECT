@@ -512,10 +512,14 @@ export const convertBackendFlowchart = (payload: any) => {
     }
   };
 
+
+  const LARGE_COND_LABEL_STYLE = { fontSize: 16, fontWeight: 700 };
+
   const convertedEdges: Edge[] = backendEdges.map((be) => {
     const source = idMap.get(be.source) ?? be.source;
     const target = idMap.get(be.target) ?? be.target;
-    const condition = be.condition ?? "";
+    const conditionRaw = be.condition ?? "";
+    const condition = String(conditionRaw ?? "");
 
     const edge: Edge = {
       id: be.id ?? `e-${source}-${target}`,
@@ -527,12 +531,14 @@ export const convertBackendFlowchart = (payload: any) => {
       data: { condition },
       label: (condition === "auto" ? "" : condition),
       style: { strokeWidth: 2 },
+      // เพิ่ม labelStyle เฉพาะกรณี condition เป็น true/false (case-insensitive)
+      ...(String(condition).toLowerCase() === "true" || String(condition).toLowerCase() === "false" ? { labelStyle: LARGE_COND_LABEL_STYLE } : {}),
     } as Edge;
 
     const srcNode = nodesMap.get(source);
     const tgtNode = nodesMap.get(target);
 
-    applyEdgeHandles(edge, srcNode, tgtNode, condition);
+    applyEdgeHandles(edge, srcNode, tgtNode, conditionRaw);
 
     return edge;
   });

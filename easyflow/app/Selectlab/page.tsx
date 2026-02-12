@@ -301,10 +301,9 @@ export default function Selectlab() {
                     {selectedLabIds.length > 0 && (
                         <button
                             onClick={handleClearSelection}
-                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition-all active:scale-95 animate-in fade-in zoom-in duration-200"
+                            className=""
                         >
-                            <FaTimes />
-                            Clear
+                          
                         </button>
                     )}
                 </div>
