@@ -512,7 +512,7 @@ export const convertBackendFlowchart = (payload: any) => {
     }
   };
 
-  // เพิ่มสไตล์ป้ายเฉพาะเมื่อเป็น 'true' หรือ 'false' (ไม่แตะ logic อื่น ๆ)
+
   const LARGE_COND_LABEL_STYLE = { fontSize: 16, fontWeight: 700 };
 
   const convertedEdges: Edge[] = backendEdges.map((be) => {
