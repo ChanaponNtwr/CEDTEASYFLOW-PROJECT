@@ -1,11 +1,14 @@
 "use client";
 
+import React from "react";
 import { useSession, signIn } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import FilterActions from "./_components/FilterActions";
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getUserBannerColor } from "@/app/utils/userColor";
+import Link from "next/link";
+import { motion } from "framer-motion";
 
 // API import
 import { apiGetFlowchartsByUser } from "@/app/service/FlowchartService";
@@ -154,9 +157,20 @@ export default function Profile() {
             </div>
 
             <div className="absolute top-[682px] left-[84px] flex items-center gap-4">
-              <button className="bg-[#EE7A2E] text-white text-[25px] rounded-full px-10 py-3 shadow-md hover:brightness-110 transition">
-                Upgrade
-              </button>
+              <Link href="/upgrade">
+                <motion.div
+                  className="inline-block text-2xl px-6 py-3 bg-yellow-500 text-white font-bold rounded-full cursor-pointer shadow-lg"
+                  whileHover={{
+                    scale: 1.1,
+                    boxShadow: "0px 0px 20px rgba(255,255,0,0.6)",
+                    y: -3,
+                    transition: { type: "spring", stiffness: 300 },
+                  }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  Upgrade
+                </motion.div>
+              </Link>
               <p className="w-[260px] text-black text-[20px] font-semibold">
                 Upgrade your package to add more students
               </p>
