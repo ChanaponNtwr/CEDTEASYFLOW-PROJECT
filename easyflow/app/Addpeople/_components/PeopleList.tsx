@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
-import { FaTrash, FaUserPlus, FaEllipsisV, FaUserTie, FaUserGraduate, FaChalkboardTeacher, FaInbox } from "react-icons/fa";
+import React, { useState, useEffect } from "react";
+import { FaTrash, FaUserPlus, FaEllipsisV, FaUserTie, FaUserGraduate, FaChalkboardTeacher } from "react-icons/fa";
 
 type Person = { 
   id: number; 
@@ -29,11 +29,12 @@ const PeopleList: React.FC<PeopleListProps> = ({
   currentUserId 
 }) => {
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      const target = event.target as Element | null;
+      // หากคลิกไม่ได้อยู่ภายใน element ที่มี class 'peoplelist-menu' ให้ปิดเมนู
+      if (!target || !target.closest(".peoplelist-menu")) {
         setOpenMenuId(null);
       }
     };
@@ -94,12 +95,12 @@ const PeopleList: React.FC<PeopleListProps> = ({
       {/* People List */}
       <div className="space-y-3">
         {people.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-6 ">
-                      <FaUserTie className="w-16 h-16 mb-4 text-gray-200" />
-                      <p className="text-sm text-gray-400">
-                        No {title} available in this course
-                      </p>
-                    </div>
+          <div className="flex flex-col items-center justify-center py-6 ">
+            <FaUserTie className="w-16 h-16 mb-4 text-gray-200" />
+            <p className="text-sm text-gray-400">
+              No {title} available in this course
+            </p>
+          </div>
         ) : (
           people.map((person, idx) => {
             const isMe = person.id === currentUserId;
@@ -148,7 +149,7 @@ const PeopleList: React.FC<PeopleListProps> = ({
 
                   {/* Edit Role Dropdown */}
                   {showEditRole && onRoleChange && (
-                    <div className="relative" ref={menuRef}>
+                    <div className="relative">
                       <button 
                         onClick={() => toggleMenu(person.id)}
                         className="p-2 text-gray-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -157,7 +158,8 @@ const PeopleList: React.FC<PeopleListProps> = ({
                       </button>
 
                       {openMenuId === person.id && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                        // เพิ่ม class 'peoplelist-menu' เพื่อให้การตรวจจับการคลิกภายนอกทำงานถูกต้อง
+                        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 peoplelist-menu">
                            <div className="py-1">
                               {title !== "Teacher" && (
                                 <button onClick={() => handleSelectRole(person.id, "Teacher")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2">
