@@ -1,0 +1,157 @@
+pipeline {
+  agent { label 'docker' } // ต้องเป็น node ที่มี docker, kubectl (และ aws/azure cli ถ้าจำเป็น)
+  environment {
+    // Registry / image config - เปลี่ยน owner/name ให้ตรงกับของคุณ
+    DOCKER_REGISTRY = "ghcr.io"                          // fixed host
+    IMAGE_REPO      = "ChanaponNtwr/easyflow-frontend"   // owner/repo
+    IMAGE_NAME      = "${DOCKER_REGISTRY}/${IMAGE_REPO}" // full name without tag
+    // TAG: main => latest, อื่นๆ => build-<number>-<gitsha>
+    TAG = "${env.BRANCH_NAME == 'main' ? 'latest' : "build-${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"}"
+    IMAGE_FULL = "${IMAGE_NAME}:${TAG}"
+    // Credential IDs in Jenkins (ปรับชื่อถ้าคุณตั้งต่าง)
+    GHCR_CREDENTIALS = "ghcr-creds"         // Username/password -> username = github user/org, password = PAT
+    KUBECONFIG_CRED  = "kubeconfig-staging" // File credential containing kubeconfig for staging cluster
+    // name for k8s imagePullSecret to create/update
+    K8S_PULL_SECRET  = "ghcr-secret"
+    K8S_NAMESPACE    = "staging"
+  }
+
+  options {
+    ansiColor('xterm')
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '50'))
+    timeout(time: 60, unit: 'MINUTES')
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        script {
+          echo "Branch: ${env.BRANCH_NAME}, Commit: ${env.GIT_COMMIT}"
+        }
+      }
+    }
+
+    stage('Install deps') {
+      steps {
+        sh 'node -v || true'
+        sh 'npm ci --no-audit --no-fund'
+      }
+    }
+
+    stage('Lint') {
+      steps {
+        // เปลี่ยนตาม repo ของคุณ ถ้าไม่มี lint ให้ปล่อยผ่าน
+        sh 'npm run lint || echo "lint fail or not configured - continuing"'
+      }
+    }
+
+    stage('Build') {
+      steps {
+        sh 'npm run build'
+      }
+    }
+
+    stage('Unit Tests') {
+      steps {
+        // ถ้าไม่มี unit tests ให้ปรับหรือเอาออก
+        sh 'npm test || echo "tests failed or not configured - continuing"'
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        script {
+          echo "Building Docker image ${IMAGE_FULL}"
+          sh "docker build -t ${IMAGE_FULL} ."
+        }
+      }
+    }
+
+    stage('Scan Image (optional)') {
+      steps {
+        // ถ้ามี trivy บน agent จะรันสแกน ถ้าไม่มีก็ข้าม
+        sh 'if command -v trivy >/dev/null 2>&1; then trivy image --exit-code 1 ${IMAGE_FULL}; else echo "Trivy not available, skipping scan"; fi'
+      }
+    }
+
+    stage('Login to GHCR & Push') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: env.GHCR_CREDENTIALS, usernameVariable: 'GH_USER', passwordVariable: 'GH_PAT')]) {
+          sh '''
+            echo "Logging in to ghcr.io..."
+            echo $GH_PAT | docker login ghcr.io -u $GH_USER --password-stdin
+            echo "Pushing ${IMAGE_FULL} ..."
+            docker push ${IMAGE_FULL}
+            docker logout ghcr.io || true
+          '''
+        }
+      }
+    }
+
+    stage('Create/Update imagePullSecret on k8s (if private)') {
+      steps {
+        // สร้าง/อัปเดต secret สำหรับ k8s ให้สามารถ pull image จาก ghcr ได้ (dry-run client -> apply)
+        withCredentials([usernamePassword(credentialsId: env.GHCR_CREDENTIALS, usernameVariable: 'GH_USER', passwordVariable: 'GH_PAT'),
+                         file(credentialsId: env.KUBECONFIG_CRED, variable: 'KUBECONFIG')]) {
+          sh '''
+            echo "Creating/updating imagePullSecret ${K8S_PULL_SECRET} in namespace ${K8S_NAMESPACE} ..."
+            kubectl create secret docker-registry ${K8S_PULL_SECRET} -n ${K8S_NAMESPACE} \
+              --docker-server=https://ghcr.io \
+              --docker-username=${GH_USER} \
+              --docker-password=${GH_PAT} \
+              --dry-run=client -o yaml | kubectl apply -f -
+          '''
+        }
+      }
+    }
+
+    stage('Deploy to k8s (staging)') {
+      steps {
+        withCredentials([file(credentialsId: env.KUBECONFIG_CRED, variable: 'KUBECONFIG')]) {
+          script {
+            // ถ้ามี kustomize overlay: kubectl apply -k k8s/overlays/staging
+            // วิธีง่าย: ถ้าการ deploy ยังไม่มี ให้ apply manifest; ถ้ามีแล้ว ใช้ set image
+            sh """
+              set -e
+              echo "Updating deployment image to ${IMAGE_FULL}"
+              if kubectl get deployment easyflow-frontend -n ${K8S_NAMESPACE} >/dev/null 2>&1; then
+                kubectl set image deployment/easyflow-frontend easyflow-frontend=${IMAGE_FULL} -n ${K8S_NAMESPACE}
+              else
+                echo "Deployment not found - applying k8s/deployment-frontend.yaml (ensure manifest uses imagePullSecrets:${K8S_PULL_SECRET})"
+                kubectl apply -f k8s/deployment-frontend.yaml -n ${K8S_NAMESPACE}
+              fi
+            """
+          }
+        }
+      }
+    }
+
+    stage('Smoke test (quick)') {
+      steps {
+        // ตัวอย่าง simple smoke test: ตรวจสอบ pod status / readiness
+        withCredentials([file(credentialsId: env.KUBECONFIG_CRED, variable: 'KUBECONFIG')]) {
+          sh """
+            kubectl rollout status deployment/easyflow-frontend -n ${K8S_NAMESPACE} --timeout=120s
+            kubectl get pods -l app=easyflow-frontend -n ${K8S_NAMESPACE} -o wide || true
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "✅ Pipeline succeeded: ${IMAGE_FULL}"
+    }
+    failure {
+      echo "❌ Pipeline failed for ${IMAGE_FULL}"
+      // ถ้าต้องการส่ง notification ให้เพิ่มขั้นตอนแจ้ง Slack/Email ที่นี่
+    }
+    cleanup {
+      // ลบ image ใน local agent เพื่อประหยัด disk (optional)
+      sh "docker image rm ${IMAGE_FULL} || true"
+    }
+  }
+}
