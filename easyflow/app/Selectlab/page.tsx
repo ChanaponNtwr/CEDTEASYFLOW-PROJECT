@@ -209,7 +209,7 @@ export default function Selectlab() {
       Create Lab
   ======================== */
   const handleCreateLab = () => {
-    router.push("/createlab");
+  router.push("/createlab?from=selectlab");
   };
 
   /* =======================

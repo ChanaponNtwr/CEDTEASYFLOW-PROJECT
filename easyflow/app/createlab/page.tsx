@@ -7,6 +7,7 @@ import SymbolSection from "./_components/SymbolSection";
 import { useRouter } from "next/navigation";
 import { apiCreateTestcase, apiCreateLab } from "@/app/service/FlowchartService"; 
 import { useSession } from "next-auth/react"; // [1] Import Session
+import { useSearchParams } from "next/navigation";
 
 interface TestCase {
   input: string;
@@ -34,6 +35,8 @@ export default function Createlab() {
   };
 
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const from = searchParams.get("from");
   // [2] เรียกใช้ session
   const { data: session } = useSession();
 
@@ -87,7 +90,11 @@ export default function Createlab() {
   };
 
   const handleCancel = () => {
+  if (from === "Selectlab") {
+    router.push("/Selectlab");
+  } else {
     router.push("/mylab");
+  }
   };
 
   // helper: แปลง string -> (number|string)[]
@@ -244,7 +251,11 @@ export default function Createlab() {
         alert("สร้าง Lab เรียบร้อยแล้ว");
       }
 
-      router.push("/mylab");
+      if (from === "selectlab") {
+        router.push("/Selectlab");
+      } else {
+        router.push("/mylab");
+      }
     } catch (err) {
       console.error("handleCreate error:", err);
       alert("เกิดข้อผิดพลาด ข้อมูลอาจจะยังไม่ถูกส่ง กรุณาดู console");
