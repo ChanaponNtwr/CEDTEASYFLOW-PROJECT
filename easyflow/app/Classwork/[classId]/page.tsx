@@ -264,9 +264,14 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
               ) : (
                 <div className="flex flex-col space-y-3 pb-20">
                   {assignments.map((a: any, idx: number) => {
-                    const linkHref = canEdit
-                      ? `/labviewscore/${a.labId}`
-                      : `/Studentlab/${a.labId}`;
+                    // <-- เปลี่ยนตรงนี้: ถ้า role เป็น "ta" ให้ลิงก์ไปที่ labviewscore ด้วย
+                    const linkHref =
+                      // ถ้าเป็น owner หรือ teacher (canEdit) ให้ไป labviewscore — (เดิม)
+                      // ถ้าเป็น ta เราก็ให้ไป labviewscore เช่นกัน
+                      (canEdit || currentUserRole === "ta")
+                        ? `/labviewscore/${a.labId}`
+                        : `/Studentlab/${a.labId}`;
+
                     return (
                       <Link key={idx} href={linkHref} className="block group">
                         <AssignmentItem
