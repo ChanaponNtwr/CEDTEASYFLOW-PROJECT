@@ -107,6 +107,15 @@ export default function DoLabTrialPage({ params }: PageProps) {
     { title: "Step 3", description: "สามารถทดสอบ Flowchart ได้ที่ปุ่ม RunAll และ Step เพื่อดูผลลัพธ์ของ Flowchart" },
     { title: "Step 4", description: "ระบบจะแสดงผลลัพธ์ที่นี้ สามารถตอบโต้กับระบบได้ตรงนี้" },
   ];
+  const tutorialPositionMap: Record<number, string> = {
+  0: "left-80 top-24",
+  1: "left-[1100px] top-[280px]",
+  2: "left-80 top-24",
+  3: "bottom-25 right-105 ",
+  };
+
+  const tutorialPosition =
+    tutorialPositionMap[step] || "left-80 top-24";
 
   const refreshFlowchart = React.useCallback(async () => {
     if (!currentTrialId) return;
@@ -263,15 +272,7 @@ export default function DoLabTrialPage({ params }: PageProps) {
       {showTutorial && (
       <div className="fixed inset-0 z-[999] bg-black/20">
         <div
-          className={`absolute bg-white rounded-xl p-6 w-[420px] shadow-2xl border border-gray-200 ${
-            step === 0
-              ? "left-80 top-24"
-              : step === 1
-              ? "left-280 top-70"
-              : step === 2
-              ? "left-80 top-24"
-              : "bottom-50 left-539 -translate-x-1/2 -translate-y-1/2"
-          }`}
+          className={`absolute bg-white rounded-xl p-6 w-[420px] shadow-2xl border border-gray-200 ${tutorialPosition}`}
         >
           <h2 className="text-xl font-bold mb-3">
             {tutorialSteps[step].title}
