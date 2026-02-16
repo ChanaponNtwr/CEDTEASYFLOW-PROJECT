@@ -1425,7 +1425,7 @@ export default function TopBarControls({
       </div>
 
       {showPopup && (
-        <div className="absolute z-50 w-120 h-auto rounded-xl bg-white p-4 shadow-xl border border-gray-200 ml-20 mt-3 transform translate-x-[-10%] animate-fadeIn">
+        <div className="absolute z-50 w-120 h-auto rounded-xl bg-white p-4 shadow-xl border border-gray-200 ml-12 mt-3 transform translate-x-[-10%] animate-fadeIn">
           <div className="relative w-full">
             <div className="text-gray-800 text-lg font-medium font-['Sarabun'] leading-snug mb-4 whitespace-pre-wrap">
               {loadingProblem ? (
