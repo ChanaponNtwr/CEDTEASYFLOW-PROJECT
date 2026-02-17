@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
-import { FaFilter, FaCheck, FaTimes, FaSearch, FaChevronDown } from "react-icons/fa"; 
+import { FaFilter, FaCheck, FaTimes, FaSearch, FaChevronDown, FaSpinner } from "react-icons/fa";
 import { IoCheckmarkCircle, IoCloseCircle, IoRemoveCircleOutline } from "react-icons/io5";
 import Link from "next/link";
 import SymbolSection from "./_components/SymbolSection";
@@ -68,14 +68,23 @@ function LabInClass() {
   const labId = Array.isArray(rawId) ? rawId[0] : rawId;
 
   const [loading, setLoading] = useState(true);
+  const [studentsLoading, setStudentsLoading] = useState(false);
   const [labData, setLabData] = useState<PageLabData | null>(null);
   const [students, setStudents] = useState<StudentSubmission[]>([]);
   const [filterStatus, setFilterStatus] = useState("All");
+  const [error, setError] = useState<string | null>(null);
+
+  // processing state for confirm/reject actions
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const [processingType, setProcessingType] = useState<"confirm" | "reject" | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!labId) return;
     
     try {
+      setError(null);
+      // keep page-level loading as originally used
+      // but we set studentsLoading around submissions fetch
       const [labResp, tcResp] = await Promise.all([
          apiGetLab(String(labId)),
          apiGetTestcases(String(labId))
@@ -112,75 +121,85 @@ function LabInClass() {
       });
 
       // --- Fetch Submissions ---
-      const subResp = await apiGetSubmissionDetailsByLab(String(labId));
-      const rawData = subResp?.data ?? subResp ?? [];
-      const rawSubs = Array.isArray(rawData) ? rawData : [];
+      setStudentsLoading(true);
+      try {
+        const subResp = await apiGetSubmissionDetailsByLab(String(labId));
+        const rawData = subResp?.data ?? subResp ?? [];
+        const rawSubs = Array.isArray(rawData) ? rawData : [];
 
-      const mappedStudents: StudentSubmission[] = rawSubs.map((item: any) => {
-          const userObj = item.user || item.User || item.student || item.Student || item;
-          const join = (f: any, l: any) => `${f || ""} ${l || ""}`.trim();
+        const mappedStudents: StudentSubmission[] = rawSubs.map((item: any) => {
+            const userObj = item.user || item.User || item.student || item.Student || item;
+            const join = (f: any, l: any) => `${f || ""} ${l || ""}`.trim();
 
-          let studentName = "Unknown Student";
-          if (item.userName) studentName = item.userName;
-          else if (userObj.firstname || userObj.lastname) studentName = join(userObj.firstname, userObj.lastname);
-          else if (userObj.firstName || userObj.lastName) studentName = join(userObj.firstName, userObj.lastName);
-          else if (userObj.name) studentName = userObj.name;
-          else if (userObj.username) studentName = userObj.username;
-          else if (userObj.email) studentName = userObj.email;
+            let studentName = "Unknown Student";
+            if (item.userName) studentName = item.userName;
+            else if (userObj.firstname || userObj.lastname) studentName = join(userObj.firstname, userObj.lastname);
+            else if (userObj.firstName || userObj.lastName) studentName = join(userObj.firstName, userObj.lastName);
+            else if (userObj.name) studentName = userObj.name;
+            else if (userObj.username) studentName = userObj.username;
+            else if (userObj.email) studentName = userObj.email;
 
-          const rawResults = item.testcases || item.results || item.submission?.results || [];
+            const rawResults = item.testcases || item.results || item.submission?.results || [];
 
-          let finalStatus = "PENDING"; 
-          if (item.status) finalStatus = item.status;
-          else if (item.submission?.status) finalStatus = item.submission.status;
-          else if (Array.isArray(item.submissions) && item.submissions.length > 0) finalStatus = item.submissions[0].status;
+            let finalStatus = "PENDING"; 
+            if (item.status) finalStatus = item.status;
+            else if (item.submission?.status) finalStatus = item.submission.status;
+            else if (Array.isArray(item.submissions) && item.submissions.length > 0) finalStatus = item.submissions[0].status;
 
-          if ((!finalStatus || finalStatus === "PENDING") && rawResults.length > 0) {
-              const firstTc = rawResults[0];
-              if (firstTc && firstTc.status) {
-                  finalStatus = firstTc.status;
-              }
-          }
+            if ((!finalStatus || finalStatus === "PENDING") && rawResults.length > 0) {
+                const firstTc = rawResults[0];
+                if (firstTc && firstTc.status) {
+                    finalStatus = firstTc.status;
+                }
+            }
 
-          const score = item.totalScore ?? item.submission?.score ?? 0;
-          const submissionId = item.flowchartId ?? item.submission?.id ?? item.submissionId ?? undefined;
+            const score = item.totalScore ?? item.submission?.score ?? 0;
+            const submissionId = item.flowchartId ?? item.submission?.id ?? item.submissionId ?? undefined;
 
-          const results: TestResult[] = tcs.map((tc) => {
-              const match = rawResults.find((r: any) => {
-                  if (r.testcaseId !== undefined) return r.testcaseId === tc.testcaseId;
-                  return false;
-              });
-              const rStatus = match?.status ?? "PENDING";
-              let rScore = 0;
-              if (match?.scoreAwarded !== undefined) rScore = Number(match.scoreAwarded);
-              else if (match?.score !== undefined) rScore = Number(match.score);
-              else if (rStatus === "PASS" || rStatus === "CONFIRMED") rScore = tc.score;
+            const results: TestResult[] = tcs.map((tc) => {
+                const match = rawResults.find((r: any) => {
+                    if (r.testcaseId !== undefined) return r.testcaseId === tc.testcaseId;
+                    return false;
+                });
+                const rStatus = match?.status ?? "PENDING";
+                let rScore = 0;
+                if (match?.scoreAwarded !== undefined) rScore = Number(match.scoreAwarded);
+                else if (match?.score !== undefined) rScore = Number(match.score);
+                else if (rStatus === "PASS" || rStatus === "CONFIRMED") rScore = tc.score;
 
-              return { 
-                  status: rStatus,
-                  score: rScore,
-                  maxScore: tc.score
-              };
-          });
+                return { 
+                    status: rStatus,
+                    score: rScore,
+                    maxScore: tc.score
+                };
+            });
 
-          const studentId = item.userId ?? userObj.id ?? userObj.userId ?? userObj.studentId;
+            const studentId = item.userId ?? userObj.id ?? userObj.userId ?? userObj.studentId;
 
-          return {
-              studentId: studentId,
-              submissionId: submissionId,
-              name: studentName,
-              status: finalStatus || "Pending", 
-              score: score,
-              maxScore: totalScore,
-              selected: false,
-              results: results
-          };
-      });
+            return {
+                studentId: studentId,
+                submissionId: submissionId,
+                name: studentName,
+                status: finalStatus || "Pending", 
+                score: score,
+                maxScore: totalScore,
+                selected: false,
+                results: results
+            };
+        });
 
-      setStudents(mappedStudents);
+        setStudents(mappedStudents);
+      } catch (subErr) {
+        console.error("Failed to fetch submissions:", subErr);
+        setStudents([]);
+        // do not override overall error unless needed
+      } finally {
+        setStudentsLoading(false);
+      }
 
-    } catch (error) {
-      console.error("Failed to fetch data:", error);
+    } catch (err: any) {
+      console.error("Failed to fetch data:", err);
+      setError(String(err?.message ?? err ?? "Unknown error"));
     } finally {
       setLoading(false);
     }
@@ -240,6 +259,9 @@ function LabInClass() {
     }
     if (!proceed) return;
 
+    setIsProcessingAction(true);
+    setProcessingType("confirm");
+
     const failed: Array<{ id: string | number | undefined; error: any }> = [];
     await Promise.all(withUserId.map(async (student) => {
       try {
@@ -250,6 +272,9 @@ function LabInClass() {
         failed.push({ id: student.studentId ?? student.submissionId, error: err });
       }
     }));
+
+    setIsProcessingAction(false);
+    setProcessingType(null);
 
     if (failed.length > 0) {
       alert(`บางรายการไม่สำเร็จ: ${failed.length} รายการ (ดู console สำหรับรายละเอียด)`);
@@ -284,6 +309,9 @@ function LabInClass() {
     }
     if (!proceed) return;
 
+    setIsProcessingAction(true);
+    setProcessingType("reject");
+
     const failed: Array<{ id: string | number | undefined; error: any }> = [];
     await Promise.all(withUserId.map(async (student) => {
       try {
@@ -293,6 +321,9 @@ function LabInClass() {
         failed.push({ id: student.studentId ?? student.submissionId, error: err });
       }
     }));
+
+    setIsProcessingAction(false);
+    setProcessingType(null);
 
     if (failed.length > 0) {
       alert(`บางรายการไม่สำเร็จ: ${failed.length} รายการ (ดู console สำหรับรายละเอียด)`);
@@ -464,9 +495,10 @@ function LabInClass() {
                             : "bg-gray-50 text-gray-300 border border-transparent cursor-not-allowed"
                         }`}
                         onClick={handleRejectAll}
-                        disabled={selectedCount === 0}
+                        disabled={selectedCount === 0 || isProcessingAction}
                     >
-                        <FaTimes size={14} /> Reject ({selectedCount})
+                        {isProcessingAction && processingType === "reject" ? <FaSpinner className="animate-spin" /> : <FaTimes size={14} />} 
+                        {isProcessingAction && processingType === "reject" ? ` Rejecting (${selectedCount})` : ` Reject (${selectedCount})`}
                     </button>
 
                     <button
@@ -476,117 +508,126 @@ function LabInClass() {
                             : "bg-gray-100 text-gray-400 cursor-not-allowed"
                         }`}
                         onClick={handleSubmitAll}
-                        disabled={selectedCount === 0}
+                        disabled={selectedCount === 0 || isProcessingAction}
                     >
-                        <FaCheck size={14} /> Pass ({selectedCount})
+                        {isProcessingAction && processingType === "confirm" ? <FaSpinner className="animate-spin" /> : <FaCheck size={14} />} 
+                        {isProcessingAction && processingType === "confirm" ? ` Processing (${selectedCount})` : ` Confirm (${selectedCount})`}
                     </button>
                 </div>
             </div>
 
             {/* Table */}
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-100">
-                <thead className="bg-gray-50/50">
-                  <tr>
-                    <th className="px-6 py-4 text-left w-14">
-                        <div className="flex items-center">
-                            <input
-                                type="checkbox"
-                                className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer transition-colors"
-                                checked={isAllChecked}
-                                onChange={(e) => handleSelectAll(e.target.checked)}
-                            />
-                        </div>
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-40">Status</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider min-w-[200px]">Student Info</th>
-                    {labData.testCases.map((tc, idx) => (
-                         <th key={idx} className="px-2 py-4 text-center text-xs font-bold text-gray-400 uppercase tracking-wider w-16">
-                            <span className="block" title={`Input: ${tc.input}`}>TC{tc.no}</span>
-                         </th>
-                    ))}
-                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider w-28">Score</th>
-                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-28">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
-                  {filteredStudents.length === 0 ? (
-                      <tr><td colSpan={10} className="px-6 py-16 text-center text-gray-400 italic bg-gray-50/30">No students found matching your filter.</td></tr>
-                  ) : (
-                      filteredStudents.map((student, index) => {
-                        // use submissionId as primary key, fallback to studentId, then index
-                        const uniqueKey = student.submissionId ?? student.studentId ?? index;
-                        const keyForStudent = student.submissionId ?? student.studentId;
-
-                        return (
-                          <tr key={String(uniqueKey)} className={`group hover:bg-gray-50 transition-colors duration-150 ${student.selected ? 'bg-red-50/40' : ''}`}>
-                            <td className="px-6 py-4 whitespace-nowrap align-middle">
+            <div className="overflow-x-auto relative">
+              {/* studentsLoading overlay / inline loader */}
+              {studentsLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
+                  <div>Loading submissions...</div>
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-100">
+                  <thead className="bg-gray-50/50">
+                    <tr>
+                      <th className="px-6 py-4 text-left w-14">
+                          <div className="flex items-center">
                               <input
-                                type="checkbox"
-                                className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer"
-                                checked={!!student.selected}
-                                onChange={() => handleSelectStudent(keyForStudent)}
+                                  type="checkbox"
+                                  className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer transition-colors"
+                                  checked={isAllChecked}
+                                  onChange={(e) => handleSelectAll(e.target.checked)}
                               />
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap align-middle">
-                                {renderStatusBadge(student.status)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap align-middle">
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-semibold text-gray-900">{student.name}</span>
-                                </div>
-                            </td>
-                            
-                            {/* Dynamic Test Case Columns - SHOW SCORE AS "got / max" */}
-                            {labData.testCases.map((tc, idx2) => {
-                                const res = student.results[idx2];
-                                const got = (res?.score !== undefined && res?.score !== null) ? res.score : 0;
-                                const max = (res?.maxScore !== undefined && res?.maxScore !== null) ? res.maxScore : tc.score;
+                          </div>
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-40">Status</th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider min-w-[200px]">Student Info</th>
+                      {labData.testCases.map((tc, idx) => (
+                           <th key={idx} className="px-2 py-4 text-center text-xs font-bold text-gray-400 uppercase tracking-wider w-16">
+                              <span className="block" title={`Input: ${tc.input}`}>TC{tc.no}</span>
+                           </th>
+                      ))}
+                      <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider w-28">Score</th>
+                      <th className="px-6 py-4 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-28">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {filteredStudents.length === 0 ? (
+                        <tr><td colSpan={10} className="px-6 py-16 text-center text-gray-400 italic bg-gray-50/30">No students found matching your filter.</td></tr>
+                    ) : (
+                        filteredStudents.map((student, index) => {
+                          // use submissionId as primary key, fallback to studentId, then index
+                          const uniqueKey = student.submissionId ?? student.studentId ?? index;
+                          const keyForStudent = student.submissionId ?? student.studentId;
 
-                                const isPass = res?.status === "PASS" || res?.status === "CONFIRMED";
-                                const isFail = res?.status === "FAIL" || res?.status === "REJECTED";
+                          return (
+                            <tr key={String(uniqueKey)} className={`group hover:bg-gray-50 transition-colors duration-150 ${student.selected ? 'bg-red-50/40' : ''}`}>
+                              <td className="px-6 py-4 whitespace-nowrap align-middle">
+                                <input
+                                  type="checkbox"
+                                  className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                                  checked={!!student.selected}
+                                  onChange={() => handleSelectStudent(keyForStudent)}
+                                />
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap align-middle">
+                                  {renderStatusBadge(student.status)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap align-middle">
+                                  <div className="flex flex-col">
+                                      <span className="text-sm font-semibold text-gray-900">{student.name}</span>
+                                  </div>
+                              </td>
+                              
+                              {/* Dynamic Test Case Columns - SHOW SCORE AS "got / max" */}
+                              {labData.testCases.map((tc, idx2) => {
+                                  const res = student.results[idx2];
+                                  const got = (res?.score !== undefined && res?.score !== null) ? res.score : 0;
+                                  const max = (res?.maxScore !== undefined && res?.maxScore !== null) ? res.maxScore : tc.score;
 
-                                let scoreTextClasses = "text-sm font-mono text-gray-700";
-                                if (got === max && max > 0) scoreTextClasses = "text-sm font-mono font-semibold text-emerald-600";
-                                else if ((isFail || got === 0) && !isPass) scoreTextClasses = "text-sm font-mono text-red-600";
+                                  const isPass = res?.status === "PASS" || res?.status === "CONFIRMED";
+                                  const isFail = res?.status === "FAIL" || res?.status === "REJECTED";
 
-                                return (
-                                    <td key={idx2} className="px-2 py-4 whitespace-nowrap text-center align-middle">
-                                        <div className="flex justify-center items-center">
-                                            <span className={scoreTextClasses}>{got}/{max}</span>
-                                        </div>
-                                    </td>
-                                );
-                            })}
-                            
-                            <td className="px-6 py-4 whitespace-nowrap text-right align-middle">
-                                <div className="inline-flex items-baseline gap-1">
-                                    <span className={`font-bold text-base ${student.score === student.maxScore ? 'text-emerald-600' : 'text-gray-900'}`}>
-                                        {student.score}
-                                    </span>
-                                    <span className="text-gray-400 text-xs font-medium">/ {student.maxScore}</span>
-                                </div>
-                            </td>
-                            
-                            <td className="px-6 py-4 whitespace-nowrap text-center align-middle">
-                              <button 
-                                onClick={() => handleViewStudent(student.submissionId)}
-                                disabled={!student.submissionId}
-                                className={`text-xs px-4 py-2 rounded-lg font-medium transition-all border ${
-                                    student.submissionId 
-                                    ? "border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 bg-white shadow-sm" 
-                                    : "border-transparent text-gray-300 bg-gray-50 cursor-not-allowed"
-                                }`}
-                              >
-                                Review
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                  )}
-                </tbody>
-              </table>
+                                  let scoreTextClasses = "text-sm font-mono text-gray-700";
+                                  if (got === max && max > 0) scoreTextClasses = "text-sm font-mono font-semibold text-emerald-600";
+                                  else if ((isFail || got === 0) && !isPass) scoreTextClasses = "text-sm font-mono text-red-600";
+
+                                  return (
+                                      <td key={idx2} className="px-2 py-4 whitespace-nowrap text-center align-middle">
+                                          <div className="flex justify-center items-center">
+                                              <span className={scoreTextClasses}>{got}/{max}</span>
+                                          </div>
+                                      </td>
+                                  );
+                              })}
+                              
+                              <td className="px-6 py-4 whitespace-nowrap text-right align-middle">
+                                  <div className="inline-flex items-baseline gap-1">
+                                      <span className={`font-bold text-base ${student.score === student.maxScore ? 'text-emerald-600' : 'text-gray-900'}`}>
+                                          {student.score}
+                                      </span>
+                                      <span className="text-gray-400 text-xs font-medium">/ {student.maxScore}</span>
+                                  </div>
+                              </td>
+                              
+                              <td className="px-6 py-4 whitespace-nowrap text-center align-middle">
+                                <button 
+                                  onClick={() => handleViewStudent(student.submissionId)}
+                                  disabled={!student.submissionId}
+                                  className={`text-xs px-4 py-2 rounded-lg font-medium transition-all border ${
+                                      student.submissionId 
+                                      ? "border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 bg-white shadow-sm" 
+                                      : "border-transparent text-gray-300 bg-gray-50 cursor-not-allowed"
+                                  }`}
+                                >
+                                  Review
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                    )}
+                  </tbody>
+                </table>
+              )}
             </div>
             
             <div className="bg-gray-50 border-t border-gray-100 px-6 py-4 text-xs text-gray-500 flex justify-between items-center">
