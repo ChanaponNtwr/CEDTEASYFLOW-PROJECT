@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { motion } from "framer-motion";
+import Image from "next/image";
 
 function Navbar() {
   const { data: session, status } = useSession();
@@ -52,10 +53,15 @@ function Navbar() {
                 className="flex items-center space-x-3 cursor-pointer"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               >
-                <img
-                  src={user?.image || "/default-avatar.png"}
-                  alt="Profile"
-                  className="h-8 w-8 rounded-full mr-2"
+                <Image
+                  src={user.image ?? "/default-avatar.png"}
+                  alt="profile"
+                  width={35}
+                  height={35}
+                  className="rounded-full"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "/default-avatar.png";
+                  }}
                 />
                 <span>{firstName}</span>
                 <svg

@@ -7,8 +7,7 @@ import FilterActions from "./_components/FilterActions";
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getUserBannerColor } from "@/app/utils/userColor";
-import Link from "next/link";
-import { motion } from "framer-motion";
+import Image from "next/image";
 
 // API import
 import { apiGetFlowchartsByUser } from "@/app/service/FlowchartService";
@@ -129,11 +128,18 @@ export default function Profile() {
 
             <div className="absolute top-[392px] left-[15px] w-[1880px] h-[388px] bg-[#FBFBFB] rounded-b-[40px]" />
 
-            <img
-              src={userImage}
-              alt="user"
-              className="absolute top-[269px] left-[84px] w-[246px] h-[246px] rounded-full border-[9px] border-white bg-[#E3B8FF] object-cover"
-            />
+            <Image
+  src={userImage || "/default-avatar.png"}
+  alt="user"
+  width={246}
+  height={246}
+  className="absolute top-[269px] left-[84px] 
+             w-[246px] h-[246px] 
+             rounded-full 
+             border-[9px] border-white 
+             bg-[#E3B8FF] 
+             object-cover"
+/>
 
             <div className="absolute top-[550px] left-[84px] text-[42px] font-bold text-black">
               {user.name}
