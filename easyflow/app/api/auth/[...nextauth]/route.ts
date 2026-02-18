@@ -2,106 +2,79 @@ import NextAuth, { type NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
-import { type JWT } from "next-auth/jwt";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
+
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       profile(profile) {
-        // ใช้ profile.picture แทน user.image
+        const imageUrl = profile.picture ?? null;
+
+        const highResImage =
+          imageUrl?.includes("googleusercontent.com")
+            ? imageUrl.replace(/=s\d+(-c)?/, "=s400-c")
+            : imageUrl;
+
         return {
           id: profile.sub,
           name: profile.name,
           email: profile.email,
-          image: profile.picture, // <- รับรูปจาก Google
-          // providerAccountId: profile.sub,
+          image: highResImage,
         };
       },
     }),
   ],
+
+  session: {
+    strategy: "jwt",
+  },
+
   callbacks: {
-  async signIn({ user, account, profile }) {
-    if (!user.email) return false;
+    async signIn({ user }) {
+      if (!user.email) return false;
 
-    // ตรวจสอบ user ใน database
-    let dbUser = await prisma.user.findUnique({
-      where: { email: user.email },
-    });
-
-    const imageUrl = (profile as any)?.picture ?? null;
-
-    const highResImage = imageUrl?.includes("googleusercontent.com")
-  ? imageUrl.replace(/=s\d+(-c)?/, "=s400-c") // s400 = ขนาดใหญ่
-  : imageUrl;
-
-    if (!dbUser) {
-      dbUser = await prisma.user.create({
-        data: {
-          email: user.email,
-          name: user.name ?? "Unknown",
-          fname: user.name?.split(" ")[0] ?? "",
-          lname: user.name?.split(" ")[1] ?? "",
-          image: highResImage,
-        },
-      });
-    } else {
-      dbUser = await prisma.user.update({
+      const existing = await prisma.user.findUnique({
         where: { email: user.email },
-        data: {
-          name: user.name ?? "Unknown",
-          fname: user.name?.split(" ")[0] ?? "",
-          lname: user.name?.split(" ")[1] ?? "",
-          image: highResImage ?? dbUser.image,
-        },
-      });
-    }
-
-    // เช็คว่า account ไม่ null ก่อน
-    if (account) {
-      const existingAccount = await prisma.account.findUnique({
-        where: {
-          provider_providerAccountId: {
-            provider: account.provider,
-            providerAccountId: account.providerAccountId,
-          },
-        },
       });
 
-      if (!existingAccount) {
-        await prisma.account.create({
+      if (!existing) {
+        await prisma.user.create({
           data: {
-            userId: dbUser.id,
-            provider: account.provider,
-            providerAccountId: account.providerAccountId,
-            type: account.type,
-            access_token: account.access_token ?? "",
-            token_type: account.token_type ?? null,
-            scope: account.scope ?? null,
-            id_token: account.id_token ?? null,
-            expires_at: account.expires_at ?? null,
+            email: user.email,
+            name: user.name ?? "Unknown",
+            fname: user.name?.split(" ")[0] ?? "",
+            lname: user.name?.split(" ")[1] ?? "",
+            image: user.image ?? null,
+          },
+        });
+      } else {
+        await prisma.user.update({
+          where: { email: user.email },
+          data: {
+            name: user.name ?? existing.name,
+            fname: user.name?.split(" ")[0] ?? existing.fname,
+            lname: user.name?.split(" ")[1] ?? existing.lname,
+            image: user.image ?? existing.image,
           },
         });
       }
-    }
 
-    return true;
+      return true;
     },
 
-    async jwt({ token, user, trigger }) {
-  // ตอน login ใหม่
-  if (trigger === "signIn" && user?.email) {
+    async jwt({ token }) {
+  if (token.email) {
     const dbUser = await prisma.user.findUnique({
-      where: { email: user.email },
+      where: { email: token.email },
     });
 
     if (dbUser) {
-      token.userId = dbUser.id.toString();
-      token.name = dbUser.name ?? "Unknown";
-      token.email = dbUser.email ?? "";
-      token.picture = dbUser.image ?? null;
+      token.id = dbUser.id.toString();
+      token.name = dbUser.name;
+      token.picture = dbUser.image;
     }
   }
 
@@ -109,17 +82,18 @@ export const authOptions: NextAuthOptions = {
 },
 
     async session({ session, token }) {
-      session.user = {
-        userId: token.userId as string,
-        name: token.name as string ?? "Unknown",
-        email: token.email as string ?? "",
-        image: token.picture as string | null ?? null,
-      };
-      return session;
+  if (!session.user) return session;
+
+  session.user.userId = token.id as string;
+  session.user.name = token.name ?? null;
+  session.user.email = token.email ?? null;
+  session.user.image = token.picture ?? null;
+
+  return session;
     },
   },
+
   secret: process.env.NEXTAUTH_SECRET,
-  session: { strategy: "jwt" },
 };
 
 const handler = NextAuth(authOptions);

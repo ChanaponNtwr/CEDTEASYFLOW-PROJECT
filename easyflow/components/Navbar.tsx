@@ -53,7 +53,7 @@ function Navbar() {
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               >
                 <img
-                  src={String(user.image)}
+                  src={user?.image || "/default-avatar.png"}
                   alt="Profile"
                   className="h-8 w-8 rounded-full mr-2"
                 />
