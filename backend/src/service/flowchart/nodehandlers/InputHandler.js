@@ -70,7 +70,29 @@ export default function InputHandler(node, context, flowchart, options = {}) {
     return s;
   };
 
-  const declared = varTypeRaw ? String(varTypeRaw).toLowerCase() : undefined;
+  // ---------------------------
+  // Respect declared type if any
+  // ---------------------------
+  // Try to read declared type from context.variables (if present)
+  let declaredFromContext;
+  try {
+    if (context && typeof context.index_map === "object" && Array.isArray(context.variables)) {
+      const idx = context.index_map[varName];
+      if (typeof idx === "number") {
+        const existingVarMeta = context.variables[idx];
+        if (existingVarMeta && existingVarMeta.varType) {
+          declaredFromContext = String(existingVarMeta.varType).toLowerCase();
+        }
+      }
+    }
+  } catch (e) {
+    // ignore and fallback
+    declaredFromContext = undefined;
+  }
+
+  // final declared preference: context-declared > node-declared > undefined
+  const declared = declaredFromContext || (varTypeRaw ? String(varTypeRaw).toLowerCase() : undefined);
+
   let finalType = declared;
   let finalValue;
 
@@ -136,11 +158,17 @@ export default function InputHandler(node, context, flowchart, options = {}) {
     storeVarType = undefined;
   }
 
+  // If context already declared a varType and we didn't pass any explicit storeVarType,
+  // leave it undefined so Context.set will preserve existing varType.
+  if (!storeVarType && declaredFromContext) {
+    // keep storeVarType undefined to let Context.set keep existing varType
+  }
+
   context.set(varName, finalValue, storeVarType);
 
   try {
     const stored = context.get(varName);
-    console.log(`Input: ${varName} = ${JSON.stringify(stored)} (type=${typeof stored})`);
+    console.log(`Input: ${varName} = ${JSON.stringify(stored)} (type=${typeof stored}) (declared=${declared || "none"})`);
   } catch {}
 
   return { nextCondition: "auto" };
