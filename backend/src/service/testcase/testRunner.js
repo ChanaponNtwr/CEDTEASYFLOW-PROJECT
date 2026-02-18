@@ -26,6 +26,22 @@ export default class TestRunner {
     }
     return val;
   }
+    normalizeOutputArray(arr) {
+    if (!Array.isArray(arr)) return arr;
+
+    return arr.map(v => {
+      // ถ้าเป็น string ที่เป็นตัวเลข → แปลงเป็น number
+      if (typeof v === 'string') {
+        const trimmed = v.trim();
+        if (trimmed !== '' && !isNaN(trimmed)) {
+          return Number(trimmed);
+        }
+      }
+      return v;
+    });
+  }
+
+
 
   // Clone and sanitize flowchart carefully
   cloneFlowchart(flowchart) {
@@ -237,17 +253,23 @@ export default class TestRunner {
               errorMessage: chunk.error
             });
           } else {
-            const pass = this.comparator.compare(chunk.actual, chunk.expected, tc.comparatorType || 'exact');
+            const actualNorm = this.normalizeOutputArray(chunk.actual);
+            const expectedNorm = this.normalizeOutputArray(chunk.expected);
+            const pass = this.comparator.compare(
+              actualNorm,
+              expectedNorm,
+              tc.comparatorType || 'exact'
+            );
             const score = pass ? tc.score : 0;
             visibleResult = new TestcaseResult({
-              runId: session.runId,
-              testcaseId: tc.testcaseId,
-              status: pass ? 'PASS' : 'FAIL',
-              expected: chunk.expected,
-              actual: chunk.actual,
-              scoreAwarded: score,
-              errorMessage: pass ? null : 'Mismatch'
-            });
+            runId: session.runId,
+            testcaseId: tc.testcaseId,
+            status: pass ? 'PASS' : 'FAIL',
+            expected: chunk.expected,
+            actual: chunk.actual,
+            scoreAwarded: score,
+            errorMessage: pass ? null : 'Mismatch'
+          });
           }
         }
       } catch (err) {
