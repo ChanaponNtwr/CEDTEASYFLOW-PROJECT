@@ -342,7 +342,7 @@ export default function StudentLabPage() {
       await apiCancelSubmission(Number(labIdResolved), Number(userId));
       setIsSubmitted(false);
       setTcResults({});
-      
+
       try {
         const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
         const allSubs =
@@ -383,6 +383,29 @@ export default function StudentLabPage() {
     forSymVal: lab.forSymVal ?? 0,
     whileSymVal: lab.whileSymVal ?? 0,
   } : undefined;
+
+  // --- New: compute total obtained score using same testcase keying logic as rows ---
+  const makeTcKey = (tc: TestCase, index: number) => {
+    const raw = tc.raw ?? {};
+    const tcIdCandidate =
+      raw.testcaseId ??
+      raw.testcase_id ??
+      raw.id ??
+      raw.tcId ??
+      raw.testcase?.id ??
+      raw.testcase?.testcaseId ??
+      tc.no ??
+      (index + 1);
+    return String(tcIdCandidate);
+  };
+
+  const obtainedTotal = testCases.reduce((acc, tc, idx) => {
+    const key = makeTcKey(tc, idx);
+    const res = tcResults[key];
+    const obtained = Number(res?.scoreAwarded ?? res?.score ?? 0);
+    // Only count obtained points if submission exists (keeps behavior consistent)
+    return acc + (isSubmitted ? obtained : 0);
+  }, 0);
 
   const renderStatusBadge = (status: string | undefined) => {
     if (!status) return <span className="text-gray-300 font-mono">-</span>;
@@ -506,6 +529,18 @@ export default function StudentLabPage() {
                     <div className="flex items-center gap-2">
                         <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
                         <h3 className="text-lg font-bold text-gray-800">Test Cases</h3>
+                    </div>
+
+                    {/* NEW: Total score display on the right (does not alter existing UI other than adding this small element) */}
+                    <div className="text-sm text-gray-600">
+                      <span className="text-xs text-gray-500 mr-2 hidden md:inline">Total:</span>
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-50 border border-gray-100">
+                        {isSubmitted ? (
+                          <><span className="text-gray-800">{obtainedTotal}</span><span className="text-gray-400 ml-1">/</span><span className="text-gray-500 ml-1">{totalPoints}</span></>
+                        ) : (
+                          <><span className="text-gray-700">{totalPoints}</span><span className="text-gray-400 ml-1">pts</span></>
+                        )}
+                      </span>
                     </div>
                 </div>
                 
