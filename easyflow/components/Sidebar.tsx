@@ -1,24 +1,30 @@
+// Sidebar.tsx
 "use client";
 import React, { useEffect, useState } from "react";
 import { FaUser, FaBook } from "react-icons/fa";
-import { motion } from "framer-motion";
+import { motion, Variants, Transition } from "framer-motion";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { apiGetClasses } from "@/app/service/FlowchartService"; 
 
 // --- Animation Variants ---
-const itemVariants = {
-  hover: { 
+// Define transitions with explicit Transition typing to satisfy TS
+const itemSpring: Transition = { type: "spring", stiffness: 250 };
+const iconSpring: Transition = { type: "spring", stiffness: 300 };
+
+const itemVariants: Variants = {
+  hover: {
     scale: 1.03,
+    // background and boxShadow are valid CSS target values
     background: "linear-gradient(90deg, rgba(59,130,246,0.15), rgba(59,130,246,0.1))",
     boxShadow: "0px 2px 6px rgba(0,0,0,0.1)",
     x: 2,
-    transition: { type: "spring", stiffness: 250 },
+    transition: itemSpring,
   },
 };
 
-const iconVariants = {
-  hover: { rotate: 20, transition: { type: "spring", stiffness: 300 } },
+const iconVariants: Variants = {
+  hover: { rotate: 20, transition: iconSpring },
 };
 
 const getInitials = (name: string) => {

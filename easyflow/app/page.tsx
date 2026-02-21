@@ -41,10 +41,14 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
   useEffect(() => {
     if (!enabled) return;
     const canvas = canvasRef.current;
-    if (!canvas) return; 
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) return; 
+    if (!ctx) return;
+
+    // Narrow types once (assert non-null) and use the non-null variables throughout.
+    const canvasEl = canvas as HTMLCanvasElement;
+    const ctx2 = ctx as CanvasRenderingContext2D;
 
     let w = 0;
     let h = 0;
@@ -53,13 +57,13 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
 
     function resize() {
       const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-      w = canvas.clientWidth || 0;
-      h = canvas.clientHeight || 0;
+      w = canvasEl.clientWidth || 0;
+      h = canvasEl.clientHeight || 0;
       cx = w / 2;
       cy = h / 2;
-      canvas.width = Math.max(1, Math.floor(w * dpr));
-      canvas.height = Math.max(1, Math.floor(h * dpr));
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      canvasEl.width = Math.max(1, Math.floor(w * dpr));
+      canvasEl.height = Math.max(1, Math.floor(h * dpr));
+      ctx2.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
     function initParticles() {
@@ -101,7 +105,7 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
       pointer.current.x += (pointerTarget.current.x - pointer.current.x) * 0.05;
       pointer.current.y += (pointerTarget.current.y - pointer.current.y) * 0.05;
 
-      ctx.clearRect(0, 0, w, h);
+      ctx2.clearRect(0, 0, w, h);
 
       const tiltX = pointer.current.y * 0.45; 
       const tiltY = pointer.current.x * -0.6; 
@@ -141,22 +145,22 @@ export function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanva
         const s = Math.max(0.14, scale) * p.size * 1.0;
         const alpha = Math.max(0.045, Math.min(1, (1 - (p.z + 600) / 1200) * 1.0));
 
-        ctx.beginPath();
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-        ctx.arc(p.x, p.y, s, 0, Math.PI * 2);
-        ctx.fill();
+        ctx2.beginPath();
+        ctx2.globalAlpha = alpha;
+        ctx2.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx2.arc(p.x, p.y, s, 0, Math.PI * 2);
+        ctx2.fill();
 
         if (alpha > 0.08) {
-          ctx.beginPath();
-          ctx.globalAlpha = alpha * 0.06;
-          ctx.fillStyle = `rgba(255,255,255,1)`;
-          ctx.arc(p.x, p.y, s * 6, 0, Math.PI * 2);
-          ctx.fill();
+          ctx2.beginPath();
+          ctx2.globalAlpha = alpha * 0.06;
+          ctx2.fillStyle = `rgba(255,255,255,1)`;
+          ctx2.arc(p.x, p.y, s * 6, 0, Math.PI * 2);
+          ctx2.fill();
         }
       }
 
-      ctx.globalAlpha = 1;
+      ctx2.globalAlpha = 1;
       rafRef.current = requestAnimationFrame(step);
     }
 
