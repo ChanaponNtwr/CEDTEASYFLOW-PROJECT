@@ -4,12 +4,15 @@ import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
 // --- แก้ไข 1: เปลี่ยน import เป็น apiGetTrialShapeRemaining ---
-import { 
-  insertTrialNode, 
-  deleteTrialNode, 
-  editTrialNode, 
-  apiGetTrialShapeRemaining 
+import {
+  insertTrialNode,
+  deleteTrialNode,
+  editTrialNode,
+  apiGetTrialShapeRemaining,
 } from "@/app/service/FlowchartService";
+
+import { motion, AnimatePresence } from "framer-motion";
+import { FaCube, FaPlus } from "react-icons/fa";
 
 interface SymbolItem {
   key: string;
@@ -25,7 +28,7 @@ type FlowNode = Node & {
 };
 
 interface SymbolSectionProps {
-  flowchartId: number; // ค่านี้คือ trialId
+  flowchartId: string; // แก้ไข: เปลี่ยนจาก number เป็น string ให้ตรงกับ trialId ที่ส่งมาจากหน้า page.tsx
   selectedEdgeId?: string;
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
@@ -125,6 +128,8 @@ type ModalConfig = {
   onClose: () => void;
 };
 
+type ModalVariant = "danger" | "success" | "info";
+
 /* --- Component --- */
 const SymbolSection: React.FC<SymbolSectionProps> = ({
   flowchartId,
@@ -141,6 +146,13 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // confirmation modal state (แทน alert/confirm)
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [confirmTitle, setConfirmTitle] = useState("");
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const [confirmAction, setConfirmAction] = useState<(() => Promise<void> | void) | null>(null);
+  const [confirmVariant, setConfirmVariant] = useState<ModalVariant>("danger");
 
   // shape remaining state
   const [shapeRemaining, setShapeRemaining] = useState<Record<string, any> | null>(null);
@@ -206,15 +218,24 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
   const uiKeyToShapeCodes = (uiKey: string): string[] => {
     switch (uiKey) {
-      case "input": return ["IN"];
-      case "output": return ["OU"];
-      case "declare": return ["DC"];
-      case "assign": return ["AS"];
-      case "if": return ["IF"];
-      case "while": return ["WH"];
-      case "for": return ["FOR", "FR"];
-      case "do": return ["DO"];
-      default: return [uiKey.toUpperCase()];
+      case "input":
+        return ["IN"];
+      case "output":
+        return ["OU"];
+      case "declare":
+        return ["DC"];
+      case "assign":
+        return ["AS"];
+      case "if":
+        return ["IF"];
+      case "while":
+        return ["WH"];
+      case "for":
+        return ["FOR", "FR"];
+      case "do":
+        return ["DO"];
+      default:
+        return [uiKey.toUpperCase()];
     }
   };
 
@@ -236,10 +257,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     try {
       setSrError(null);
       setSrLoading(true);
-      
-      // --- แก้ไข 2: เรียก apiGetTrialShapeRemaining แทน ---
+
+      // --- เรียก apiGetTrialShapeRemaining ---
       const res = await apiGetTrialShapeRemaining(flowchartId);
-      
+
       setShapeRemaining(res?.shapeRemaining ?? null);
     } catch (err: any) {
       console.error("apiGetTrialShapeRemaining failed:", err);
@@ -251,6 +272,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
   useEffect(() => {
     fetchShapeRemaining();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowchartId]);
 
   /* --- callUpdateOrAdd --- */
@@ -333,17 +355,13 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     }
   };
 
-  const handleDeleteClick = async () => {
+  // performDelete contains the real delete logic (เดิมถูกเรียกจาก confirm)
+  const performDelete = async () => {
     if (!nodeToEdit) return;
     if (!flowchartId) {
       setError("Missing flowchartId");
       return;
     }
-
-    const ok = window.confirm(
-      "ต้องการลบ node นี้ใช่หรือไม่? การลบจะลบ node นี้พร้อม edges ที่เกี่ยวข้องและ nodes ที่ไม่สามารถเข้าถึงได้จาก Start"
-    );
-    if (!ok) return;
 
     const nodeId = nodeToEdit.id;
     if (!nodeId) {
@@ -354,12 +372,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     try {
       setError("");
       setLoading(true);
-      console.info("Deleting node:", nodeId, "from flowchart:", flowchartId);
-      
+      console.info("Deleting node:", nodeId, "from flowchart (trial):", flowchartId);
+
       const res = await deleteTrialNode(flowchartId, nodeId);
       console.info("deleteTrialNode response:", res);
 
-      // delete associated breakpoints
+      // delete associated breakpoints (graceful)
       try {
         const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase();
         if (rawType.includes("IF")) {
@@ -409,6 +427,22 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  // original handler now opens confirm modal instead of window.confirm
+  const handleDeleteClick = async () => {
+    if (!nodeToEdit) return;
+    setError("");
+
+    setConfirmTitle("ลบ node");
+    setConfirmMessage(
+      "ต้องการลบ node นี้ใช่หรือไม่? การลบจะลบ node นี้พร้อม edges ที่เกี่ยวข้องและ nodes ที่ไม่สามารถเข้าถึงได้จาก Start"
+    );
+    setConfirmVariant("danger");
+    setConfirmAction(() => async () => {
+      await performDelete();
+    });
+    setConfirmVisible(true);
   };
 
   useEffect(() => {
@@ -549,6 +583,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       setActiveModal("do");
       return;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeToEdit]);
 
   const closeAll = () => {
@@ -567,14 +602,20 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       fields: [{ kind: "simple", key: "variable", placeholder: "Variable name", value: inputValue, setValue: setInputValue }],
       onSubmit: (e) => {
         e.preventDefault();
-        if (!inputValue.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
+        if (!inputValue.trim()) {
+          setError("กรุณาใส่ชื่อ Variable");
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "input", `Input ${inputValue}`, {
           variable: inputValue,
           prompt: `Enter your ${inputValue}:`,
-          varType: "string"
+          varType: "string",
         });
       },
-      onClose: () => { setInputValue(""); closeAll(); },
+      onClose: () => {
+        setInputValue("");
+        closeAll();
+      },
     },
     {
       key: "output",
@@ -585,10 +626,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateOutput(outputValue);
-        if (validationError) { setError(validationError); return; }
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "output", `Output ${outputValue}`, { message: outputValue });
       },
-      onClose: () => { setOutputValue(""); closeAll(); },
+      onClose: () => {
+        setOutputValue("");
+        closeAll();
+      },
     },
     {
       key: "declare",
@@ -601,16 +648,24 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       ],
       onSubmit: (e) => {
         e.preventDefault();
-        if (!declareVariable.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
+        if (!declareVariable.trim()) {
+          setError("กรุณาใส่ชื่อ Variable");
+          return;
+        }
         const varTypePayload = declareDataType.toLowerCase();
         const labelPrefix = declareDataType;
         callUpdateOrAdd(nodeToEdit?.id, "declare", `${labelPrefix} ${declareVariable}`, {
           name: declareVariable,
           value: 0,
-          varType: varTypePayload
+          varType: varTypePayload,
         });
       },
-      onClose: () => { setDeclareVariable(""); setDeclareDataType("Integer"); setDeclareDataTypes({ Integer: true, Real: false, String: false, Boolean: false }); closeAll(); },
+      onClose: () => {
+        setDeclareVariable("");
+        setDeclareDataType("Integer");
+        setDeclareDataTypes({ Integer: true, Real: false, String: false, Boolean: false });
+        closeAll();
+      },
     },
     {
       key: "assign",
@@ -623,13 +678,20 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       ],
       onSubmit: (e) => {
         e.preventDefault();
-        if (!assignVariable.trim() || !assignExpression.trim()) { setError("กรุณากรอกข้อมูล Variable และ Expression"); return; }
+        if (!assignVariable.trim() || !assignExpression.trim()) {
+          setError("กรุณากรอกข้อมูล Variable และ Expression");
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "assign", `${assignVariable} = ${assignExpression}`, {
           variable: assignVariable,
-          value: assignExpression
+          value: assignExpression,
         });
       },
-      onClose: () => { setAssignVariable(""); setAssignExpression(""); closeAll(); },
+      onClose: () => {
+        setAssignVariable("");
+        setAssignExpression("");
+        closeAll();
+      },
     },
     {
       key: "if",
@@ -640,10 +702,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(ifExpression);
-        if (validationError) { setError(validationError); return; }
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "if", ifExpression, { condition: ifExpression });
       },
-      onClose: () => { setIfExpression(""); closeAll(); },
+      onClose: () => {
+        setIfExpression("");
+        closeAll();
+      },
     },
     {
       key: "while",
@@ -654,14 +722,20 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(whileExpression);
-        if (validationError) { setError(validationError); return; }
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression, {
           condition: whileExpression,
           varName: "x",
-          increment: "x = x + 1"
+          increment: "x = x + 1",
         });
       },
-      onClose: () => { setWhileExpression(""); closeAll(); },
+      onClose: () => {
+        setWhileExpression("");
+        closeAll();
+      },
     },
     {
       key: "for",
@@ -669,29 +743,41 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       description: "A For Loop increments or decrements a variable through a range of values.",
       icon: "/images/shape_while.png",
       fields: [
-        { kind: "group", key: "group", fields: [
-          { kind: "simple", key: "variable", placeholder: "variable", value: forVariable, setValue: setForVariable },
-          { kind: "simple", key: "step", placeholder: "step", value: forStep, setValue: setForStep },
-          { kind: "simple", key: "start", placeholder: "start", value: forStart, setValue: setForStart },
-          { kind: "simple", key: "end", placeholder: "end", value: forEnd, setValue: setForEnd },
-        ]},
+        {
+          kind: "group",
+          key: "group",
+          fields: [
+            { kind: "simple", key: "variable", placeholder: "variable", value: forVariable, setValue: setForVariable },
+            { kind: "simple", key: "step", placeholder: "step", value: forStep, setValue: setForStep },
+            { kind: "simple", key: "start", placeholder: "start", value: forStart, setValue: setForStart },
+            { kind: "simple", key: "end", placeholder: "end", value: forEnd, setValue: setForEnd },
+          ],
+        },
       ],
       onSubmit: (e) => {
         e.preventDefault();
         if (!forVariable.trim() || !forStart.trim() || !forEnd.trim() || !forStep.trim()) {
-          setError("กรุณากรอกข้อมูลให้ครบทุกช่อง"); return;
+          setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
+          return;
         }
         if (isNaN(Number(forStart)) || isNaN(Number(forEnd)) || isNaN(Number(forStep))) {
-          setError("ค่า Start, End, Step ต้องเป็นตัวเลข"); return;
+          setError("ค่า Start, End, Step ต้องเป็นตัวเลข");
+          return;
         }
         callUpdateOrAdd(nodeToEdit?.id, "for", `${forVariable} = ${forStart} to ${forEnd}`, {
           init: `int ${forVariable} = ${forStart}`,
           condition: `${forVariable} < ${forEnd}`,
           increment: `${forVariable} += ${forStep}`,
-          varName: forVariable
+          varName: forVariable,
         });
       },
-      onClose: () => { setForVariable(""); setForStart(""); setForEnd(""); setForStep(""); closeAll(); },
+      onClose: () => {
+        setForVariable("");
+        setForStart("");
+        setForEnd("");
+        setForStep("");
+        closeAll();
+      },
     },
     {
       key: "do",
@@ -702,10 +788,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(doExpression);
-        if (validationError) { setError(validationError); return; }
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "do", doExpression, { condition: doExpression });
       },
-      onClose: () => { setDoExpression(""); closeAll(); },
+      onClose: () => {
+        setDoExpression("");
+        closeAll();
+      },
     },
   ];
 
@@ -739,7 +831,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           }
           setActiveModal(item.key);
         }}
-        title={disabled ? "หมดจำนวนสำหรับ shape นี้แล้ว" : (isUnlimited ? "เหลือ: ไม่จำกัด" : `เหลือ: ${remaining}`)}
+        title={disabled ? "หมดจำนวนสำหรับ shape นี้แล้ว" : isUnlimited ? "เหลือ: ไม่จำกัด" : `เหลือ: ${remaining}`}
         role="button"
         aria-disabled={disabled}
       >
@@ -747,7 +839,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
           {/* badge */}
           <div className="absolute -top-2 -right-2 bg-white border rounded-full px-2 py-0.5 text-xs shadow-sm">
-            {srLoading ? "..." : isUnlimited ? "∞" : (remaining === null ? "-" : String(remaining))}
+            {srLoading ? "..." : isUnlimited ? "∞" : remaining === null ? "-" : String(remaining)}
           </div>
         </div>
         <span className="text-sm text-gray-700">{item.label}</span>
@@ -761,164 +853,353 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     if (!cfg) return null;
 
     return (
-      <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
-        <form onSubmit={cfg.onSubmit}>
-          <div className="flex items-center justify-between">
-            <div className="text-xl font-semibold text-gray-800 mb-4">{cfg.title}</div>
-            {nodeToEdit && (
-              <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">
-                Delete
-              </button>
-            )}
-          </div>
+      <>
+        <div className="w-[440px] mx-auto mt-10 bg-white rounded-lg shadow-lg p-1 border-1">
+          <form onSubmit={cfg.onSubmit}>
+            <div className="flex items-center justify-between">
+              <div className="text-xl font-semibold text-gray-800 mb-4">{cfg.title}</div>
+              {nodeToEdit && (
+                <button type="button" onClick={handleDeleteClick} className="text-sm text-red-600 mr-4">
+                  Delete
+                </button>
+              )}
+            </div>
 
-          {/* Render fields dynamically */}
-          {cfg.fields.map((f) => {
-            if (f.kind === "group") {
-              return (
-                <div key={f.key} className="grid grid-cols-2 gap-4 ml-6 mb-4">
-                  {f.fields.map((g) => (
-                    <input
-                      key={g.key}
-                      type="text"
-                      placeholder={g.placeholder}
-                      value={g.value}
-                      onChange={(e) => g.setValue(e.target.value)}
-                      className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"
-                    />
-                  ))}
-                </div>
-              );
-            } else if (f.kind === "simple" && f.key === "dataType") {
-              return (
-                <div key={f.key} className="ml-6 mb-4">
-                  <div className="text-gray-700 mb-2">Data Type</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {["Integer", "Float", "String", "Boolean"].map((dt) => (
-                      <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
-                        <input
-                          type="radio"
-                          name="dataType"
-                          value={dt}
-                          checked={declareDataType === dt}
-                          onChange={(e) => setDeclareDataType(e.target.value)}
-                          className="w-4 h-4"
-                        />
-                        {dt}
-                      </label>
+            {/* Render fields dynamically */}
+            {cfg.fields.map((f) => {
+              if (f.kind === "group") {
+                return (
+                  <div key={f.key} className="grid grid-cols-2 gap-4 ml-6 mb-4">
+                    {f.fields.map((g) => (
+                      <input
+                        key={g.key}
+                        type="text"
+                        placeholder={g.placeholder}
+                        value={g.value}
+                        onChange={(e) => g.setValue(e.target.value)}
+                        className="w-full border border-gray-400 rounded-md px-2 py-1 text-sm"
+                      />
                     ))}
                   </div>
-                </div>
+                );
+              } else if (f.kind === "simple" && f.key === "dataType") {
+                return (
+                  <div key={f.key} className="ml-6 mb-4">
+                    <div className="text-gray-700 mb-2">Data Type</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {["Integer", "Float", "String", "Boolean"].map((dt) => (
+                        <label key={dt} className="flex items-center gap-1 text-sm text-gray-700">
+                          <input
+                            type="radio"
+                            name="dataType"
+                            value={dt}
+                            checked={declareDataType === dt}
+                            onChange={(e) => setDeclareDataType(e.target.value)}
+                            className="w-4 h-4"
+                          />
+                          {dt}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <input
+                  key={f.key}
+                  type="text"
+                  placeholder={f.placeholder}
+                  value={f.value}
+                  onChange={(e) => f.setValue(e.target.value)}
+                  className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               );
-            }
+            })}
 
-            return (
-              <input
-                key={f.key}
-                type="text"
-                placeholder={f.placeholder}
-                value={f.value}
-                onChange={(e) => f.setValue(e.target.value)}
-                className="w-96 border ml-6 border-gray-400 rounded-md px-2 py-1 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
+
+            {/* conflicts */}
+            {conflicts.length > 0 && (
+              <div className="ml-6 mb-2">
+                <div className="text-sm text-gray-700 mb-1">พบตัวแปรซ้ำใน node ต่อไปนี้:</div>
+                <ul className="text-sm space-y-1">
+                  {conflicts.map((c: any) => (
+                    <li key={c.nodeId} className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <div className="font-medium">{c.label || c.nodeId}</div>
+                        <div className="text-xs text-gray-500">var: {c.varName}{c.foundIn ? ` · found in: ${c.foundIn}` : ""}</div>
+                      </div>
+
+                      <div>
+                        <button
+                          type="button"
+                          className="px-2 py-1 text-xs border rounded hover:bg-gray-100"
+                          onClick={() => {
+                            if (onFocusNode) {
+                              onFocusNode(c.nodeId);
+                            } else {
+                              try {
+                                navigator.clipboard?.writeText(c.nodeId);
+                                // keep the alert fallback for this case (user asked only to remove delete alert)
+                                alert(`Copied node id: ${c.nodeId} — ให้ parent implement onFocusNode เพื่อโฟกัส node โดยตรง`);
+                              } catch (e) {
+                                console.log("Focus node fallback, nodeId:", c.nodeId);
+                              }
+                            }
+                          }}
+                        >
+                          ไปที่ node
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
+              <button type="button" onClick={() => cfg.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
+                Cancel
+              </button>
+              <button type="submit" disabled={loading} className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">
+                {loading ? "Saving..." : "Ok"}
+              </button>
+            </div>
+          </form>
+
+          <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
+            <img src={modalConfigs.find(m => m.key === activeModal)?.icon} alt="Icon" className="w-50 h-7" />
+            <span className="text-gray-600 text-sm">{modalConfigs.find(m => m.key === activeModal)?.description}</span>
+          </div>
+        </div>
+
+        {/* Confirmation modal (AnimatePresence) */}
+        <AnimatePresence>
+          {confirmVisible && (
+            <motion.div
+              className="fixed inset-0 z-50 flex items-center justify-center px-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              aria-modal="true"
+              role="dialog"
+              onClick={() => { /* do nothing on backdrop click */ }}
+            >
+              <motion.div
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                aria-hidden
               />
-            );
-          })}
 
-          {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
-
-          {/* conflicts */}
-          {conflicts.length > 0 && (
-            <div className="ml-6 mb-2">
-              <div className="text-sm text-gray-700 mb-1">พบตัวแปรซ้ำใน node ต่อไปนี้:</div>
-              <ul className="text-sm space-y-1">
-                {conflicts.map((c: any) => (
-                  <li key={c.nodeId} className="flex items-center gap-2">
-                    <div className="flex-1">
-                      <div className="font-medium">{c.label || c.nodeId}</div>
-                      <div className="text-xs text-gray-500">var: {c.varName}{c.foundIn ? ` · found in: ${c.foundIn}` : ""}</div>
+              <motion.div
+                className="relative z-50 w-full max-w-lg mx-auto transform"
+                initial={{ opacity: 0, scale: 0.98, y: 12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.98, y: 12 }}
+                role="document"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
+                  <div className={`px-6 pt-8 pb-6 flex flex-col items-center ${confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"}`}>
+                    <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"} shadow-md`}>
+                      {confirmVariant === "danger" ? (
+                        <FaCube size={36} className="text-white" />
+                      ) : (
+                        <FaPlus size={36} className="text-white" />
+                      )}
                     </div>
 
-                    <div>
+                    <h3 className={`mt-4 text-2xl font-extrabold ${confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"}`}>
+                      {confirmTitle}
+                    </h3>
+                  </div>
+
+                  <div className="px-6 pb-6 pt-4">
+                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center">
+                      {confirmMessage}
+                    </p>
+
+                    <div className="w-full border-t border-gray-200 my-4" />
+
+                    <div className="mt-6 flex items-center justify-center gap-4">
                       <button
-                        type="button"
-                        className="px-2 py-1 text-xs border rounded hover:bg-gray-100"
                         onClick={() => {
-                          if (onFocusNode) {
-                            onFocusNode(c.nodeId);
-                          } else {
-                            try {
-                              navigator.clipboard?.writeText(c.nodeId);
-                              alert(`Copied node id: ${c.nodeId} — ให้ parent implement onFocusNode เพื่อโฟกัส node โดยตรง`);
-                            } catch (e) {
-                              console.log("Focus node fallback, nodeId:", c.nodeId);
-                            }
+                          setConfirmVisible(false);
+                        }}
+                        className="inline-flex items-center justify-center px-6 py-2 rounded-full border border-slate-300 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-200 text-sm font-medium shadow-sm"
+                      >
+                        ยกเลิก
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          try {
+                            if (confirmAction) await confirmAction();
+                          } catch (err) {
+                            console.error("confirm action error:", err);
+                          } finally {
+                            setConfirmVisible(false);
                           }
                         }}
+                        className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${confirmVariant === "danger" ? "bg-red-600 hover:bg-red-700 focus:ring-red-200" : confirmVariant === "success" ? "bg-green-600 hover:bg-green-700 focus:ring-green-200" : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"}`}
                       >
-                        ไปที่ node
+                        ยืนยัน
                       </button>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
+                  </div>
+
+                  <button
+                    onClick={() => setConfirmVisible(false)}
+                    aria-label="close"
+                    className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
           )}
-
-          <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-            <button type="button" onClick={() => cfg.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
-              Cancel
-            </button>
-            <button type="submit" disabled={loading} className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">
-              {loading ? "Saving..." : "Ok"}
-            </button>
-          </div>
-        </form>
-
-        <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-          <img src={cfg.icon} alt="Icon" className="w-50 h-7" />
-          <span className="text-gray-600 text-sm">{cfg.description}</span>
-        </div>
-      </div>
+        </AnimatePresence>
+      </>
     );
   }
 
   /* --- Palette --- */
   return (
-    <div className="w-full bg-white p-4 flex flex-col gap-4 rounded-lg shadow-lg border-1">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold text-gray-700 mb-2">Input / Output</h3>
-        <div className="text-xs text-gray-500">{srLoading ? "Loading shapes..." : (srError ? srError : "Shape counts loaded")}</div>
-      </div>
-      <div>
-        <div className="flex gap-4">
-          <SymbolItemComponent item={symbols.find((s) => s.key === "input")!} />
-          <SymbolItemComponent item={symbols.find((s) => s.key === "output")!} />
+    <>
+      <div className="w-full bg-white p-4 flex flex-col gap-4 rounded-lg shadow-lg border-1">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-gray-700 mb-2">Input / Output</h3>
+          <div className="text-xs text-gray-500">{srLoading ? "Loading shapes..." : srError ? srError : "Shape counts loaded"}</div>
+        </div>
+        <div>
+          <div className="flex gap-4">
+            <SymbolItemComponent item={symbols.find((s) => s.key === "input")!} />
+            <SymbolItemComponent item={symbols.find((s) => s.key === "output")!} />
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-bold text-gray-700 mb-2">Variables</h3>
+          <div className="flex gap-4">
+            <SymbolItemComponent item={symbols.find((s) => s.key === "declare")!} />
+            <SymbolItemComponent item={symbols.find((s) => s.key === "assign")!} />
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-bold text-gray-700 mb-2">Control</h3>
+          <div className="flex gap-4">
+            <SymbolItemComponent item={symbols.find((s) => s.key === "if")!} />
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-bold text-gray-700 mb-2">Looping</h3>
+          <div className="flex gap-4">
+            <SymbolItemComponent item={symbols.find((s) => s.key === "while")!} />
+            <SymbolItemComponent item={symbols.find((s) => s.key === "for")!} />
+          </div>
         </div>
       </div>
 
-      <div>
-        <h3 className="text-lg font-bold text-gray-700 mb-2">Variables</h3>
-        <div className="flex gap-4">
-          <SymbolItemComponent item={symbols.find((s) => s.key === "declare")!} />
-          <SymbolItemComponent item={symbols.find((s) => s.key === "assign")!} />
-        </div>
-      </div>
+      {/* Confirmation modal for palette case as well (in case delete clicked while no activeModal) */}
+      <AnimatePresence>
+        {confirmVisible && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            aria-modal="true"
+            role="dialog"
+            onClick={() => { /* do nothing on backdrop click */ }}
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              aria-hidden
+            />
 
-      <div>
-        <h3 className="text-lg font-bold text-gray-700 mb-2">Control</h3>
-        <div className="flex gap-4">
-          <SymbolItemComponent item={symbols.find((s) => s.key === "if")!} />
-        </div>
-      </div>
+            <motion.div
+              className="relative z-50 w-full max-w-lg mx-auto transform"
+              initial={{ opacity: 0, scale: 0.98, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 12 }}
+              role="document"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
+                <div className={`px-6 pt-8 pb-6 flex flex-col items-center ${confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"}`}>
+                  <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"} shadow-md`}>
+                    {confirmVariant === "danger" ? (
+                      <FaCube size={36} className="text-white" />
+                    ) : (
+                      <FaPlus size={36} className="text-white" />
+                    )}
+                  </div>
 
-      <div>
-        <h3 className="text-lg font-bold text-gray-700 mb-2">Looping</h3>
-        <div className="flex gap-4">
-          <SymbolItemComponent item={symbols.find((s) => s.key === "while")!} />
-          <SymbolItemComponent item={symbols.find((s) => s.key === "for")!} />
-        </div>
-      </div>
-    </div>
+                  <h3 className={`mt-4 text-2xl font-extrabold ${confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"}`}>
+                    {confirmTitle}
+                  </h3>
+                </div>
+
+                <div className="px-6 pb-6 pt-4">
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center">
+                    {confirmMessage}
+                  </p>
+
+                  <div className="w-full border-t border-gray-200 my-4" />
+
+                  <div className="mt-6 flex items-center justify-center gap-4">
+                    <button
+                      onClick={() => {
+                        setConfirmVisible(false);
+                      }}
+                      className="inline-flex items-center justify-center px-6 py-2 rounded-full border border-slate-300 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-200 text-sm font-medium shadow-sm"
+                    >
+                      ยกเลิก
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        try {
+                          if (confirmAction) await confirmAction();
+                        } catch (err) {
+                          console.error("confirm action error:", err);
+                        } finally {
+                          setConfirmVisible(false);
+                        }
+                      }}
+                      className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${confirmVariant === "danger" ? "bg-red-600 hover:bg-red-700 focus:ring-red-200" : confirmVariant === "success" ? "bg-green-600 hover:bg-green-700 focus:ring-green-200" : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"}`}
+                    >
+                      ยืนยัน
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setConfirmVisible(false)}
+                  aria-label="close"
+                  className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 
