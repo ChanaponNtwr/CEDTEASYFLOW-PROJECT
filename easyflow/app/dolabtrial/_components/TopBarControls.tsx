@@ -74,7 +74,7 @@ export default function TopBarControls({
   const [fetchingVars, setFetchingVars] = useState(false);
 
   const [chatMessages, setChatMessages] = useState<{ sender: "system" | "user"; text: string }[]>([]);
-  const [expectingInput, setExpectingInput] = useState(false);
+  const [expectingInput, setExpectingInputState] = useState(false);
   const [inputValue, setInputValue] = useState<any>("");
 
   const [inputNodeId, setInputNodeId] = useState<string | number | null>(null);
@@ -86,6 +86,9 @@ export default function TopBarControls({
   const runAllActiveRef = useRef(false);
   const runAllWaitingForInputRef = useRef<(() => void) | null>(null);
 
+  // ref to mirror expectingInput state so loops/closures see latest value
+  const expectingInputRef = useRef<boolean>(expectingInput);
+
   // --- State สำหรับเก็บข้อมูล Lab ---
   const [labInfo, setLabInfo] = useState<{ name?: string; detail?: string } | null>(null);
 
@@ -95,6 +98,15 @@ export default function TopBarControls({
     if (!t) return false;
     const s = String(t).toUpperCase().trim();
     return ["EN", "END", "ED", "TERMINATE", "ENDNODE", "EXIT"].includes(s);
+  };
+
+  // small helper sleep
+  const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+  // helper to set both state and ref for expectingInput
+  const setExpecting = (v: boolean) => {
+    expectingInputRef.current = v;
+    setExpectingInputState(v);
   };
 
   // fetch declared variables from flowchart/trial AND Lab Info
@@ -216,16 +228,21 @@ export default function TopBarControls({
     return String(v);
   };
 
-  const handleResponseOutputs = (resp: ExecuteResponse | undefined | null, autoContinue = false): boolean => {
+  // NOTE: changed to async so callers can await to ensure outputs are rendered before continuing.
+  const handleResponseOutputs = async (resp: ExecuteResponse | undefined | null, autoContinue = false): Promise<boolean> => {
     const respOutputs = resp?.result?.context?.output ?? resp?.context?.output ?? [];
     if (Array.isArray(respOutputs) && respOutputs.length > 0) {
       const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
       setChatMessages((m) => [...m, ...mapped]);
 
-      // Note: Acknowledge button removed, so we treat it as auto-continue for flow purposes
-      // or simply rely on the user to click Step/Run again if paused.
-      // Returning true here allows highlighting the next node.
-      return true; 
+      // Since Acknowledge button was removed from UI, we add a short automatic pause
+      // so outputs are visible in order before the runner continues.
+      // If autoContinue (autoPlayInputs) is true, use a much shorter pause.
+      const waitMs = autoContinue ? 120 : 600;
+      try {
+        await sleep(waitMs);
+      } catch {}
+      return true;
     }
     return false;
   };
@@ -338,7 +355,7 @@ export default function TopBarControls({
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
           setInputVarName(varName);
-          setExpectingInput(true);
+          setExpecting(true);
           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
           return;
         }
@@ -366,7 +383,7 @@ export default function TopBarControls({
         setInputVarName(resolvedVarName ?? null);
         setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
         setInputValue("");
-        setExpectingInput(true);
+        setExpecting(true);
         return;
       }
 
@@ -378,11 +395,10 @@ export default function TopBarControls({
       const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      const hadOutputs = handleResponseOutputs(resp);
+      const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs);
       if (hadOutputs) {
         setPendingHighlightAfterOutput(nextId);
-        // Previously we paused here. Now since Acknowledge is removed, we just highlight.
-        // User can press Step again.
+        // Previously we paused here. Now we do an automatic short pause so output is readable.
         if (nextId) safeHighlight(nextId);
         return;
       }
@@ -397,7 +413,7 @@ export default function TopBarControls({
         setInputVarName(resolvedVarName ?? null);
         setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
         setInputValue("");
-        setExpectingInput(true);
+        setExpecting(true);
         return;
       }
 
@@ -452,6 +468,12 @@ export default function TopBarControls({
       const resolvedInitialVars = initialVariables ?? fetchedVariables ?? [];
       let firstCallVars = variablesSent ? [] : resolvedInitialVars;
 
+      // If we are already expecting input before starting, wait here
+      if (expectingInputRef.current) {
+        await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+        runAllWaitingForInputRef.current = null;
+      }
+
       // FIRST STEP (catch input-missing)
       let resp: ExecuteResponse | null = null;
       try {
@@ -462,7 +484,7 @@ export default function TopBarControls({
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
           setInputVarName(varName);
-          setExpectingInput(true);
+          setExpecting(true);
           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
 
           await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
@@ -488,7 +510,7 @@ export default function TopBarControls({
            setInputNodeId(inputNodeIdResolved);
            setInputVarName(resolvedVarName ?? null);
            setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
-           setExpectingInput(true);
+           setExpecting(true);
            await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
            runAllWaitingForInputRef.current = null;
            resp = lastResponse ?? resp;
@@ -500,15 +522,11 @@ export default function TopBarControls({
       let nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      if (handleResponseOutputs(resp, autoPlayInputs)) {
-        // NOTE: removed autoPlayInputs check for pausing. 
-        // We do NOT pause on output anymore since the Acknowledge button is removed.
+      if (await handleResponseOutputs(resp, autoPlayInputs)) {
+        // NOTE: We now wait a short delay inside handleResponseOutputs before continuing,
+        // and let the caller set pending/highlight as before.
         setPendingHighlightAfterOutput(nextId);
-        // Give a small delay to let user see output if they are running continuously?
-        // For now, we just proceed or highlight.
         if (nextId) safeHighlight(nextId);
-        
-        // Ensure we don't block.
       } else {
         const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
         safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
@@ -533,7 +551,7 @@ export default function TopBarControls({
           setInputVarName(resolvedVarName ?? null);
           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
           setInputValue("");
-          setExpectingInput(true);
+          setExpecting(true);
 
           await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
           runAllWaitingForInputRef.current = null;
@@ -571,7 +589,14 @@ export default function TopBarControls({
 
       // MAIN RUN LOOP
       while (runAllActiveRef.current) {
-        await new Promise((r) => setTimeout(r, 180));
+        // If expecting input (set by other places), wait here until it's resolved
+        if (expectingInputRef.current) {
+          await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+          runAllWaitingForInputRef.current = null;
+          // after resume, continue loop
+        }
+
+        await sleep(180);
 
         try {
           resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: [], forceAdvanceBP })) as ExecuteResponse;
@@ -581,7 +606,7 @@ export default function TopBarControls({
             const m = String(msg).match(/'([^']+)'/);
             const varName = m ? m[1] : null;
             setInputVarName(varName);
-            setExpectingInput(true);
+            setExpecting(true);
             setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
             await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
             runAllWaitingForInputRef.current = null;
@@ -611,7 +636,7 @@ export default function TopBarControls({
              setInputNodeId(inputNodeIdResolved);
              setInputVarName(resolvedVarName ?? null);
              setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
-             setExpectingInput(true);
+             setExpecting(true);
              await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
              runAllWaitingForInputRef.current = null;
              resp = lastResponse ?? resp;
@@ -620,9 +645,9 @@ export default function TopBarControls({
         nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-        if (handleResponseOutputs(resp, autoPlayInputs)) {
+        if (await handleResponseOutputs(resp, autoPlayInputs)) {
           setPendingHighlightAfterOutput(nextId);
-          // Removed blocking wait for outputResumeRef here as well
+          // automatic short pause already handled in handleResponseOutputs
           setPendingHighlightAfterOutput(null);
           if (nextId) safeHighlight(nextId);
         } else {
@@ -648,7 +673,7 @@ export default function TopBarControls({
             setInputVarName(resolvedVarName ?? null);
             setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
             setInputValue("");
-            setExpectingInput(true);
+            setExpecting(true);
 
             await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
             runAllWaitingForInputRef.current = null;
@@ -707,7 +732,7 @@ export default function TopBarControls({
 
   // --- Input submit (handles both single-step input & runAll resume) ---
   const handleSubmitInput = async () => {
-    if (!expectingInput) return;
+    if (!expectingInputRef.current) return;
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -743,7 +768,7 @@ export default function TopBarControls({
       setInputValue("");
       setInputNodeId(null);
       setInputVarName(null);
-      setExpectingInput(false);
+      setExpecting(false);
 
       const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
       const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
@@ -762,7 +787,7 @@ export default function TopBarControls({
           setInputVarName(resolvedVarName2 ?? null);
           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
           
-          setExpectingInput(true);
+          setExpecting(true);
           
           if (inputNodeIdResolved) safeHighlight(inputNodeIdResolved);
 
@@ -776,7 +801,7 @@ export default function TopBarControls({
       }
       // --------------------------------------------------------------------------
 
-      const hadOutputs = handleResponseOutputs(resp);
+      const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs);
       if (hadOutputs) {
         const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
@@ -785,12 +810,13 @@ export default function TopBarControls({
         if (nextType === "IN" || nextType === "INPUT") {
           const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
-          setExpectingInput(true);
+          setExpecting(true);
         } else {
-          setExpectingInput(false);
+          setExpecting(false);
         }
       }
 
+      // Resolve any runAll waiter if present (resume runAll)
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
@@ -818,7 +844,7 @@ export default function TopBarControls({
   };
 
   const cancelInput = () => {
-    setExpectingInput(false);
+    setExpecting(false);
     setInputNodeId(null);
     setInputVarName(null);
     setInputValue("");
@@ -845,7 +871,7 @@ export default function TopBarControls({
       setInputNodeId(null);
       setInputVarName(null);
       setChatMessages([]);
-      setExpectingInput(false);
+      setExpecting(false);
       setErrorMsg(null);
 
       if (runAllWaitingForInputRef.current) {
