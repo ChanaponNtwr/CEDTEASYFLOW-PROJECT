@@ -270,6 +270,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
               edge={selectedEdge}
               onAddNode={(type, label) => addNode(type, label)}
               onDeleteNode={deleteNodeAndReconnect}
+              onCloseModal={closeModal} // ✅ เติมบรรทัดนี้ลงไปเพื่อสั่งปิดเมื่อกดเสร็จ
               onRefresh={refreshFlowchart}
             />
           </div>

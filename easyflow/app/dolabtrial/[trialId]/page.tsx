@@ -241,6 +241,7 @@ export default function DoLabTrialPage({ params }: PageProps) {
               edge={selectedEdge}
               onAddNode={(type, label) => addNode(type, label)}
               onDeleteNode={deleteNodeAndReconnect}
+              onCloseModal={closeModal} // ✅ เพิ่มบรรทัดนี้ลงไปเพื่อสั่งปิด Modal หลังเพิ่ม Node เสร็จ
               onRefresh={refreshFlowchart}
             />
           </div>
@@ -267,7 +268,6 @@ export default function DoLabTrialPage({ params }: PageProps) {
           </div>
         </div>
       )}
-
 
       {showTutorial && (
       <div className="fixed inset-0 z-[999] bg-black/20">
