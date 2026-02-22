@@ -8,14 +8,12 @@ import { useSession } from "next-auth/react";
 import { apiGetClasses } from "@/app/service/FlowchartService"; 
 
 // --- Animation Variants ---
-// Define transitions with explicit Transition typing to satisfy TS
 const itemSpring: Transition = { type: "spring", stiffness: 250 };
 const iconSpring: Transition = { type: "spring", stiffness: 300 };
 
 const itemVariants: Variants = {
   hover: {
     scale: 1.03,
-    // background and boxShadow are valid CSS target values
     background: "linear-gradient(90deg, rgba(59,130,246,0.15), rgba(59,130,246,0.1))",
     boxShadow: "0px 2px 6px rgba(0,0,0,0.1)",
     x: 2,
@@ -33,13 +31,12 @@ const getInitials = (name: string) => {
 };
 
 function Sidebar() {
-  const { data: session, status } = useSession(); // เพิ่ม status เพื่อเช็ค state ของ session ได้ละเอียดขึ้น
+  const { data: session, status } = useSession();
   const [teachingClasses, setTeachingClasses] = useState<any[]>([]);
   const [enrolledClasses, setEnrolledClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // ✅ Logic Fix: ถ้าไม่มี User (ไม่ได้ Login) ให้หยุด Load ทันที เพื่อแสดง Empty State
     if (status !== "loading" && !session?.user) {
       setLoading(false);
       return;
@@ -54,7 +51,6 @@ function Sidebar() {
         const currentUserId = user.id || user.userId || user.sub;
 
         const data = await apiGetClasses();
-        // console.log("Sidebar API Data:", data); 
         
         const teach: any[] = [];
         const enroll: any[] = [];
@@ -120,22 +116,18 @@ function Sidebar() {
           ) : teachingClasses.length === 0 ? (
              <li className="text-gray-400 text-sm px-2">No active courses</li>
           ) : (
-            teachingClasses.map((cls, index) => {
+            teachingClasses.map((cls) => {
               const cId = getClassId(cls);
               if (!cId) return null;
 
               return (
-                <Link 
+                <motion.li
                   key={cId}
-                  href={`/Classwork/${cId}`}
-                  passHref 
-                  legacyBehavior
+                  className="flex items-center mb-2 px-2 py-2 rounded cursor-pointer text-gray-700 font-medium transition-colors"
+                  whileHover="hover"
+                  variants={itemVariants}
                 >
-                  <motion.li
-                    className="flex items-center mb-2 px-2 py-2 rounded cursor-pointer text-gray-700 font-medium transition-colors"
-                    whileHover="hover"
-                    variants={itemVariants}
-                  >
+                  <Link href={`/Classwork/${cId}`} className="w-full flex items-center">
                     <motion.span 
                       className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center mr-3 text-white text-xs font-bold shrink-0 shadow-sm"
                       variants={iconVariants}
@@ -143,8 +135,8 @@ function Sidebar() {
                       {getInitials(cls.classname)}
                     </motion.span>
                     <span className="truncate text-sm">{cls.classname}</span>
-                  </motion.li>
-                </Link>
+                  </Link>
+                </motion.li>
               );
             })
           )}
@@ -166,22 +158,18 @@ function Sidebar() {
           ) : enrolledClasses.length === 0 ? (
              <li className="text-gray-400 text-sm px-2">No enrolled courses</li>
           ) : (
-            enrolledClasses.map((cls, index) => {
+            enrolledClasses.map((cls) => {
               const cId = getClassId(cls);
               if (!cId) return null;
 
               return (
-                <Link 
+                <motion.li
                   key={cId}
-                  href={`/Classwork/${cId}`}
-                  passHref 
-                  legacyBehavior
+                  className="flex items-center mb-2 px-2 py-2 rounded cursor-pointer text-gray-700 font-medium transition-colors"
+                  whileHover="hover"
+                  variants={itemVariants}
                 >
-                  <motion.li
-                    className="flex items-center mb-2 px-2 py-2 rounded cursor-pointer text-gray-700 font-medium transition-colors"
-                    whileHover="hover"
-                    variants={itemVariants}
-                  >
+                  <Link href={`/Classwork/${cId}`} className="w-full flex items-center">
                     <motion.span 
                       className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center mr-3 text-white text-xs font-bold shrink-0 shadow-sm"
                       variants={iconVariants}
@@ -189,8 +177,8 @@ function Sidebar() {
                       {getInitials(cls.classname)}
                     </motion.span>
                     <span className="truncate text-sm">{cls.classname}</span>
-                  </motion.li>
-                </Link>
+                  </Link>
+                </motion.li>
               );
             })
           )}
