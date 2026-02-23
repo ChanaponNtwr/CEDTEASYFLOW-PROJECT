@@ -23,7 +23,8 @@ interface SymbolItem {
 }
 
 interface SymbolSectionProps {
-  labData?: LabData; 
+  // <-- อนุญาต null ด้วย เพื่อให้สอดคล้องกับ PageLabData | null ที่ส่งมาจากพาเรนต์
+  labData?: LabData | null; 
 }
 
 const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
@@ -38,7 +39,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
   });
 
   useEffect(() => {
-    if (labData) {
+    // ตรวจสอบทั้ง undefined และ null ก่อนใช้งาน
+    if (labData != null) {
       const checkUnlimited = (val: number | undefined) => (val === -1);
       const getCount = (val: number | undefined) => (val === -1 ? 0 : val ?? 0);
 

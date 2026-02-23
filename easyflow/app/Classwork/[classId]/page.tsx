@@ -13,6 +13,7 @@ import ImportLabModal from "./_components/ImportLabModal";
 import { apiGetClass, apiRemoveLabFromClass } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
 import { FaInbox } from "react-icons/fa";
+import { motion, AnimatePresence } from "framer-motion";
 
 // 🎨 ZONE ตั้งค่ารูปภาพ: ใส่ Path รูปภาพที่คุณมีใน public/images/ ตรงนี้
 // ระบบจะสุ่มเลือกจากรายการนี้ตาม Class ID
@@ -142,27 +143,73 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
     setIsModalOpen(true);
   };
 
+  // ------------------------------
+  // Modal-based confirm (replace alert/confirm)
+  // ------------------------------
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [confirmTitle, setConfirmTitle] = useState("");
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const [confirmOnConfirm, setConfirmOnConfirm] = useState<(() => Promise<void> | void) | null>(null);
+
+  const openConfirmModal = (
+    title: string,
+    message: string,
+    onConfirm: (() => Promise<void> | void) | null
+  ) => {
+    setConfirmTitle(title);
+    setConfirmMessage(message);
+    setConfirmOnConfirm(() => onConfirm);
+    setConfirmVisible(true);
+  };
+
+  const closeConfirmModal = () => {
+    setConfirmVisible(false);
+    setConfirmTitle("");
+    setConfirmMessage("");
+    setConfirmOnConfirm(null);
+  };
+
+  const isErrorModal = (title?: string) => {
+    const t = (title ?? confirmTitle ?? "").toLowerCase();
+    return (
+      t.includes("ผิด") ||
+      t.includes("ไม่สำเร็จ") ||
+      t.includes("ล้มเหลว") ||
+      t.includes("ข้อผิดพลาด") ||
+      t.includes("ผิดพลาด")
+    );
+  };
+
+  // Replace confirm+alert flow with modal
   const handleDeleteLab = async (labId: string) => {
     if (!finalClassId) return;
+
     if (!currentUserId) {
-      alert("Cannot determine current user. Please login.");
+      // replace alert -> modal
+      openConfirmModal("ไม่พบผู้ใช้", "ไม่สามารถตรวจสอบผู้ใช้ปัจจุบันได้ กรุณาเข้าสู่ระบบใหม่", null);
       return;
     }
-    const confirmed = confirm("ลบ Lab นี้จาก Class ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้");
-    if (!confirmed) return;
-    try {
-      setLoading(true);
-      setError(null);
-      await apiRemoveLabFromClass(finalClassId, labId, currentUserId);
-      await fetchClass(finalClassId);
-    } catch (err: any) {
-      console.error("Failed to remove lab from class:", err);
-      alert(err?.message || "ลบ Lab ไม่สำเร็จ");
-      setError(err?.message || "Failed to remove lab");
-    } finally {
-      setLoading(false);
-    }
+
+    openConfirmModal(
+      "ยืนยันการลบ",
+      "ลบ Lab นี้จาก Class ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้",
+      async () => {
+        try {
+          setLoading(true);
+          setError(null);
+          await apiRemoveLabFromClass(finalClassId, labId, currentUserId);
+          await fetchClass(finalClassId);
+        } catch (err: any) {
+          console.error("Failed to remove lab from class:", err);
+          // replace alert -> modal (show error)
+          openConfirmModal("ลบ Lab ไม่สำเร็จ", err?.message || "ลบ Lab ไม่สำเร็จ", null);
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
   };
+  // ------------------------------
 
   const assignments = useMemo(() => {
     if (!classDetail?.classLabs?.length) return [];
@@ -198,6 +245,19 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
 
   const hasClassLoaded = classDetail !== null;
   const canEdit = ["owner", "teacher"].includes(currentUserRole);
+
+  // framer-motion modal variants
+  const backdropVariants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1 },
+    exit: { opacity: 0 },
+  };
+
+  const modalVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: 20 },
+    visible: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.95, y: 20 },
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -264,9 +324,14 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
               ) : (
                 <div className="flex flex-col space-y-3 pb-20">
                   {assignments.map((a: any, idx: number) => {
-                    const linkHref = canEdit
-                      ? `/labviewscore/${a.labId}`
-                      : `/Studentlab/${a.labId}`;
+                    // <-- เปลี่ยนตรงนี้: ถ้า role เป็น "ta" ให้ลิงก์ไปที่ labviewscore ด้วย
+                    const linkHref =
+                      // ถ้าเป็น owner หรือ teacher (canEdit) ให้ไป labviewscore — (เดิม)
+                      // ถ้าเป็น ta เราก็ให้ไป labviewscore เช่นกัน
+                      (canEdit || currentUserRole === "ta")
+                        ? `/labviewscore/${a.labId}`
+                        : `/Studentlab/${a.labId}`;
+
                     return (
                       <Link key={idx} href={linkHref} className="block group">
                         <AssignmentItem
@@ -303,6 +368,126 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
           editData={editingLab || undefined}
         />
       )}
+
+      {/* Confirm Modal (framer-motion + AnimatePresence) */}
+      <AnimatePresence>
+        {confirmVisible && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            variants={backdropVariants}
+            aria-modal="true"
+            role="dialog"
+            onClick={() => { /* intentionally do nothing on backdrop click */ }}
+          >
+            {/* Backdrop */}
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              variants={backdropVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              aria-hidden
+            />
+
+            {/* Modal Card */}
+            <motion.div
+              className="relative z-50 w-full max-w-lg mx-auto transform"
+              variants={modalVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              role="document"
+              aria-labelledby="confirm-modal-title"
+              aria-describedby="confirm-modal-desc"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
+                {/* header */}
+                <div className={`px-6 pt-8 pb-6 flex flex-col items-center ${isErrorModal(confirmTitle) ? "bg-red-50" : "bg-red-50"}`}>
+                  <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${isErrorModal(confirmTitle) ? "bg-red-600" : "bg-red-600"} shadow-md`}>
+                    {isErrorModal(confirmTitle) ? (
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M3 6h18" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M10 11v6M14 11v6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+
+                  <h3
+                    id="confirm-modal-title"
+                    className={`mt-4 text-2xl font-extrabold ${isErrorModal(confirmTitle) ? "text-red-700" : "text-red-700"}`}
+                  >
+                    {confirmTitle}
+                  </h3>
+                </div>
+
+                {/* body */}
+                <div className="px-6 pb-6 pt-4">
+                  <p
+                    id="confirm-modal-desc"
+                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${
+                      !isErrorModal(confirmTitle) ? "text-center text-lg font-semibold" : ""
+                    }`}
+                  >
+                    {confirmMessage}
+                  </p>
+
+                  {/* separator */}
+                  <div className="w-full border-t border-gray-200 my-4" />
+
+                  {/* buttons */}
+                  <div className="mt-6 flex items-center justify-center gap-4">
+                    <button
+                      onClick={closeConfirmModal}
+                      className="inline-flex items-center justify-center px-6 py-2 rounded-full border border-slate-300 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-200 text-sm font-medium shadow-sm"
+                    >
+                      ยกเลิก
+                    </button>
+
+                    {confirmOnConfirm ? (
+                      <button
+                        onClick={async () => {
+                          try {
+                            if (confirmOnConfirm) await confirmOnConfirm();
+                          } catch (err) {
+                            console.error("confirm callback error:", err);
+                          } finally {
+                            // close after confirm (if the confirm callback wants to show another modal it can)
+                            closeConfirmModal();
+                          }
+                        }}
+                        className="inline-flex items-center justify-center px-6 py-2 rounded-full bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-200 text-sm font-medium shadow-sm"
+                      >
+                        ยืนยัน
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* small close button */}
+                <button
+                  onClick={closeConfirmModal}
+                  aria-label="close"
+                  className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

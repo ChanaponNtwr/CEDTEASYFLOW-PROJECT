@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 
 interface SymbolItem {
@@ -107,6 +107,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
     }
   };
 
+  // <-- เพิ่ม useEffect นี้ เพื่อส่งค่าให้ parent ตอน mount และทุกครั้งที่ symbols เปลี่ยน
+  useEffect(() => {
+    emitChange(symbols);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbols]);
+
   const handleCountChange = (
     key: keyof typeof symbols,
     increment: boolean
@@ -123,7 +129,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
           : Math.max(0, next[key].count - 1),
       };
       
-      emitChange(next); // ส่งค่าทันทีเมื่อกดปุ่ม
+      // ไม่จำเป็นเรียก emitChange ที่นี่เพราะ useEffect จะจับการเปลี่ยนของ symbols
       return next;
     });
   };
@@ -136,7 +142,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
       const next = { ...prev };
       next[key] = { ...next[key], isUnlimited: checked };
       
-      emitChange(next); // ส่งค่าทันทีเมื่อติ๊ก
+      // ไม่จำเป็นเรียก emitChange ที่นี่เพราะ useEffect จะจับการเปลี่ยนของ symbols
       return next;
     });
   };

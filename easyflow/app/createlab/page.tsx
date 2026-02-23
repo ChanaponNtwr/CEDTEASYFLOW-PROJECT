@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import { useRouter } from "next/navigation";
 import { apiCreateTestcase, apiCreateLab } from "@/app/service/FlowchartService"; 
 import { useSession } from "next-auth/react"; // [1] Import Session
+import { useSearchParams } from "next/navigation";
 
 interface TestCase {
   input: string;
@@ -20,20 +22,9 @@ export default function Createlab() {
   const MAX_LINES = 15;
   const MAX_CHARS = 2500;
 
-  const handleProblemChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-
-    // 1️⃣ จำกัดตัวอักษร
-    if (value.length > MAX_CHARS) return;
-
-    // 2️⃣ จำกัดจำนวนบรรทัด (Enter)
-    const lines = value.split("\n").length;
-    if (lines > MAX_LINES) return;
-
-    setProblem(value);
-  };
-
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const from = searchParams.get("from");
   // [2] เรียกใช้ session
   const { data: session } = useSession();
 
@@ -58,11 +49,65 @@ export default function Createlab() {
 
   const [submitting, setSubmitting] = useState(false);
 
+  // validation errors for name/problem
+  const [errors, setErrors] = useState<{ name?: string; problem?: string }>({});
+
+  // validation errors for each testcase: array aligned with testCases indices
+  // **เพิ่ม hiddenInput & hiddenOutput ในชนิดของ error**
+  const [tcErrors, setTcErrors] = useState<
+    { input?: string; output?: string; score?: string; hiddenInput?: string; hiddenOutput?: string }[]
+  >(testCases.map(() => ({})));
+
+  // Modal state (แทน alert)
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalMessage, setModalMessage] = useState("");
+  const [modalAction, setModalAction] = useState<(() => void) | null>(null);
+
+  const openModal = (title: string, message: string, action: (() => void) | null) => {
+    setModalTitle(title);
+    setModalMessage(message);
+    setModalAction(() => action);
+    setModalVisible(true);
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+    // run action after close (if any)
+    try {
+      if (modalAction) modalAction();
+    } catch (err) {
+      console.error("modal action error:", err);
+    } finally {
+      // reset action
+      setModalAction(null);
+    }
+  };
+
+  const handleProblemChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+
+    // 1️⃣ จำกัดตัวอักษร
+    if (value.length > MAX_CHARS) return;
+
+    // 2️⃣ จำกัดจำนวนบรรทัด (Enter)
+    const lines = value.split("\n").length;
+    if (lines > MAX_LINES) return;
+
+    setProblem(value);
+
+    // clear error if user types something non-empty
+    if (value && value.trim()) {
+      setErrors((prev) => ({ ...prev, problem: undefined }));
+    }
+  };
+
   const addTestCase = () => {
-    setTestCases([
-      ...testCases,
+    setTestCases((prev) => [
+      ...prev,
       { input: "", output: "", hiddenInput: "", hiddenOutput: "", score: "" },
     ]);
+    setTcErrors((prev) => [...prev, {}]);
   };
 
   const removeTestCase = (index: number) => {
@@ -70,6 +115,10 @@ export default function Createlab() {
     const updated = [...testCases];
     updated.splice(index, 1);
     setTestCases(updated);
+
+    const updatedErr = [...tcErrors];
+    updatedErr.splice(index, 1);
+    setTcErrors(updatedErr);
   };
 
   const handleTestCaseChange = (
@@ -80,6 +129,17 @@ export default function Createlab() {
     const updated = [...testCases];
     updated[index][field] = value;
     setTestCases(updated);
+
+    // clear specific testcase error for that field when user types
+    setTcErrors((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...(copy[index] || {}) };
+      // ถ้ามี error สำหรับ field นี้ ให้ลบออก
+      if ((copy[index] as any)[field]) {
+        delete (copy[index] as any)[field];
+      }
+      return copy;
+    });
   };
 
   const handleSymbolChange = (symbolData: any) => {
@@ -87,7 +147,11 @@ export default function Createlab() {
   };
 
   const handleCancel = () => {
-    router.push("/mylab");
+    if (from === "Selectlab") {
+      router.push("/Selectlab");
+    } else {
+      router.push("/mylab");
+    }
   };
 
   // helper: แปลง string -> (number|string)[]
@@ -110,28 +174,84 @@ export default function Createlab() {
   };
 
   const handleCreate = async () => {
+    // validation: ensure required fields are filled
+    const newErrors: { name?: string; problem?: string } = {};
+    if (!name || !name.trim()) {
+      newErrors.name = "กรุณากรอกชื่อ Lab";
+    }
+    if (!problem || !problem.trim()) {
+      newErrors.problem = "กรุณากรอก Problem Solving";
+    }
+
+    // validate each testcase: input, output, score required
+    // **เพิ่ม hiddenInput, hiddenOutput เป็น required**
+    const newTcErrors: { input?: string; output?: string; score?: string; hiddenInput?: string; hiddenOutput?: string }[] = testCases.map(
+      () => ({})
+    );
+    let hasTcError = false;
+
+    testCases.forEach((tc, idx) => {
+      // input
+      if (!tc.input || !String(tc.input).trim()) {
+        newTcErrors[idx].input = "กรุณากรอก Input";
+        hasTcError = true;
+      }
+      // output
+      if (!tc.output || !String(tc.output).trim()) {
+        newTcErrors[idx].output = "กรุณากรอก Output";
+        hasTcError = true;
+      }
+      // hiddenInput (ใหม่: บังคับ)
+      if (!tc.hiddenInput || !String(tc.hiddenInput).trim()) {
+        newTcErrors[idx].hiddenInput = "กรุณากรอก Hidden Input";
+        hasTcError = true;
+      }
+      // hiddenOutput (ใหม่: บังคับ)
+      if (!tc.hiddenOutput || !String(tc.hiddenOutput).trim()) {
+        newTcErrors[idx].hiddenOutput = "กรุณากรอก Hidden Output";
+        hasTcError = true;
+      }
+      // score - must be present and numeric
+      if (tc.score === "" || tc.score === null || tc.score === undefined || String(tc.score).trim() === "") {
+        newTcErrors[idx].score = "กรุณากรอก Score";
+        hasTcError = true;
+      } else {
+        const n = Number(tc.score);
+        if (Number.isNaN(n)) {
+          newTcErrors[idx].score = "Score ต้องเป็นตัวเลข";
+          hasTcError = true;
+        }
+      }
+    });
+
+    // set errors if any
+    setErrors(newErrors);
+    setTcErrors(newTcErrors);
+
+    // if any errors, bail out
+    if (Object.keys(newErrors).length > 0 || hasTcError) {
+      return;
+    }
+
+    // clear errors
+    setErrors({});
+    setTcErrors(testCases.map(() => ({})));
     setSubmitting(true);
 
     try {
       const dueDateIso = toISODueDate(dateline);
 
-      // --- [ส่วนที่แก้ไขสำคัญ] ดึง ID จาก Session ---
+      // --- [ส่วนที่แก้ไขสำคัญ] ดึง ID FROM Session ---
       const userSession = session?.user as any;
-      // พยายามหา id หรือ userId จาก object
       const rawId = userSession?.id || userSession?.userId;
-      
-      // ถ้าไม่มี ID ใน Session จะแจ้งเตือนที่ Console และใช้ 1 เป็นค่าสำรอง
       if (!rawId) {
         console.warn("⚠️ Warning: ไม่พบ ID ของ User ใน Session! ระบบจะใช้ค่า Default: 1 (โปรดตรวจสอบการตั้งค่า NextAuth Callbacks)");
       }
-
       const ownerId = rawId ? Number(rawId) : 1;
-      
-      console.log("Creating Lab with Owner ID:", ownerId); // เช็ค log นี้ว่าเลขอะไร
-      // ------------------------------------------
+      console.log("Creating Lab with Owner ID:", ownerId);
 
       const labPayload: any = {
-        ownerUserId: ownerId, 
+        ownerUserId: ownerId,
         labname: name || "Untitled Lab",
         problemSolving: problem || "",
         status: "active",
@@ -184,7 +304,6 @@ export default function Createlab() {
         );
 
       // เตรียม Object สำหรับ LocalStorage
-      // เพิ่ม field authorEmail และ author เพื่อให้ Mylab กรองข้อมูลได้ถูกต้อง
       const baseLabLocal = {
         id: Date.now(),
         labId,
@@ -195,7 +314,7 @@ export default function Createlab() {
         symbols,
         createdAt: new Date().toISOString(),
         remoteCreated: true,
-        authorEmail: session?.user?.email, 
+        authorEmail: session?.user?.email,
         author: session?.user?.name,
       };
 
@@ -224,9 +343,29 @@ export default function Createlab() {
         localStorage.setItem("labs", JSON.stringify(labs));
 
         if (rejected.length > 0) {
-            alert("สร้าง Lab สำเร็จ แต่มีบาง Testcase ส่งไป server ไม่สำเร็จ");
+          openModal(
+            "สร้าง Lab เสร็จ (บาง Testcase ล้มเหลว)",
+            "สร้าง Lab สำเร็จ แต่มีบาง Testcase ส่งไป server ไม่สำเร็จ",
+            () => {
+              if (from === "selectlab" || from === "Selectlab") {
+                router.push("/Selectlab");
+              } else {
+                router.push("/mylab");
+              }
+            }
+          );
         } else {
-            alert("สร้าง Lab และส่ง Testcase ขึ้น server เรียบร้อยแล้ว");
+          openModal(
+            "สร้าง Lab สำเร็จ",
+            "สร้าง Lab และส่ง Testcase ขึ้น server เรียบร้อยแล้ว",
+            () => {
+              if (from === "selectlab" || from === "Selectlab") {
+                router.push("/Selectlab");
+              } else {
+                router.push("/mylab");
+              }
+            }
+          );
         }
 
       } else {
@@ -241,17 +380,51 @@ export default function Createlab() {
         labs.push(newLabLocal);
         localStorage.setItem("labs", JSON.stringify(labs));
 
-        alert("สร้าง Lab เรียบร้อยแล้ว");
+        openModal(
+          "สร้าง Lab สำเร็จ",
+          "สร้าง Lab เรียบร้อยแล้ว",
+          () => {
+            if (from === "selectlab" || from === "Selectlab") {
+              router.push("/Selectlab");
+            } else {
+              router.push("/mylab");
+            }
+          }
+        );
       }
-
-      router.push("/mylab");
     } catch (err) {
       console.error("handleCreate error:", err);
-      alert("เกิดข้อผิดพลาด ข้อมูลอาจจะยังไม่ถูกส่ง กรุณาดู console");
+      openModal(
+        "เกิดข้อผิดพลาด",
+        "เกิดข้อผิดพลาด ข้อมูลอาจจะยังไม่ถูกส่ง กรุณาดู console",
+        null
+      );
     } finally {
       setSubmitting(false);
     }
   };
+
+  // helper: เลือกสไตล์ modal ตามประเภท (error / success)
+  const isErrorModal = () => {
+    if (!modalTitle) return false;
+    const t = modalTitle.toLowerCase();
+    return t.includes("ผิด") || t.includes("ไม่สำเร็จ") || t.includes("ล้มเหลว") || t.includes("ข้อผิดพลาด");
+  };
+
+  // framer-motion variants
+  const backdropVariants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1 },
+    exit: { opacity: 0 },
+  };
+
+  const modalVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: 20 },
+    visible: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.95, y: 20 },
+  };
+
+  const successModal = !isErrorModal();
 
   return (
     <div className="pt-20 min-h-screen bg-gray-100">
@@ -294,9 +467,17 @@ export default function Createlab() {
                       type="text"
                       value={name}
                       placeholder='Name'
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        if (e.target.value && e.target.value.trim()) {
+                          setErrors((prev) => ({ ...prev, name: undefined }));
+                        }
+                      }}
                       className="bg-white mt-1 block w-full p-2 border border-gray-300 rounded-md"
                     />
+                    {errors.name && (
+                      <p className="mt-1 text-sm text-red-600">{errors.name}</p>
+                    )}
                   </div>
 
                   {/* <div className="w-full md:w-1/4">
@@ -330,6 +511,9 @@ export default function Createlab() {
       leading-6
     "
   />
+  {errors.problem && (
+    <p className="mt-1 text-sm text-red-600">{errors.problem}</p>
+  )}
 </div>
 
                 {/* Testcases */}
@@ -362,6 +546,9 @@ export default function Createlab() {
                             placeholder='เช่น 10,20,30 หรือ 10 20 30'
                             className="w-full p-2 border bg-white rounded-md"
                           />
+                          {tcErrors[idx]?.input && (
+                            <p className="mt-1 text-sm text-red-600">{tcErrors[idx].input}</p>
+                          )}
                         </div>
 
                         <div className="col-span-6">
@@ -375,6 +562,9 @@ export default function Createlab() {
                             placeholder='เช่น 60'
                             className="w-full p-2 border bg-white rounded-md"
                           />
+                          {tcErrors[idx]?.output && (
+                            <p className="mt-1 text-sm text-red-600">{tcErrors[idx].output}</p>
+                          )}
                         </div>
                       </div>
 
@@ -395,6 +585,9 @@ export default function Createlab() {
                             placeholder='เช่น 10,20,30 หรือ 10 20 30'
                             className="w-full p-2 border bg-white rounded-md"
                           />
+                          {tcErrors[idx]?.hiddenInput && (
+                            <p className="mt-1 text-sm text-red-600">{tcErrors[idx].hiddenInput}</p>
+                          )}
                         </div>
 
                         <div className="col-span-6">
@@ -412,6 +605,9 @@ export default function Createlab() {
                             placeholder='เช่น 60'
                             className="w-full p-2 border bg-white rounded-md"
                           />
+                          {tcErrors[idx]?.hiddenOutput && (
+                            <p className="mt-1 text-sm text-red-600">{tcErrors[idx].hiddenOutput}</p>
+                          )}
                         </div>
                       </div>
 
@@ -427,6 +623,9 @@ export default function Createlab() {
                             placeholder='เช่น 5'
                             className="w-full p-2 border bg-white rounded-md"
                           />
+                          {tcErrors[idx]?.score && (
+                            <p className="mt-1 text-sm text-red-600">{tcErrors[idx].score}</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -446,6 +645,106 @@ export default function Createlab() {
           </div>
         </div>
       </div>
+
+      {/* Modal (ปรับปรุงด้วย framer-motion) */}
+      <AnimatePresence>
+        {modalVisible && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            variants={backdropVariants}
+            aria-modal="true"
+            role="dialog"
+            // ตั้งใจไม่ปิดเมื่อคลิก backdrop เพื่อเลียนแบบ alert behavior
+            onClick={() => { /* intentionally do nothing on backdrop click */ }}
+          >
+            {/* Backdrop overlay (separate element for layering) */}
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              variants={backdropVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              aria-hidden
+            />
+
+            {/* Modal card */}
+            <motion.div
+              className="relative z-50 w-full max-w-lg mx-auto transform"
+              variants={modalVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              role="document"
+              aria-labelledby="modal-title"
+              aria-describedby="modal-desc"
+              onClick={(e) => e.stopPropagation()} // prevent backdrop click
+            >
+              <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
+                {/* colored header */}
+                <div className={`px-6 pt-8 pb-6 flex flex-col items-center ${isErrorModal() ? "bg-red-50" : "bg-green-50"}`}>
+                  {/* decorative hexagon-like icon */}
+                  <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${isErrorModal() ? "bg-red-600" : "bg-green-600"} shadow-md`}>
+                    {isErrorModal() ? (
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+
+                  <h3
+                    id="modal-title"
+                    className={`mt-4 text-2xl font-extrabold ${isErrorModal() ? "text-red-700" : "text-green-700"}`}
+                  >
+                    {modalTitle}
+                  </h3>
+                </div>
+
+                {/* body */}
+                <div className="px-6 pb-6 pt-4">
+                  <p
+                    id="modal-desc"
+                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${
+                      successModal ? "text-center text-lg font-semibold" : ""
+                    }`}
+                  >
+                    {modalMessage}
+                  </p>
+
+                  {/* separator line between message and button */}
+                  <div className="w-full border-t border-gray-200 my-4" />
+
+                  <div className="mt-6 flex justify-center">
+                    <button
+                      onClick={closeModal}
+                      className="inline-flex items-center justify-center px-6 py-2 rounded-full border border-slate-300 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-200 text-sm font-medium shadow-sm"
+                    >
+                      ปิด
+                    </button>
+                  </div>
+                </div>
+
+                {/* small close button (moved inside and inset) */}
+                <button
+                  onClick={closeModal}
+                  aria-label="close"
+                  className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

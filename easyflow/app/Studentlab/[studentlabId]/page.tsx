@@ -10,7 +10,17 @@ import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection"; 
 
 // Icons
-import { FaPlay, FaPaperPlane, FaTimes, FaCalendarAlt, FaCheckCircle, FaExclamationCircle, FaSpinner } from "react-icons/fa";
+import {
+  FaPlay,
+  FaPaperPlane,
+  FaTimes,
+  FaCalendarAlt,
+  FaCheckCircle,
+  FaExclamationCircle,
+  FaSpinner,
+  FaPlus,
+  FaCube,
+} from "react-icons/fa";
 import { IoHardwareChipOutline } from "react-icons/io5";
 
 import { 
@@ -21,6 +31,8 @@ import {
   apiSubmitFlowchart,
   apiCancelSubmission
 } from "@/app/service/FlowchartService";
+
+import { motion, AnimatePresence } from "framer-motion";
 
 // --- Interfaces ---
 interface TestCase {
@@ -62,6 +74,8 @@ interface SubmissionResult {
   raw?: any;
   [k: string]: any;
 }
+
+type ModalVariant = "danger" | "success" | "info";
 
 // --- Helpers ---
 function formatDueDate(d?: string | null) { 
@@ -132,6 +146,8 @@ function buildResultsMap(submissions: any[]): Record<string, SubmissionResult> {
   return map;
 }
 
+// --- Modal state / helper component logic moved inside main component ---
+
 // --- Main ---
 export default function StudentLabPage() {
   const params = useParams();
@@ -151,6 +167,30 @@ export default function StudentLabPage() {
   const [tcResults, setTcResults] = useState<Record<string, SubmissionResult>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+
+  // --- Modal state (replace alert/confirm) ---
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalMessage, setModalMessage] = useState("");
+  const [modalAction, setModalAction] = useState<(() => Promise<void> | void) | null>(null);
+  const [modalVariant, setModalVariant] = useState<ModalVariant>("info");
+
+  const openModal = (title: string, message: string, action: (() => Promise<void> | void) | null = null, variant: ModalVariant = "info") => {
+    setModalTitle(title);
+    setModalMessage(message);
+    setModalAction(() => action);
+    setModalVariant(variant);
+    setModalVisible(true);
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setModalTitle("");
+    setModalMessage("");
+    setModalAction(null);
+    setModalVariant("info");
+  };
+  // --- end modal ---
 
   // --- Fetch Data ---
   useEffect(() => {
@@ -249,7 +289,10 @@ export default function StudentLabPage() {
   // --- Handlers ---
   const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    if (!session?.user) { alert("Please login first!"); return; }
+    if (!session?.user) { 
+      openModal("กรุณาเข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อนดำเนินการ", null, "info");
+      return; 
+    }
 
     setIsStarting(true);
     try {
@@ -271,15 +314,21 @@ export default function StudentLabPage() {
         throw new Error("API did not return a valid flowchart ID");
       }
     } catch (error: any) {
-      alert(`Failed to start lab: ${error.message || "Unknown error"}`);
+      openModal("ไม่สามารถสร้าง Lab ได้", `เกิดข้อผิดพลาด: ${error?.message ?? "Unknown error"}`, null, "danger");
     } finally {
       setIsStarting(false);
     }
   };
 
   const handleSubmit = async () => {
-    if (!session?.user) return alert("กรุณาเข้าสู่ระบบก่อนส่งงาน");
-    if (!labIdResolved) return alert("Missing lab id");
+    if (!session?.user) {
+      openModal("กรุณาเข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อนส่งงาน", null, "info");
+      return;
+    }
+    if (!labIdResolved) {
+      openModal("ขาดข้อมูล", "ไม่พบ Lab ID สำหรับการส่งงาน", null, "danger");
+      return;
+    }
 
     const user = session.user as any;
     const userId = user.id || user.userId || user.sub;
@@ -320,53 +369,63 @@ export default function StudentLabPage() {
       } catch {
         setIsSubmitted(true);
       }
-      alert("ส่งงานเรียบร้อย");
+      openModal("ส่งงานเรียบร้อย", "ระบบได้รับการส่งงานแล้ว", null, "success");
     } catch (err: any) {
       console.error("Submit error:", err);
       const msg = err?.response?.data?.message || err?.message || "Unknown error";
-      alert(`ไม่สามารถส่งงานได้: ${msg}`);
+      openModal("ไม่สามารถส่งงานได้", `ไม่สามารถส่งงานได้: ${msg}`, null, "danger");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleUnsubmit = async () => {
-    if (!session?.user) return alert("กรุณาเข้าสู่ระบบก่อน");
-    if (!confirm("คุณต้องการยกเลิกการส่งงานใช่หรือไม่?")) return;
+    if (!session?.user) {
+      openModal("กรุณาเข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อนดำเนินการ", null, "info");
+      return;
+    }
 
+    // show confirmation modal (danger variant). If confirmed, perform cancellation.
     const user = session.user as any;
     const userId = user.id || user.userId || user.sub;
 
-    setIsCancelling(true);
-    try {
-      await apiCancelSubmission(Number(labIdResolved), Number(userId));
-      setIsSubmitted(false);
-      setTcResults({});
-      
-      try {
-        const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
-        const allSubs =
-          apiResponse?.data?.[0]?.submissions ??
-          apiResponse?.submissions ??
-          apiResponse?.data ??
-          apiResponse ??
-          [];
-        const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
-        const mySubs = (arrSubs ?? []).filter((s: any) => Number(s.userId) === Number(userId) || Number(s.user_id) === Number(userId));
-        if (mySubs.length > 0) {
-          const map = buildResultsMap(mySubs);
-          setIsSubmitted(true);
-          setTcResults(map);
-        }
-      } catch { /* ignore */ }
+    openModal(
+      "ยกเลิกการส่งงาน",
+      "คุณแน่ใจหรือไม่ว่าต้องการยกเลิกการส่งงาน? การกระทำนี้อาจไม่สามารถย้อนกลับได้",
+      async () => {
+        setIsCancelling(true);
+        try {
+          await apiCancelSubmission(Number(labIdResolved), Number(userId));
+          setIsSubmitted(false);
+          setTcResults({});
 
-      alert("ยกเลิกการส่งงานเรียบร้อย");
-    } catch (err: any) {
-      console.error("Unsubmit error:", err);
-      alert(`ไม่สามารถยกเลิกการส่งงานได้: ${err?.message ?? "Unknown error"}`);
-    } finally {
-      setIsCancelling(false);
-    }
+          try {
+            const apiResponse = await apiGetSubmissionsByLab(labIdResolved);
+            const allSubs =
+              apiResponse?.data?.[0]?.submissions ??
+              apiResponse?.submissions ??
+              apiResponse?.data ??
+              apiResponse ??
+              [];
+            const arrSubs = Array.isArray(allSubs) ? allSubs : (Array.isArray(apiResponse) ? apiResponse : []);
+            const mySubs = (arrSubs ?? []).filter((s: any) => Number(s.userId) === Number(userId) || Number(s.user_id) === Number(userId));
+            if (mySubs.length > 0) {
+              const map = buildResultsMap(mySubs);
+              setIsSubmitted(true);
+              setTcResults(map);
+            }
+          } catch { /* ignore */ }
+
+          openModal("ยกเลิกการส่งงานเรียบร้อย", "ระบบยกเลิกการส่งงานให้เรียบร้อยแล้ว", null, "success");
+        } catch (err: any) {
+          console.error("Unsubmit error:", err);
+          openModal("ไม่สำเร็จ", `ไม่สามารถยกเลิกการส่งงานได้: ${err?.message ?? "Unknown error"}`, null, "danger");
+        } finally {
+          setIsCancelling(false);
+        }
+      },
+      "danger"
+    );
   };
 
   const totalPoints = testCases.reduce((s, t) => s + (t.score ?? 0), 0);
@@ -383,6 +442,29 @@ export default function StudentLabPage() {
     forSymVal: lab.forSymVal ?? 0,
     whileSymVal: lab.whileSymVal ?? 0,
   } : undefined;
+
+  // --- New: compute total obtained score using same testcase keying logic as rows ---
+  const makeTcKey = (tc: TestCase, index: number) => {
+    const raw = tc.raw ?? {};
+    const tcIdCandidate =
+      raw.testcaseId ??
+      raw.testcase_id ??
+      raw.id ??
+      raw.tcId ??
+      raw.testcase?.id ??
+      raw.testcase?.testcaseId ??
+      tc.no ??
+      (index + 1);
+    return String(tcIdCandidate);
+  };
+
+  const obtainedTotal = testCases.reduce((acc, tc, idx) => {
+    const key = makeTcKey(tc, idx);
+    const res = tcResults[key];
+    const obtained = Number(res?.scoreAwarded ?? res?.score ?? 0);
+    // Only count obtained points if submission exists (keeps behavior consistent)
+    return acc + (isSubmitted ? obtained : 0);
+  }, 0);
 
   const renderStatusBadge = (status: string | undefined) => {
     if (!status) return <span className="text-gray-300 font-mono">-</span>;
@@ -479,7 +561,7 @@ export default function StudentLabPage() {
                           className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm text-white transition-all hover:shadow-md hover:-translate-y-0.5
                             ${isSubmitting || loading 
                                 ? 'bg-gray-400 cursor-not-allowed' 
-                                : 'bg-gradient-to-r from-blue-600  to-blue-600 hover:from-blue-700  hover:to-blue-700 '
+                                : 'bg-gradient-to-r from-green-600 to-green-600 hover:from-green-700 hover:to-green-700 '
                             }`}
                         >
                           {isSubmitting ? <FaSpinner className="animate-spin" /> : <FaPaperPlane size={12} />}
@@ -506,6 +588,18 @@ export default function StudentLabPage() {
                     <div className="flex items-center gap-2">
                         <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
                         <h3 className="text-lg font-bold text-gray-800">Test Cases</h3>
+                    </div>
+
+                    {/* NEW: Total score display on the right (does not alter existing UI other than adding this small element) */}
+                    <div className="text-sm text-gray-600">
+                      <span className="text-xs text-gray-500 mr-2 hidden md:inline">Total:</span>
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-50 border border-gray-100">
+                        {isSubmitted ? (
+                          <><span className="text-gray-800">{obtainedTotal}</span><span className="text-gray-400 ml-1">/</span><span className="text-gray-500 ml-1">{totalPoints}</span></>
+                        ) : (
+                          <><span className="text-gray-700">{totalPoints}</span><span className="text-gray-400 ml-1">pts</span></>
+                        )}
+                      </span>
                     </div>
                 </div>
                 
@@ -607,6 +701,98 @@ export default function StudentLabPage() {
             
         </div>
       </div>
+
+      {/* Modal (replaces alert/confirm) */}
+      <AnimatePresence>
+        {modalVisible && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            aria-modal="true"
+            role="dialog"
+            onClick={() => { /* do nothing on backdrop click */ }}
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              aria-hidden
+            />
+
+            <motion.div
+              className="relative z-50 w-full max-w-lg mx-auto transform"
+              initial={{ opacity: 0, scale: 0.98, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 12 }}
+              role="document"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
+                <div className={`px-6 pt-8 pb-6 flex flex-col items-center ${modalVariant === "danger" ? "bg-red-50" : modalVariant === "success" ? "bg-green-50" : "bg-blue-50"}`}>
+                  <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${modalVariant === "danger" ? "bg-red-600" : modalVariant === "success" ? "bg-green-600" : "bg-blue-600"} shadow-md`}>
+                    {modalVariant === "danger" ? (
+                      <FaCube size={36} className="text-white" />
+                    ) : (
+                      <FaPlus size={36} className="text-white" />
+                    )}
+                  </div>
+
+                  <h3 className={`mt-4 text-2xl font-extrabold ${modalVariant === "danger" ? "text-red-700" : modalVariant === "success" ? "text-green-700" : "text-blue-700"}`}>
+                    {modalTitle}
+                  </h3>
+                </div>
+
+                <div className="px-6 pb-6 pt-4">
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center">
+                    {modalMessage}
+                  </p>
+
+                  <div className="w-full border-t border-gray-200 my-4" />
+
+                  <div className="mt-6 flex items-center justify-center gap-4">
+                    <button
+                      onClick={closeModal}
+                      className="inline-flex items-center justify-center px-6 py-2 rounded-full border border-slate-300 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-200 text-sm font-medium shadow-sm"
+                    >
+                      ยกเลิก
+                    </button>
+
+                    {modalAction && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            if (modalAction) await modalAction();
+                          } catch (err) {
+                            console.error("modal action error:", err);
+                          } finally {
+                            closeModal();
+                          }
+                        }}
+                        className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${modalVariant === "danger" ? "bg-red-600 hover:bg-red-700 focus:ring-red-200" : modalVariant === "success" ? "bg-green-600 hover:bg-green-700 focus:ring-green-200" : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"}`}
+                      >
+                        ยืนยัน
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  onClick={closeModal}
+                  aria-label="close"
+                  className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

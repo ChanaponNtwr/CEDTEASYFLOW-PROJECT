@@ -13,6 +13,7 @@ import {
 } from "@/app/service/FlowchartService";
 import { useSession } from "next-auth/react";
 import { FaPlus, FaChalkboardTeacher, FaBookReader, FaInbox } from "react-icons/fa";
+import { motion, AnimatePresence } from "framer-motion";
 
 export type ClassItem = {
   id: number | string;
@@ -49,6 +50,51 @@ function Myclass() {
     section: "",
     room: "",
   });
+
+  // ================= Confirm Modal (replace alert/confirm) =================
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [confirmTitle, setConfirmTitle] = useState("");
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const [confirmOnConfirm, setConfirmOnConfirm] = useState<(() => Promise<void> | void) | null>(null);
+
+  const openConfirmModal = (title: string, message: string, onConfirm: (() => Promise<void> | void) | null) => {
+    setConfirmTitle(title);
+    setConfirmMessage(message);
+    setConfirmOnConfirm(() => onConfirm);
+    setConfirmVisible(true);
+  };
+
+  const closeConfirmModal = () => {
+    setConfirmVisible(false);
+    setConfirmTitle("");
+    setConfirmMessage("");
+    setConfirmOnConfirm(null);
+  };
+
+  const isErrorModal = (title?: string) => {
+    const t = (title ?? confirmTitle ?? "").toLowerCase();
+    return (
+      t.includes("ผิด") ||
+      t.includes("ไม่สำเร็จ") ||
+      t.includes("ล้มเหลว") ||
+      t.includes("ข้อผิดพลาด") ||
+      t.includes("ผิดพลาด")
+    );
+  };
+
+  // framer-motion modal variants
+  const backdropVariants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1 },
+    exit: { opacity: 0 },
+  };
+
+  const modalVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: 20 },
+    visible: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.95, y: 20 },
+  };
+  // =======================================================================
 
   // ================= Load Classes =================
   const loadClasses = async () => {
@@ -136,23 +182,30 @@ function Myclass() {
   }, [currentUserId, status]);
 
   // ================= Actions =================
+  // Replace confirm() with modal-based flow
   const handleDeleteClass = async (classId: string | number) => {
     if (!currentUserId) return;
-    const confirmed = confirm("Are you sure you want to delete this class?");
-    if (!confirmed) return;
 
-    try {
-      await apiDeleteClass(classId, currentUserId);
-      setMyClasses((prev) =>
-        prev.filter((c) => String(c.id) !== String(classId))
-      );
-    } catch {
-      alert("Failed to delete class.");
-    }
+    openConfirmModal(
+      "ยืนยันลบ",
+      "ลบคลาสนี้ถาวรหรือไม่? การกระทำไม่สามารถยกเลิกได้",
+      async () => {
+        try {
+          await apiDeleteClass(classId, currentUserId);
+          setMyClasses((prev) =>
+            prev.filter((c) => String(c.id) !== String(classId))
+          );
+        } catch (err: any) {
+          console.error("Failed to delete class:", err);
+          // show error modal (reuse confirm modal to show error)
+          openConfirmModal("ลบไม่สำเร็จ", err?.message || "ไม่สามารถลบคลาสได้ กรุณาลองอีกครั้ง", null);
+        }
+      }
+    );
   };
 
-  const openModal = () => setIsModalOpen(true);
-  const closeModal = () => {
+  const openCreateModal = () => setIsModalOpen(true);
+  const closeCreateModal = () => {
     setIsModalOpen(false);
     setFormData({ className: "", section: "", room: "" });
   };
@@ -170,7 +223,7 @@ function Myclass() {
       const result = await apiCreateClass(payload);
       if (result?.ok) {
         loadClasses();
-        closeModal();
+        closeCreateModal();
       }
     } catch (err) {
       alert("Failed to create class");
@@ -208,7 +261,7 @@ function Myclass() {
               </div>
 
               <button
-                onClick={openModal}
+                onClick={openCreateModal}
                 className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 font-medium"
               >
                 <FaPlus size={14} /> Create New Class
@@ -323,11 +376,132 @@ function Myclass() {
 
       <CreateClassModal
         isOpen={isModalOpen}
-        onClose={closeModal}
+        onClose={closeCreateModal}
         onCreate={handleCreateClass}
         formData={formData}
         setFormData={setFormData}
       />
+
+      {/* Confirm Modal (framer-motion + AnimatePresence) */}
+      <AnimatePresence>
+        {confirmVisible && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            variants={backdropVariants}
+            aria-modal="true"
+            role="dialog"
+            onClick={() => { /* intentionally do nothing on backdrop click */ }}
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              variants={backdropVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              aria-hidden
+            />
+
+            <motion.div
+              className="relative z-50 w-full max-w-lg mx-auto transform"
+              variants={modalVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              role="document"
+              aria-labelledby="confirm-modal-title"
+              aria-describedby="confirm-modal-desc"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
+                {/* colored header */}
+                <div className={`px-6 pt-8 pb-6 flex flex-col items-center ${isErrorModal(confirmTitle) ? "bg-red-50" : "bg-red-50"}`}>
+                  <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${isErrorModal(confirmTitle) ? "bg-red-600" : "bg-red-600"} shadow-md`}>
+                    {isErrorModal(confirmTitle) ? (
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      // trash icon for delete-confirm modal
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M3 6h18" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M10 11v6M14 11v6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+
+                  <h3
+                    id="confirm-modal-title"
+                    className={`mt-4 text-2xl font-extrabold ${isErrorModal(confirmTitle) ? "text-red-700" : "text-red-700"}`}
+                  >
+                    {confirmTitle}
+                  </h3>
+                </div>
+
+                {/* body */}
+                <div className="px-6 pb-6 pt-4">
+                  <p
+                    id="confirm-modal-desc"
+                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${
+                      !isErrorModal(confirmTitle) ? "text-center text-lg font-semibold" : ""
+                    }`}
+                  >
+                    {confirmMessage}
+                  </p>
+
+                  {/* separator */}
+                  <div className="w-full border-t border-gray-200 my-4" />
+
+                  {/* buttons */}
+                  <div className="mt-6 flex items-center justify-center gap-4">
+                    {/* Cancel */}
+                    <button
+                      onClick={closeConfirmModal}
+                      className="inline-flex items-center justify-center px-6 py-2 rounded-full border border-slate-300 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-200 text-sm font-medium shadow-sm"
+                    >
+                      ยกเลิก
+                    </button>
+
+                    {/* Confirm (only if onConfirm exists) */}
+                    {confirmOnConfirm ? (
+                      <button
+                        onClick={async () => {
+                          try {
+                            if (confirmOnConfirm) await confirmOnConfirm();
+                          } catch (err) {
+                            console.error("confirm callback error:", err);
+                          } finally {
+                            // ensure modal closed after confirm (or if confirm opened an error modal it will replace)
+                            closeConfirmModal();
+                          }
+                        }}
+                        className="inline-flex items-center justify-center px-6 py-2 rounded-full bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-200 text-sm font-medium shadow-sm"
+                      >
+                        ยืนยัน
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* small close button */}
+                <button
+                  onClick={closeConfirmModal}
+                  aria-label="close"
+                  className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

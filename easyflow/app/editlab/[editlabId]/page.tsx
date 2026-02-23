@@ -15,6 +15,7 @@ import {
   apiDeleteTestcase,
   apiUpdateLab,
 } from "@/app/service/FlowchartService";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface TestCase {
   id?: string | number;
@@ -59,6 +60,53 @@ function Editlab() {
     for: 0,
   });
   const [initialSymbolData, setInitialSymbolData] = useState<any>(null);
+
+  // --- Modal (alert-style) state & helpers (replace alert) ---
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalMessage, setModalMessage] = useState("");
+  const [modalAction, setModalAction] = useState<(() => void) | null>(null);
+
+  const openModal = (title: string, message: string, action: (() => void) | null) => {
+    setModalTitle(title);
+    setModalMessage(message);
+    // store action as a function to be invoked when modal is closed
+    setModalAction(() => action);
+    setModalVisible(true);
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+    // run action after close (if any)
+    try {
+      if (modalAction) modalAction();
+    } catch (err) {
+      console.error("modal action error:", err);
+    } finally {
+      // reset action
+      setModalAction(null);
+    }
+  };
+
+  const isErrorModal = () => {
+    if (!modalTitle) return false;
+    const t = modalTitle.toLowerCase();
+    return t.includes("failed") || t.includes("failed".toLowerCase()) || t.includes("ผิด") || t.includes("ไม่สำเร็จ") || t.includes("ล้มเหลว") || t.includes("ข้อผิดพลาด");
+  };
+
+  // framer-motion variants for modal
+  const backdropVariants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1 },
+    exit: { opacity: 0 },
+  };
+
+  const modalVariants = {
+    hidden: { opacity: 0, scale: 0.98, y: 20 },
+    visible: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.98, y: 20 },
+  };
+  // --- end modal helpers ---
 
   // Load Data
   useEffect(() => {
@@ -200,7 +248,8 @@ function Editlab() {
         await apiDeleteTestcase(target.id);
       } catch (e) {
         console.error("Delete failed", e);
-        alert("Failed to delete testcase");
+        // use modal instead of alert
+        openModal("Delete failed", "Failed to delete testcase", null);
         setDeleteTargetIndex(null);
         return;
       }
@@ -241,12 +290,12 @@ function Editlab() {
   // ✅ แก้ไขฟังก์ชัน handleSave ให้กลับตาม returnPath ถ้ามี
   const handleSave = async () => {
     if (!LAB_ID) {
-      alert("Missing labId");
+      openModal("แก้ไข Lab ไม่สำเร็จ", "แก้ไข Lab ไม่สำเร็จ", null);
       return;
     }
 
     if (!session?.user) {
-        alert("Session Expired");
+        openModal("แก้ไข Lab ไม่สำเร็จ", "แก้ไข Lab ไม่สำเร็จ", null);
         return;
     }
 
@@ -254,10 +303,22 @@ function Editlab() {
     const realUserId = Number(user.id || user.userId || user.sub);
 
     try {
-      const toArray = (str: string) =>
-        String(str ?? "").split(",").map(s => s.trim()).filter(s => s !== "");
+      // Convert comma/space separated string into array (numbers when possible)
+      const toArray = (str: string) => {
+        if (!str && str !== "") return [];
+        const raw = String(str ?? "");
+        const hasComma = raw.indexOf(",") !== -1;
+        const parts = hasComma ? raw.split(",") : raw.split(/\s+/);
+        return parts
+          .map((s) => s.trim())
+          .filter((s) => s !== "")
+          .map((s) => {
+            const n = Number(s);
+            return Number.isNaN(n) ? s : n;
+          });
+      };
 
-      // ✅ 1. ตรวจสอบ Payload ของ Testcase
+      // 1. ตรวจสอบ Payload ของ Testcase
       const testcasesPayload = testCases.map(tc => {
         const inArr = toArray(tc.input);
         const outArr = toArray(tc.output);
@@ -265,22 +326,21 @@ function Editlab() {
         const outHiddenArr = toArray(tc.hiddenOutput);
 
         return {
-          // 🔥 สำคัญ: ต้องส่ง ID ไปด้วยถ้าเป็นการแก้ไข (ถ้าเป็นของใหม่ id จะไม่มี)
-          testcaseId: tc.id ? Number(tc.id) : undefined, 
-          inputVal: JSON.stringify(inArr),
-          outputVal: JSON.stringify(outArr),
-          inHiddenVal: JSON.stringify(inHiddenArr),
-          outHiddenVal: JSON.stringify(outHiddenArr),
+          // ส่ง ID ถ้ามี (สำหรับแก้ไข), ไม่ต้อง stringify — ส่งเป็น array
+          testcaseId: tc.id ? Number(tc.id) : undefined,
+          inputVal: inArr,        // <-- array (number|string)[]
+          outputVal: outArr,      // <-- array
+          inHiddenVal: inHiddenArr, // <-- array
+          outHiddenVal: outHiddenArr, // <-- array
           score: Number(tc.score) || 0
         };
       });
 
-      // ✅ 2. ตรวจสอบ Date
+      // 2. ตรวจสอบ Date
       let finalDate = dateline;
       if (dateline) {
-        // ถ้า Backend ต้องการ ISO (เช่น 2024-01-01T00:00:00.000Z) ให้แปลงตรงนี้
-        // finalDate = new Date(dateline).toISOString(); 
-        // แต่ถ้า Backend รับ YYYY-MM-DD ก็ใช้ค่าเดิม
+        // ถ้า Backend ต้องการ ISO ให้แปลงตรงนี้
+        // finalDate = new Date(dateline).toISOString();
       }
 
       const payload: any = {
@@ -288,7 +348,7 @@ function Editlab() {
         labname: labName,
         testcases: testcasesPayload,
         currentUserId: realUserId,
-        
+
         inSymVal: symbols.input,
         outSymVal: symbols.output,
         declareSymVal: symbols.declare,
@@ -299,30 +359,31 @@ function Editlab() {
       };
 
       if (dateline) {
-         payload.dueDate = dateline; 
+         payload.dueDate = dateline;
       }
-      
+
       if (problemSolving) payload.problemSolving = problemSolving;
 
       console.log("📤 Sending Payload:", JSON.stringify(payload, null, 2));
 
       await apiUpdateLab(LAB_ID, payload);
 
-      alert("Saved successfully!");
-      // ---- NAV: go back to returnPath or to labinfo ----
-      router.push(getLabUrl());
-      // --------------------------------------------------------
+      // replace alert with modal; after closing navigate back
+      openModal("แก้ไข Lab สำเร็จ", "แก้ไข Lab เรียบร้อยแล้ว", () => {
+        router.push(getLabUrl());
+      });
     } catch (err: any) {
       console.error("Save failed detail:", err);
-      
+
       const responseData = err?.response?.data;
-      const errorMessage = 
-          responseData?.message || 
-          responseData?.error || 
-          JSON.stringify(responseData) || 
+      const errorMessage =
+          responseData?.message ||
+          responseData?.error ||
+          JSON.stringify(responseData) ||
           err.message;
 
-      alert(`Save failed (400): ${errorMessage}`);
+      // replace alert with modal showing error (Thai)
+      openModal("แก้ไข Lab ไม่สำเร็จ", `แก้ไข Lab ไม่สำเร็จ: ${errorMessage}`, null);
     }
   };
 
@@ -465,20 +526,127 @@ function Editlab() {
         </div>
       </div>
 
-      {deleteTargetIndex !== null && (
-        <div className="fixed inset-0 bg-gray-900/20 backdrop-blur-md flex items-center justify-center z-[1000]">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-2xl">
-            <div className="mb-6 flex flex-col items-center text-center">
-               <h3 className="text-3xl font-medium text-gray-900">Delete Testcase</h3>
-               <p className="text-gray-500 mt-2">Are you sure?</p>
-            </div>
-            <div className="flex justify-center gap-4 mt-6">
-              <button onClick={cancelDelete} className="px-8 py-2.5 bg-gray-200 text-gray-700 rounded-full">Cancel</button>
-              <button onClick={confirmDelete} className="px-8 py-2.5 bg-red-600 text-white rounded-full">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* General modal (used instead of alert) */}
+      <AnimatePresence>
+        {modalVisible && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            variants={backdropVariants}
+            aria-modal="true"
+            role="dialog"
+            onClick={() => { /* intentionally do nothing on backdrop click */ }}
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              variants={backdropVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              aria-hidden
+            />
+
+            <motion.div
+              className="relative z-50 w-full max-w-lg mx-auto transform"
+              variants={modalVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              role="document"
+              aria-labelledby="modal-title"
+              aria-describedby="modal-desc"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
+                <div className={`px-6 pt-8 pb-6 flex flex-col items-center ${isErrorModal() ? "bg-red-50" : "bg-green-50"}`}>
+                  <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${isErrorModal() ? "bg-red-600" : "bg-green-600"} shadow-md`}>
+                    {isErrorModal() ? (
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+
+                  <h3
+                    id="modal-title"
+                    className={`mt-4 text-2xl font-extrabold ${isErrorModal() ? "text-red-700" : "text-green-700"}`}
+                  >
+                    {modalTitle}
+                  </h3>
+                </div>
+
+                <div className="px-6 pb-6 pt-4">
+                  <p
+                    id="modal-desc"
+                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center`}
+                  >
+                    {modalMessage}
+                  </p>
+
+                  <div className="w-full border-t border-gray-200 my-4" />
+
+                  <div className="mt-6 flex justify-center">
+                    <button
+                      onClick={closeModal}
+                      className="inline-flex items-center justify-center px-6 py-2 rounded-full border border-slate-300 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-200 text-sm font-medium shadow-sm"
+                    >
+                      ปิด
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={closeModal}
+                  aria-label="close"
+                  className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete confirmation modal (motion + AnimatePresence) */}
+      <AnimatePresence>
+        {deleteTargetIndex !== null && (
+          <motion.div
+            className="fixed inset-0 bg-gray-900/20 backdrop-blur-md flex items-center justify-center z-[1000]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => { /* do nothing on backdrop click to mimic previous behavior */ }}
+          >
+            <motion.div
+              className="bg-white rounded-lg p-6 w-full max-w-md shadow-2xl"
+              initial={{ opacity: 0, y: 12, scale: 0.99 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.99 }}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="mb-6 flex flex-col items-center text-center">
+                 <h3 className="text-3xl font-medium text-gray-900">Delete Testcase</h3>
+                 <p className="text-gray-500 mt-2">Are you sure?</p>
+              </div>
+              <div className="flex justify-center gap-4 mt-6">
+                <button onClick={cancelDelete} className="px-8 py-2.5 bg-gray-200 text-gray-700 rounded-full">Cancel</button>
+                <button onClick={confirmDelete} className="px-8 py-2.5 bg-red-600 text-white rounded-full">Delete</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
