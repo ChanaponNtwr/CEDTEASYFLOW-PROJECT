@@ -1,9 +1,14 @@
+// app/api/auth/[...nextauth]/route.ts
 import NextAuth, { type NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 
-const authOptions: NextAuthOptions = {
+/**
+ * เปลี่ยนจาก `const authOptions` เป็น `export const authOptions`
+ * เพื่อให้ไฟล์อื่น import แบบ static ได้ (แก้ปัญหา build time import error)
+ */
+export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
 
   providers: [
