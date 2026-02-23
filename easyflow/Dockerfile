@@ -1,8 +1,5 @@
-# Use Node.js 20 Alpine as the base image
-FROM node:20-alpine AS base
-
-# Install system dependencies needed by Node.js and Prisma
-RUN apk add --no-cache libc6-compat openssl1.1-compat
+# Use Node.js 20 (Debian-based) as the base image for better Prisma/OpenSSL compatibility
+FROM node:20 AS base
 
 # Install dependencies only when needed
 FROM base AS deps
