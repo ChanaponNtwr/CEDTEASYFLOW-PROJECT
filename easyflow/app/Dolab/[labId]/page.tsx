@@ -51,11 +51,13 @@ const nodeTypes = {
   for: ForNodeComponent,
 };
 
-type Props = { 
-  flowchartId?: string;
+type Props = {
+  params?: Promise<any>;
+  searchParams?: Promise<any>;
 };
 
-const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
+const FlowchartEditor = (props: Props) => {
+  const propId = undefined;
   // 1. ดึง Params ผ่าน Hook
   const paramsHook = useParams();
   const searchParams = useSearchParams(); // ✅ เพิ่ม: ดึง Query Params (?labId=..., ?disableSubmit=1)
@@ -73,9 +75,9 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
       if (obj.id) return obj.id;
       if (obj.flowchartId) return obj.flowchartId;
       if (obj.labId) return obj.labId; // ระวัง: บางที route อาจจะเป็น [labId] แทน [flowchartId] ต้องเช็คดีๆ
-      
+
       const keys = Object.keys(obj);
-      if (keys.length > 0) return obj[keys[0]]; 
+      if (keys.length > 0) return obj[keys[0]];
       return null;
     };
 
@@ -102,12 +104,12 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
       apiGetFlowchart(String(resolvedFlowchartId))
         .then((resp) => {
           // หา Lab ID จาก Response (เช็คหลายๆ property เผื่อโครงสร้างต่างกัน)
-          const foundLabId = 
-            resp?.labId ?? 
-            resp?.lab_id ?? 
-            resp?.assignmentId ?? 
+          const foundLabId =
+            resp?.labId ??
+            resp?.lab_id ??
+            resp?.assignmentId ??
             resp?.assignment_id ??
-            resp?.flowchart?.labId ?? 
+            resp?.flowchart?.labId ??
             resp?.flowchart?.lab_id ??
             resp?.data?.labId;
 
@@ -136,10 +138,10 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
     closeModal, closeNodeModal,
   } = useFlowchartState();
 
-  const { loading, error } = useFlowchartApi({ 
-    flowchartId: String(resolvedFlowchartId), 
-    setNodes, 
-    setEdges 
+  const { loading, error } = useFlowchartApi({
+    flowchartId: String(resolvedFlowchartId),
+    setNodes,
+    setEdges
   });
 
   const { onConnect, handleUpdateNode, deleteNodeAndReconnect, addNode } = useNodeMutations({
@@ -150,7 +152,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
     if (!resolvedFlowchartId) return;
     try {
       const payload = await apiGetFlowchart(String(resolvedFlowchartId));
-      
+
       // ✅ อัปเดต Lab ID ด้วยเผื่อมีการเปลี่ยนแปลง หรือยังไม่ได้ค่า
       const foundLabId = payload?.labId ?? payload?.lab_id ?? payload?.flowchart?.labId;
       if (foundLabId) setLabId(Number(foundLabId));
@@ -158,7 +160,7 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
       const converted = convertBackendFlowchart(payload);
       setNodes(converted.nodes);
       setEdges(converted.edges);
-      
+
       setNodes((nds) =>
         nds.map((n) => {
           const data = { ...(n.data ?? {}) };
@@ -187,24 +189,24 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
   }, [setNodes]);
 
   const highlightNode = React.useCallback((nodeId: string | number | null) => {
-      if (!nodeId) { clearHighlights(); return; }
-      const strId = String(nodeId);
-      if (String(highlightedIdRef.current) === strId) return;
-      clearHighlights();
-      highlightedIdRef.current = strId;
-      setTimeout(() => {
-        setNodes((prev) =>
-          prev.map((n) => {
-            if (String(n.id) === strId) {
-              const data = { ...(n.data ?? {}), __highlight: true };
-              const cls = n.className ? `${n.className} my-node-highlight` : "my-node-highlight";
-              return { ...n, data, className: cls, selected: true };
-            }
-            return n;
-          })
-        );
-      }, 0);
-    }, [clearHighlights, setNodes]);
+    if (!nodeId) { clearHighlights(); return; }
+    const strId = String(nodeId);
+    if (String(highlightedIdRef.current) === strId) return;
+    clearHighlights();
+    highlightedIdRef.current = strId;
+    setTimeout(() => {
+      setNodes((prev) =>
+        prev.map((n) => {
+          if (String(n.id) === strId) {
+            const data = { ...(n.data ?? {}), __highlight: true };
+            const cls = n.className ? `${n.className} my-node-highlight` : "my-node-highlight";
+            return { ...n, data, className: cls, selected: true };
+          }
+          return n;
+        })
+      );
+    }, 0);
+  }, [clearHighlights, setNodes]);
 
   // Events
   const onEdgeClick = (event: React.MouseEvent, edge: Edge) => {
@@ -223,15 +225,15 @@ const FlowchartEditor: React.FC<Props> = ({ flowchartId: propId }) => {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-white">
       <Navbar />
-      
+
       <div className="mt-20 ml-4 z-10 relative">
-        <TopBarControls 
-          flowchartId={Number(resolvedFlowchartId)} 
+        <TopBarControls
+          flowchartId={Number(resolvedFlowchartId)}
           // ✅ ส่ง labId เข้าไป (ถ้ามีค่า)
           labId={labId}
           // ✅ ส่ง disableSubmit ถ้ามี ?disableSubmit=1
           disableSubmit={disableSubmitFromQS}
-          onHighlightNode={highlightNode} 
+          onHighlightNode={highlightNode}
         />
         {loading && <div className="mt-2 text-sm text-blue-600">Loading flowchart ID: {resolvedFlowchartId}...</div>}
         {error && <div className="mt-2 text-sm text-red-600">Error: {String(error)}</div>}
