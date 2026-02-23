@@ -1,34 +1,58 @@
-# builder
-FROM node:20-alpine AS builder
+# Use Node.js 20 Alpine as the base image
+FROM node:20-alpine AS base
+
+# Install dependencies only when needed
+FROM base AS deps
+# Add libc6-compat for Alpine Node base image compatibility
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
-ENV NODE_ENV=development
 
-# copy lock and package first for better cache
-COPY package*.json ./
-RUN npm ci --silent
+# Install dependencies
+COPY package.json package-lock.json* ./
+# Use npm ci for clean installation
+RUN npm ci
 
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# build Next app
+
+# Next.js telemetry is disabled
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Build Next.js application
 RUN npm run build
 
-# production image
-FROM node:20-alpine AS runner
+# Production image, copy all the files and run next
+FROM base AS runner
 WORKDIR /app
+
 ENV NODE_ENV=production
-# set PORT if needed
-ENV PORT=3000
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# copy build outputs and package files
-COPY --from=builder /app/.next ./.next
+# Create standard nodejs user and group
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy public folder containing static assets
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/package*.json ./
-# copy prisma client if present (optional)
-# COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
-# install production deps only
-RUN npm ci --production --silent
+# Set the correct permissions for the .next cache folder
+RUN mkdir .next
+RUN chown nextjs:nodejs .next
+
+# Automatically leverage output traces to reduce image size
+# Based on standalone output in next.config.ts
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
 
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD wget -qO- http://localhost:3000/ || exit 1
 
-CMD ["npm", "start"]
+ENV PORT=3000
+# set hostname to exactly 0.0.0.0 mapping
+ENV HOSTNAME="0.0.0.0"
+
+CMD ["node", "server.js"]
