@@ -21,7 +21,10 @@ COPY . .
 # Next.js telemetry is disabled
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Build Next.js application
+# Generate Prisma Client before building
+RUN npx prisma generate
+
+# Build Next.js application after Prisma Client is ready
 RUN npm run build
 
 # Production image, copy all the files and run next
