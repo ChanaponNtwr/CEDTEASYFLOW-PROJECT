@@ -5,8 +5,8 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SymbolSection from "./_components/SymbolSection";
 import { apiStartTrial, apiGetLab, apiGetTestcases } from "@/app/service/FlowchartService";
-import { useRouter, useSearchParams } from "next/navigation";
-import { FaCalendarAlt, FaCube, FaPlay, FaSpinner } from "react-icons/fa"; // เพิ่ม Icons ให้เหมือน Labinfo
+import { useRouter } from "next/navigation";
+import { FaCalendarAlt, FaPlay, FaSpinner } from "react-icons/fa"; // เพิ่ม Icons ให้เหมือน Labinfo
 
 // --- Interfaces ---
 
@@ -57,10 +57,11 @@ function formatDueDate(d?: string) {
 
 function Trial() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  
-  // รับ labId จาก URL (Default 19) ตาม Logic เดิม
-  const labIdParam = searchParams?.get("labId") ?? "19";
+
+  // --- IMPORTANT CHANGE ---
+  // Avoid using `useSearchParams()` from next/navigation at module render time to prevent
+  // Next.js prerender errors during build. Instead read search params on the client in useEffect.
+  const [labIdParam, setLabIdParam] = useState<string>("19");
 
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [lab, setLab] = useState<RemoteLab | null>(null);
@@ -69,6 +70,18 @@ function Trial() {
   
   // State สำหรับปุ่ม Do Lab (กันกดซ้ำ)
   const [isStarting, setIsStarting] = useState(false);
+
+  // Read labId from URL on client-side only
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get('labId') ?? params.get('lab') ?? '19';
+      setLabIdParam(String(id));
+    } catch (e) {
+      setLabIdParam('19');
+    }
+  }, []);
 
   // --- Data Fetching Logic (ดึงข้อมูล Lab มาแสดง) ---
   useEffect(() => {
@@ -158,7 +171,8 @@ function Trial() {
       }
     };
 
-    fetchData();
+    // only fetch when labIdParam is available
+    if (labIdParam) fetchData();
 
     return () => {
       mounted = false;
@@ -189,11 +203,14 @@ function Trial() {
     setIsStarting(true);
 
     try {
-      const currentLabId = labIdParam; 
+      const currentLabId = labIdParam;
       const result = await apiStartTrial(currentLabId);
       console.log("Start Trial Response:", result);
 
-      if (result && result.ok && result.trialId) {
+      if (result && (result.ok === true || result.success === true) && (result.trialId || result.data?.trialId)) {
+        const trialId = result.trialId ?? result.data?.trialId;
+        router.push(`/dolabtrial/${trialId}`);
+      } else if (result && result.trialId) {
         router.push(`/dolabtrial/${result.trialId}`);
       } else {
         throw new Error("Invalid response from server (missing trialId)");
@@ -201,7 +218,7 @@ function Trial() {
 
     } catch (error: any) {
       console.error("Failed to start lab:", error);
-      alert(`Failed to start lab: ${error.message || "Unknown error"}`);
+      alert(`Failed to start lab: ${error?.message || "Unknown error"}`);
     } finally {
       setIsStarting(false);
     }
