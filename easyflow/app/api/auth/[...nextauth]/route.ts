@@ -3,7 +3,7 @@ import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 
-export const authOptions: NextAuthOptions = {
+const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
 
   providers: [
@@ -66,30 +66,30 @@ export const authOptions: NextAuthOptions = {
     },
 
     async jwt({ token }) {
-  if (token.email) {
-    const dbUser = await prisma.user.findUnique({
-      where: { email: token.email },
-    });
+      if (token.email) {
+        const dbUser = await prisma.user.findUnique({
+          where: { email: token.email },
+        });
 
-    if (dbUser) {
-      token.id = dbUser.id.toString();
-      token.name = dbUser.name;
-      token.picture = dbUser.image;
-    }
-  }
+        if (dbUser) {
+          token.id = dbUser.id.toString();
+          token.name = dbUser.name;
+          token.picture = dbUser.image;
+        }
+      }
 
-  return token;
-},
+      return token;
+    },
 
     async session({ session, token }) {
-  if (!session.user) return session;
+      if (!session.user) return session;
 
-  session.user.userId = token.id as string;
-  session.user.name = token.name ?? null;
-  session.user.email = token.email ?? null;
-  session.user.image = token.picture ?? null;
+      session.user.userId = token.id as string;
+      session.user.name = token.name ?? null;
+      session.user.email = token.email ?? null;
+      session.user.image = token.picture ?? null;
 
-  return session;
+      return session;
     },
   },
 
