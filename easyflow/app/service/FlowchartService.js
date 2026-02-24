@@ -1,7 +1,8 @@
 // FlowchartService.js (แก้แล้ว)
 import axios from "axios";
 
-const BASE_URL = "http://10.240.68.201:9000"; // <<-- เอา /flowchart ออก
+const BASE_URL =
+  process.env.NEXT_PUBLIC_BASE_API || "http://10.240.68.201:9000";
 
 export const apiPostFlowchart = async (data) => {
   try {
