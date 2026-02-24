@@ -10,7 +10,8 @@ COPY . .
 ENV NODE_ENV=production
 ENV PORT=9000
 
-RUN npx prisma generate
+# Generate Prisma client without relying on prisma being executable
+RUN node node_modules/prisma/build/index.js generate
 
 EXPOSE 9000
 
