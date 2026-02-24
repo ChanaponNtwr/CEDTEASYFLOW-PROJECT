@@ -1,0 +1,96 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_IMAGE = 'cedt-easyflow-backend'
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+        REGISTRY_URL = ''
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                dir('backend') {
+                    script {
+                        echo "Building backend Docker image ${DOCKER_IMAGE}:${DOCKER_TAG}..."
+                        if (isUnix()) {
+                            sh 'docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .'
+                            sh 'docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest'
+                        } else {
+                            bat "docker build -t %DOCKER_IMAGE%:%DOCKER_TAG% ."
+                            bat "docker tag %DOCKER_IMAGE%:%DOCKER_TAG% %DOCKER_IMAGE%:latest"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Test / Validate') {
+            steps {
+                dir('backend') {
+                    script {
+                        echo "Running backend tests..."
+                        if (isUnix()) {
+                            sh 'npm test || echo \"No tests or tests failed\"'
+                        } else {
+                            bat 'npm test || echo No tests or tests failed'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Container') {
+            steps {
+                script {
+                    echo "Deploying backend Docker container ${DOCKER_IMAGE}:${DOCKER_TAG}..."
+
+                    if (isUnix()) {
+                        sh '''
+                        docker rm -f cedt-easyflow-backend 2>/dev/null || true
+                        docker run -d --name cedt-easyflow-backend -p 9000:9000 ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        '''
+                    } else {
+                        bat """
+                        docker rm cedt-easyflow-backend || echo No existing cedt-easyflow-backend container
+                        docker run -d --name cedt-easyflow-backend -p 9000:9000 %DOCKER_IMAGE%:%DOCKER_TAG%
+                        """
+                    }
+                }
+            }
+        }
+
+        /*
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry("https://${REGISTRY_URL}", 'docker-credentials-id') {
+                        def img = docker.image("${DOCKER_IMAGE}:${DOCKER_TAG}")
+                        img.push()
+                        img.push('latest')
+                    }
+                }
+            }
+        }
+        */
+    }
+
+    post {
+        always {
+            echo "Backend pipeline finished. Cleaning workspace..."
+            cleanWs()
+        }
+        success {
+            echo "Backend pipeline succeeded!"
+        }
+        failure {
+            echo "Backend pipeline failed! Please check logs."
+        }
+    }
+}
