@@ -47,6 +47,26 @@ pipeline {
             }
         }
 
+        stage('Deploy Container') {
+            steps {
+                script {
+                    echo "Deploying Docker container ${DOCKER_IMAGE}:${DOCKER_TAG}..."
+
+                    if (isUnix()) {
+                        sh '''
+                        docker rm -f cedt-easyflow 2>/dev/null || true
+                        docker run -d --name cedt-easyflow -p 3000:3000 ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        '''
+                    } else {
+                        bat """
+                        docker rm cedt-easyflow || echo No existing cedt-easyflow container
+                        docker run -d --name cedt-easyflow -p 3000:3000 %DOCKER_IMAGE%:%DOCKER_TAG%
+                        """
+                    }
+                }
+            }
+        }
+
         /*
         // Optional Step for Push
         stage('Push Docker Image') {
