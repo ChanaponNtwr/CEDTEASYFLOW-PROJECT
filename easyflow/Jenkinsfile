@@ -2,63 +2,28 @@ pipeline {
     agent any
 
     environment {
-        // Defines the Docker image name and tag
         DOCKER_IMAGE = 'cedt-easyflow'
         DOCKER_TAG = "${env.BUILD_NUMBER}"
 
-        // Git config (แก้ค่าให้ตรงกับ repo ของคุณ)
-        GIT_URL = 'https://github.com/ChanaponNtwr/CEDTEASYFLOW-PROJECT.git' // or https://...
+        // Git config (ตั้งค่าให้ตรงกับ Jenkins credentials ที่คุณสร้าง)
+        GIT_URL = 'https://github.com/ChanaponNtwr/CEDTEASYFLOW-PROJECT.git'
         GIT_BRANCH = 'main'
-        GIT_CREDENTIALS_ID = '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' // ใส่ Jenkins credentials id ถ้าใช้ checkout with credentials
+        GIT_CREDENTIALS_ID = 'github-token' // <-- ใส่ Jenkins credentials id ที่สร้างไว้
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // ถ้าต้องการใช้ checkout scm เดิมก็เก็บไว้ (optional)
-                checkout scm
-            }
-        }
-
-        stage('Pull Latest from Git') {
-            steps {
                 dir('easyflow') {
-                    script {
-                        echo "Pulling latest from ${GIT_BRANCH} (${GIT_URL})..."
-
-                        // ===== Option A: ใช้ git CLI (ถ้า agent มี access) =====
-                        if (isUnix()) {
-                            sh '''
-                            if [ -d .git ]; then
-                                git fetch --prune origin
-                                git checkout ${GIT_BRANCH} || git checkout -b ${GIT_BRANCH} origin/${GIT_BRANCH}
-                                git reset --hard origin/${GIT_BRANCH}
-                            else
-                                git clone --branch ${GIT_BRANCH} ${GIT_URL} .
-                            fi
-                            '''
-                        } else {
-                            bat """
-                            if exist .git (
-                                git fetch --prune origin
-                                git checkout %GIT_BRANCH% || git checkout -b %GIT_BRANCH% origin/%GIT_BRANCH%
-                                git reset --hard origin/%GIT_BRANCH%
-                            ) else (
-                                git clone --branch %GIT_BRANCH% %GIT_URL% .
-                            )
-                            """
-                        }
-
-                        // ===== Option B: ถ้าต้องการให้ Jenkins ใช้ credentials (uncomment if needed) =====
-                        // checkout([$class: 'GitSCM',
-                        //     branches: [[name: "*/${GIT_BRANCH}"]],
-                        //     userRemoteConfigs: [[url: "${GIT_URL}", credentialsId: "${GIT_CREDENTIALS_ID}"]]
-                        // ])
-                    }
+                    // ใช้ Jenkins git step — จะ clone ครั้งแรกและ update ครั้งถัดไปให้อัตโนมัติ
+                    git branch: "${GIT_BRANCH}",
+                        url: "${GIT_URL}",
+                        credentialsId: "${GIT_CREDENTIALS_ID}"
                 }
             }
         }
 
+        // (ถ้าต้องการ stage แยกสำหรับ update ก็สามารถใช้ checkout อีกครั้งได้ แต่โดยปกติ git step ข้างบนเพียงพอ)
         stage('Build Docker Image') {
             steps {
                 dir('easyflow') {
@@ -105,20 +70,6 @@ pipeline {
                 }
             }
         }
-
-        /*
-        stage('Push Docker Image') {
-            steps {
-                script {
-                    docker.withRegistry("https://${REGISTRY_URL}", 'docker-credentials-id') {
-                        def img = docker.image("${DOCKER_IMAGE}:${DOCKER_TAG}")
-                        img.push()
-                        img.push('latest')
-                    }
-                }
-            }
-        }
-        */
     }
 
     post {
