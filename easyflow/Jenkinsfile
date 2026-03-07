@@ -4,68 +4,84 @@ pipeline {
     environment {
         DOCKER_IMAGE = 'cedt-easyflow'
         DOCKER_TAG = "${env.BUILD_NUMBER}"
-
-        // Git config (ตั้งค่าให้ตรงกับ Jenkins credentials ที่คุณสร้าง)
         GIT_URL = 'https://github.com/ChanaponNtwr/CEDTEASYFLOW-PROJECT.git'
         GIT_BRANCH = 'main'
-        GIT_CREDENTIALS_ID = 'github-token' // <-- ใส่ Jenkins credentials id ที่สร้างไว้
+        GIT_CREDENTIALS_ID = 'github-token' // ใส่ credentials id ของคุณ
+        CONTAINER_NAME = 'cedt-easyflow'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                dir('easyflow') {
-                    // ใช้ Jenkins git step — จะ clone ครั้งแรกและ update ครั้งถัดไปให้อัตโนมัติ
-                    git branch: "${GIT_BRANCH}",
-                        url: "${GIT_URL}",
-                        credentialsId: "${GIT_CREDENTIALS_ID}"
-                }
+                // clone/pull ที่ workspace root เพื่อให้การค้นหา Dockerfile เป็นไปได้ทั่ว workspace
+                git branch: "${GIT_BRANCH}",
+                    url: "${GIT_URL}",
+                    credentialsId: "${GIT_CREDENTIALS_ID}"
+            }
+        }
+
+        stage('Debug workspace') {
+            steps {
+                // แสดงไฟล์เพื่อตรวจสอบตำแหน่งของ Dockerfile (จะช่วย debug)
+                sh '''
+                echo "PWD: $(pwd)"
+                echo "Listing top-level files:"
+                ls -la
+                echo "Searching for Dockerfile(s):"
+                find . -maxdepth 4 -type f -name 'Dockerfile' -print || true
+                find . -maxdepth 4 -type f -name 'Dockerfile*' -print || true
+                '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                dir('easyflow') {
-                    script {
-                        echo "Building Docker image ${DOCKER_IMAGE}:${DOCKER_TAG}..."
-                        if (isUnix()) {
-                            sh 'docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .'
-                            sh 'docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest'
-                        } else {
-                            bat "docker build -t %DOCKER_IMAGE%:%DOCKER_TAG% ."
-                            bat "docker tag %DOCKER_IMAGE%:%DOCKER_TAG% %DOCKER_IMAGE%:latest"
-                        }
-                    }
+                script {
+                    sh '''
+                    # ค้นหา Dockerfile (เลือกรายการแรกที่เจอ)
+                    DOCKERFILE_PATH=$(find . -maxdepth 6 -type f -name 'Dockerfile' | head -n 1 || true)
+
+                    # ถ้าไม่มีชื่อตรง 'Dockerfile' ลองหา Dockerfile.* (เช่น Dockerfile.dev)
+                    if [ -z "$DOCKERFILE_PATH" ]; then
+                        DOCKERFILE_PATH=$(find . -maxdepth 6 -type f -name 'Dockerfile*' | head -n 1 || true)
+                    fi
+
+                    if [ -z "$DOCKERFILE_PATH" ]; then
+                        echo "ERROR: No Dockerfile found in workspace."
+                        echo "Workspace listing:"
+                        ls -la
+                        exit 1
+                    fi
+
+                    echo "Using Dockerfile at: $DOCKERFILE_PATH"
+                    # ตำแหน่ง context คือ directory ที่เก็บ Dockerfile (หรือคุณอาจต้องการใช้ repo root)
+                    BUILD_CONTEXT_DIR=$(dirname "$DOCKERFILE_PATH")
+                    if [ "$BUILD_CONTEXT_DIR" = "." ]; then
+                        BUILD_CONTEXT_DIR="."
+                    fi
+                    echo "Build context dir: $BUILD_CONTEXT_DIR"
+
+                    # สั่ง build โดยชี้ไฟล์ Dockerfile และ context ให้ชัดเจน
+                    docker build -f "$DOCKERFILE_PATH" -t ${DOCKER_IMAGE}:${DOCKER_TAG} "$BUILD_CONTEXT_DIR"
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
+                    '''
                 }
             }
         }
 
         stage('Test / Validate') {
             steps {
-                dir('easyflow') {
-                    script {
-                        echo "Running basic tests or validation..."
-                        // sh 'npm run test'
-                    }
-                }
+                echo "Running basic tests or validation (none configured)."
             }
         }
 
         stage('Deploy Container') {
             steps {
                 script {
-                    echo "Deploying Docker container ${DOCKER_IMAGE}:${DOCKER_TAG}..."
-                    if (isUnix()) {
-                        sh '''
-                        docker rm -f cedt-easyflow 2>/dev/null || true
-                        docker run -d --name cedt-easyflow -p 3000:3000 ${DOCKER_IMAGE}:${DOCKER_TAG}
-                        '''
-                    } else {
-                        bat """
-                        docker rm cedt-easyflow || echo No existing cedt-easyflow container
-                        docker run -d --name cedt-easyflow -p 3000:3000 %DOCKER_IMAGE%:%DOCKER_TAG%
-                        """
-                    }
+                    sh '''
+                    docker rm -f ${CONTAINER_NAME} 2>/dev/null || true
+                    docker run -d --name ${CONTAINER_NAME} -p 3000:3000 ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    '''
                 }
             }
         }
@@ -80,7 +96,7 @@ pipeline {
             echo "Pipeline succeeded!"
         }
         failure {
-            echo "Pipeline failed! Please check logs."
+            echo "Pipeline failed — check the logs above for details."
         }
     }
 }
