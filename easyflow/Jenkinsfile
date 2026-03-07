@@ -23,7 +23,6 @@ pipeline {
             }
         }
 
-        // (ถ้าต้องการ stage แยกสำหรับ update ก็สามารถใช้ checkout อีกครั้งได้ แต่โดยปกติ git step ข้างบนเพียงพอ)
         stage('Build Docker Image') {
             steps {
                 dir('easyflow') {
