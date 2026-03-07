@@ -5,14 +5,57 @@ pipeline {
         // Defines the Docker image name and tag
         DOCKER_IMAGE = 'cedt-easyflow'
         DOCKER_TAG = "${env.BUILD_NUMBER}"
-        REGISTRY_URL = '' // Add your Docker registry URL here if needed
+
+        // Git config (แก้ค่าให้ตรงกับ repo ของคุณ)
+        GIT_URL = 'https://github.com/ChanaponNtwr/CEDTEASYFLOW-PROJECT.git' // or https://...
+        GIT_BRANCH = 'main'
+        GIT_CREDENTIALS_ID = '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' // ใส่ Jenkins credentials id ถ้าใช้ checkout with credentials
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Checkout the source code from the repository
+                // ถ้าต้องการใช้ checkout scm เดิมก็เก็บไว้ (optional)
                 checkout scm
+            }
+        }
+
+        stage('Pull Latest from Git') {
+            steps {
+                dir('easyflow') {
+                    script {
+                        echo "Pulling latest from ${GIT_BRANCH} (${GIT_URL})..."
+
+                        // ===== Option A: ใช้ git CLI (ถ้า agent มี access) =====
+                        if (isUnix()) {
+                            sh '''
+                            if [ -d .git ]; then
+                                git fetch --prune origin
+                                git checkout ${GIT_BRANCH} || git checkout -b ${GIT_BRANCH} origin/${GIT_BRANCH}
+                                git reset --hard origin/${GIT_BRANCH}
+                            else
+                                git clone --branch ${GIT_BRANCH} ${GIT_URL} .
+                            fi
+                            '''
+                        } else {
+                            bat """
+                            if exist .git (
+                                git fetch --prune origin
+                                git checkout %GIT_BRANCH% || git checkout -b %GIT_BRANCH% origin/%GIT_BRANCH%
+                                git reset --hard origin/%GIT_BRANCH%
+                            ) else (
+                                git clone --branch %GIT_BRANCH% %GIT_URL% .
+                            )
+                            """
+                        }
+
+                        // ===== Option B: ถ้าต้องการให้ Jenkins ใช้ credentials (uncomment if needed) =====
+                        // checkout([$class: 'GitSCM',
+                        //     branches: [[name: "*/${GIT_BRANCH}"]],
+                        //     userRemoteConfigs: [[url: "${GIT_URL}", credentialsId: "${GIT_CREDENTIALS_ID}"]]
+                        // ])
+                    }
+                }
             }
         }
 
@@ -21,12 +64,10 @@ pipeline {
                 dir('easyflow') {
                     script {
                         echo "Building Docker image ${DOCKER_IMAGE}:${DOCKER_TAG}..."
-                        // Build using the local Docker daemon
                         if (isUnix()) {
                             sh 'docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .'
                             sh 'docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest'
                         } else {
-                            // Support for Windows Jenkins agents
                             bat "docker build -t %DOCKER_IMAGE%:%DOCKER_TAG% ."
                             bat "docker tag %DOCKER_IMAGE%:%DOCKER_TAG% %DOCKER_IMAGE%:latest"
                         }
@@ -40,7 +81,6 @@ pipeline {
                 dir('easyflow') {
                     script {
                         echo "Running basic tests or validation..."
-                        // Place your test scripts here, for example:
                         // sh 'npm run test'
                     }
                 }
@@ -51,7 +91,6 @@ pipeline {
             steps {
                 script {
                     echo "Deploying Docker container ${DOCKER_IMAGE}:${DOCKER_TAG}..."
-
                     if (isUnix()) {
                         sh '''
                         docker rm -f cedt-easyflow 2>/dev/null || true
@@ -68,7 +107,6 @@ pipeline {
         }
 
         /*
-        // Optional Step for Push
         stage('Push Docker Image') {
             steps {
                 script {
