@@ -2,7 +2,7 @@
 import axios from "axios";
 
 const BASE_URL =
-  process.env.NEXT_PUBLIC_BASE_API || "http://10.240.68.201:9000";
+  process.env.NEXT_PUBLIC_BASE_API || "https://api.easyflow.sbs";
 
 export const apiPostFlowchart = async (data) => {
   try {
