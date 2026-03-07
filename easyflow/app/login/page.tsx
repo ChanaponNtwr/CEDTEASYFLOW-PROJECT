@@ -34,7 +34,7 @@ export default function Login() {
           <div className="space-y-5">
             {/* Google Button */}
             <button
-              onClick={() => signIn("google", { callbackUrl: "https://api.easyflow.sbs/profile" })}
+              onClick={() => signIn("google", { callbackUrl: "/profile" })}
               className="w-full py-3 text-lg font-semibold bg-white text-[#5f5f5f] 
                          rounded-xl flex items-center justify-center gap-4 shadow-md
                          hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] 
