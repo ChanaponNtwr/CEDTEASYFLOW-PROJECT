@@ -106,6 +106,13 @@ function LabInClass() {
   };
   // --- end modal ---
 
+  // helper: determine if a status is already confirmed/passed
+  const isConfirmedStatus = (status?: string) => {
+    if (!status) return false;
+    const s = String(status).trim().toUpperCase();
+    return ["PASS", "PASSED", "CONFIRMED", "GRADED", "SUCCESS"].includes(s);
+  };
+
   const fetchData = useCallback(async () => {
     if (!labId) return;
     
@@ -273,6 +280,18 @@ function LabInClass() {
     const selectedStudents = students.filter(s => s.selected);
     if (selectedStudents.length === 0) return;
 
+    // NEW: If any selected student is already confirmed, block the whole confirm action
+    const alreadyConfirmed = selectedStudents.filter(s => isConfirmedStatus(s.status));
+    if (alreadyConfirmed.length > 0) {
+      openModal(
+        "มีรายการที่ถูก Confirm แล้ว",
+        `มี ${alreadyConfirmed.length} รายการที่อยู่ในสถานะ Confirm/Pass แล้ว ระบบไม่อนุญาตให้ Confirm ซ้ำ กรุณายกเลิกการเลือกผู้เรียนที่ถูก Confirm ก่อนดำเนินการต่อ.`,
+        null,
+        "danger"
+      );
+      return;
+    }
+
     // split into those with valid userId and those without
     const withUserId = selectedStudents.filter(s => s.studentId !== undefined && s.studentId !== null && s.studentId !== "");
     const withoutUserId = selectedStudents.filter(s => !(s.studentId !== undefined && s.studentId !== null && s.studentId !== ""));
@@ -379,6 +398,9 @@ function LabInClass() {
 
   const isAllChecked = filteredStudents.length > 0 && filteredStudents.every((s) => s.selected);
   const selectedCount = students.filter(s => s.selected).length;
+
+  // determine if any selected student is already confirmed (used to disable Confirm button)
+  const hasAlreadyConfirmedSelected = students.some(s => s.selected && isConfirmedStatus(s.status));
 
   // <-- Added "Error" option here -->
   const filterOptions = ["All", "Confirmed", "Pass", "Submitted", "Pending", "Fail", "Error"];
@@ -542,12 +564,12 @@ function LabInClass() {
 
                     <button
                         className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 shadow-sm
-                        ${selectedCount > 0
+                        ${selectedCount > 0 && !hasAlreadyConfirmedSelected
                             ? "bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-md hover:-translate-y-0.5"
                             : "bg-gray-100 text-gray-400 cursor-not-allowed"
                         }`}
                         onClick={handleSubmitAll}
-                        disabled={selectedCount === 0 || isProcessingAction}
+                        disabled={selectedCount === 0 || isProcessingAction || hasAlreadyConfirmedSelected}
                     >
                         {isProcessingAction && processingType === "confirm" ? <FaSpinner className="animate-spin" /> : <FaCheck size={14} />} 
                         {isProcessingAction && processingType === "confirm" ? ` Processing (${selectedCount})` : ` Confirm (${selectedCount})`}
