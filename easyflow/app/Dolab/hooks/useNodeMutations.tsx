@@ -173,11 +173,11 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
           const baseYEdge = sourceNode.position.y + stepY;
 
           if (type === "if") {
-            const yOffset = stepY * 2;
+            const yOffset = stepY * 3;
             const nodesToMove = nodes.filter((n) => n.position.y > sourceNode.position.y);
             const moved = nodesToMove.map((n) => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
             const newIf = createNode("if", label, offsetX, baseYEdge);
-            const newBp = createNode("breakpoint", "", offsetX, baseYEdge + stepY);
+            const newBp = createNode("breakpoint", "", offsetX, baseYEdge + stepY * 2);
             const newEdges = [
               createArrowEdge(sourceNode.id, newIf.id, { label: isTrue ? "True" : "False", sourceHandle: sourceHandle ?? undefined }),
               createArrowEdge(newIf.id, newBp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
@@ -229,7 +229,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
 
       if (type === "if") {
         const ifNode = createNode("if", label, newPosX, sourceNode.position.y + stepY);
-        const bp = createNode("breakpoint", "", newPosX, sourceNode.position.y + stepY * 2);
+        const bp = createNode("breakpoint", "", newPosX, sourceNode.position.y + stepY * 3);
         newNodesToAdd.push(ifNode, bp);
         newEdgesToAdd.push(
           createArrowEdge(sourceNode.id, ifNode.id, { sourceHandle: sourceHandle ?? undefined }),
@@ -286,7 +286,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
 
       if (type === "if") {
         const ifNode = createNode("if", label, anchorNode.position.x, anchorNode.position.y + stepY);
-        const bp = createNode("breakpoint", "", anchorNode.position.x, anchorNode.position.y + stepY + stepY);
+        const bp = createNode("breakpoint", "", anchorNode.position.x, anchorNode.position.y + stepY * 3);
         const outgoing = edges.filter((e) => e.source === anchorId);
         const newEdges: Edge[] = [createArrowEdge(anchorId, ifNode.id), createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }), createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" })];
         if (outgoing.length === 0) newEdges.push(createArrowEdge(bp.id, endNode.id));
@@ -337,7 +337,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
 
     if (type === "if") {
       const ifNode = createNode("if", label, 300, baseY);
-      const bp = createNode("breakpoint", "", 300, baseY + stepY);
+      const bp = createNode("breakpoint", "", 300, baseY + stepY * 2);
       const newEdges = [createArrowEdge(previousNode.id, ifNode.id), createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }), createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }), createArrowEdge(bp.id, nodes.find((n) => n.id === "end")!.id)];
       const updatedNodes = [...nodes.filter(n => n.id !== 'end'), ifNode, bp, {...(nodes.find(n => n.id === 'end')!), position: {x: 300, y: computeEndY([...nodes, ifNode, bp])}}];
       setNodes(updatedNodes);
