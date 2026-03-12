@@ -191,12 +191,20 @@ function LabInClass() {
             const score = item.totalScore ?? item.submission?.score ?? 0;
             const submissionId = item.flowchartId ?? item.submission?.id ?? item.submissionId ?? undefined;
 
+            // --------- FIXED HERE ----------
+            // If overall submission is confirmed (PASS/CONFIRMED...), but per-testcase rawResults are empty or missing,
+            // we should consider each testcase as CONFIRMED and give full points. Previously code only used match?.status
+            // so scores became zero when per-testcase entries missing.
             const results: TestResult[] = tcs.map((tc) => {
                 const match = rawResults.find((r: any) => {
                     if (r.testcaseId !== undefined) return r.testcaseId === tc.testcaseId;
                     return false;
                 });
-                const rStatus = match?.status ?? "PENDING";
+
+                // Prefer testcase-level status if present; otherwise, if overall finalStatus indicates confirmed, use CONFIRMED
+                const rStatusFromMatch = match?.status;
+                const rStatus = rStatusFromMatch ? String(rStatusFromMatch).toUpperCase() : (isConfirmedStatus(finalStatus) ? "CONFIRMED" : "PENDING");
+
                 let rScore = 0;
                 if (match?.scoreAwarded !== undefined) rScore = Number(match.scoreAwarded);
                 else if (match?.score !== undefined) rScore = Number(match.score);
@@ -208,6 +216,7 @@ function LabInClass() {
                     maxScore: tc.score
                 };
             });
+            // --------- end fix ----------
 
             const studentId = item.userId ?? userObj.id ?? userObj.userId ?? userObj.studentId;
 
