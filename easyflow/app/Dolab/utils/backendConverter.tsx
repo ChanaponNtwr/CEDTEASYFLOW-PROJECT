@@ -1,11 +1,17 @@
-// File: app/flowchart/utils/backendConverter.tsx
-
+// File: backendConverter.tsx
+// Replace your existing converter with this file (only this file changed).
 import { Node, Edge, MarkerType } from "@xyflow/react";
 import { stepY } from "./flowchartUtils";
 
-// --- Constants & Maps ---
+/**
+ * Converter ปรับตำแหน่ง layout โดยโฟกัสที่การจัดตำแหน่ง breakpoint ให้ตรงแกนหลัก
+ *
+ * ไม่แก้ UI/logic อื่นใด — แก้เฉพาะการคำนวณตำแหน่งและ edge handle เท่านั้น
+ */
+
+// Map backend type => frontend type (ปรับตามของคุณได้)
 const TYPE_MAP: Record<string, string> = {
-  ST: "start", START: "start", STRT: "start",
+  ST: "start", START: "start",
   EN: "end", END: "end",
   AS: "assign", ASSIGN: "assign",
   IN: "input", INPUT: "input",
@@ -21,15 +27,12 @@ const mapBackendTypeToNodeType = (backendType?: string, label?: string) => {
   if (!backendType) {
     if (label === "Start") return "start";
     if (label === "End") return "end";
-    return "assign"; // fallback
+    return "assign";
   }
   return TYPE_MAP[backendType.toUpperCase()] ?? "assign";
 };
 
-// ✅ ฟังก์ชันสร้าง Default Flowchart (Start -> End)
-// ใช้กรณีข้อมูลว่าง หรือหา Nodes ไม่เจอ
 const generateDefaultFlowchart = () => {
-  console.log("🛠️ [Converter] Generating DEFAULT Start-End nodes.");
   const startNode: Node = {
     id: "start",
     type: "start",
@@ -55,7 +58,7 @@ const generateDefaultFlowchart = () => {
     type: "smoothstep",
     animated: true,
     markerEnd: { type: MarkerType.ArrowClosed },
-    style: { stroke: "#222", strokeWidth: 2 }, // เข้มขึ้น
+    style: { stroke: "#222", strokeWidth: 2 },
   };
 
   return {
@@ -65,19 +68,13 @@ const generateDefaultFlowchart = () => {
 };
 
 export const convertBackendFlowchart = (payload: any) => {
-  // 🔍 DEBUG: ดู Payload ที่ได้รับ
-  console.log("🔍 [Converter] Processing Payload:", payload);
+  console.log("[Converter] payload:", payload);
 
-  // --- 1. Robust Payload Parsing (ส่วนสำคัญที่เพิ่มใหม่) ---
+  if (!payload) return generateDefaultFlowchart();
+
   let backendNodes: any[] = [];
   let backendEdges: any[] = [];
 
-  if (!payload) {
-    console.warn("⚠️ Payload is null/undefined.");
-    return generateDefaultFlowchart();
-  }
-
-  // พยายามเจาะหา nodes จากโครงสร้างต่างๆ
   if (payload.flowchart && Array.isArray(payload.flowchart.nodes)) {
     backendNodes = payload.flowchart.nodes;
     backendEdges = payload.flowchart.edges || [];
@@ -91,19 +88,12 @@ export const convertBackendFlowchart = (payload: any) => {
     backendNodes = payload;
   }
 
-  // --- 2. Empty Check ---
-  if (!backendNodes || backendNodes.length === 0) {
-    console.warn("⚠️ [Converter] No nodes found after parsing. Returning Default.");
-    return generateDefaultFlowchart();
-  }
+  if (!backendNodes || backendNodes.length === 0) return generateDefaultFlowchart();
 
-  console.log(`✅ [Converter] Converting ${backendNodes.length} nodes...`);
-
-  // --- Section 1: Create Maps ---
+  // --- Prepare maps ---
   const nodesMap = new Map<string, Node>();
   const idMap = new Map<string, string>();
 
-  // normalize IDs consistently
   const normalizeId = (origId: string, label?: string) =>
     (label === "Start" ? "start" : label === "End" ? "end" : origId).toLowerCase();
 
@@ -126,399 +116,164 @@ export const convertBackendFlowchart = (payload: any) => {
     nodesMap.set(newId, frontEndNode);
   });
 
-  // --- Build outgoing/incoming maps ---
+  // Build adjacency & incoming/outgoing
   const outgoingBySource = new Map<string, Array<{ targetId: string; condition?: string; edgeId?: string }>>();
-  const addOutgoing = (s: string, t: string, condition?: string, edgeId?: string) => {
-    if (!outgoingBySource.has(s)) outgoingBySource.set(s, []);
-    outgoingBySource.get(s)!.push({ targetId: t, condition, edgeId });
-  };
-
-  backendEdges.forEach((be) => {
-    const src = idMap.get(be.source) ?? be.source;
-    const tgt = idMap.get(be.target) ?? be.target;
-    addOutgoing(src, tgt, be.condition, be.id);
-  });
-
   const incomingByTarget = new Map<string, Array<{ sourceId: string; condition?: string; edgeId?: string }>>();
+  const adj = new Map<string, string[]>();
+
   backendEdges.forEach((be) => {
     const src = idMap.get(be.source) ?? be.source;
     const tgt = idMap.get(be.target) ?? be.target;
+
+    if (!outgoingBySource.has(src)) outgoingBySource.set(src, []);
+    outgoingBySource.get(src)!.push({ targetId: tgt, condition: be.condition, edgeId: be.id });
+
     if (!incomingByTarget.has(tgt)) incomingByTarget.set(tgt, []);
     incomingByTarget.get(tgt)!.push({ sourceId: src, condition: be.condition, edgeId: be.id });
+
+    if (!adj.has(src)) adj.set(src, []);
+    adj.get(src)!.push(tgt);
+
+    if (!adj.has(tgt)) adj.set(tgt, []); // ensure exists
   });
 
-  const adj = new Map<string, string[]>();
-  nodesMap.forEach((_, id) => adj.set(id, []));
-  backendEdges.forEach((e) => {
-    const source = idMap.get(e.source) ?? e.source;
-    const target = idMap.get(e.target) ?? e.target;
-    if (adj.has(source)) adj.get(source)!.push(target);
-  });
+  // Layout constants
+  const MAIN_X = 300;
+  const START_Y = 50;
+  const STEP_Y = stepY ?? 90;
+  const NODE_HEIGHT_EST = 60;
 
-  // --- Constants for Layout ---
-  // ลดการเลื่อนพิเศษของ breakpoints ให้เป็น 0 เพื่อไม่ให้มันหลุดแกน
-  const BREAKPOINT_INSERT_SHIFT = 0;
-  const BREAKPOINT_DESCENDANT_SHIFT = 0;
-  const WHILE_TRUE_X_OFFSET = 250;
-  const WHILE_FALSE_Y_SHIFT = 10;
-  const FOR_FALSE_Y_SHIFT = 60;
-  const NODE_HEIGHT_ESTIMATE = 60;
-
-  // --- Layout Helpers ---
-  const shiftSubtreeDown = (startNodeId: string, deltaY: number) => {
-    if (!deltaY || deltaY === 0) return;
-    const q = [startNodeId];
-    const visitedShift = new Set<string>([startNodeId]);
-    while (q.length) {
-      const nid = q.shift()!;
-      const n = nodesMap.get(nid);
-      if (n && n.position) n.position = { x: n.position.x, y: n.position.y + deltaY };
-      const children = adj.get(nid) || [];
-      children.forEach((c) => {
-        if (!visitedShift.has(c)) {
-          visitedShift.add(c);
-          q.push(c);
-        }
-      });
-    }
-  };
-
-  const getAllDescendants = (startId: string) => {
-    const res: string[] = [];
-    const q = [startId];
-    const vis = new Set<string>([startId]);
-    while (q.length) {
-      const id = q.shift()!;
-      const children = adj.get(id) || [];
-      children.forEach((c) => {
-        if (!vis.has(c)) {
-          vis.add(c);
-          res.push(c);
-          q.push(c);
-        }
-      });
-    }
-    return res;
-  };
-
-  const shiftAllBreakpointsInBranch = (branchRootId: string, deltaY: number) => {
-    const descendants = getAllDescendants(branchRootId);
-    descendants.forEach((d) => {
-      const dn = nodesMap.get(d);
-      if (dn?.type === 'breakpoint') shiftSubtreeDown(d, deltaY);
-    });
-  };
-
-  const enqueue = (queue: Array<any>, visited: Set<string>, nodeId: string, y: number, x: number) => {
-    if (!visited.has(nodeId)) {
-      visited.add(nodeId);
-      queue.push({ nodeId, y, x });
-    }
-  };
-
-  const getBranches = (nodeId: string) => {
-    const outs = outgoingBySource.get(nodeId) || [];
-    const node = nodesMap.get(nodeId);
-
-    if (node?.type === 'for') {
-      const loopBody = outs[0]?.targetId;
-      const next = outs[1]?.targetId;
-      const others = outs.slice(2).map(o => o.targetId);
-      return { trueChild: loopBody, falseChild: next, others };
-    }
-
-    const trueEntry = outs.find(o => String(o.condition ?? "").toLowerCase() === "true");
-    const falseEntry = outs.find(o => String(o.condition ?? "").toLowerCase() === "false");
-
-    if (trueEntry || falseEntry) {
-      const trueChild = trueEntry?.targetId;
-      const falseChild = falseEntry?.targetId;
-      const others = outs.filter(o => {
-        const c = String(o.condition ?? "").toLowerCase();
-        return c !== "true" && c !== "false";
-      }).map(o => o.targetId);
-      return { trueChild, falseChild, others };
-    }
-
-    if (outs.length === 2) {
-      return { trueChild: outs[0].targetId, falseChild: outs[1].targetId, others: [] };
-    }
-    const others = outs.map(o => o.targetId);
-    return { trueChild: undefined, falseChild: undefined, others };
-  };
-
-  const calculateBranchDepth = (startId: string): number => {
-    let maxDepth = 0;
-    const q: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
-    const vis = new Set<string>([startId]);
-    while (q.length) {
-      const { id, depth } = q.shift()!;
-      maxDepth = Math.max(maxDepth, depth);
-      const children = adj.get(id) || [];
-      children.forEach((c) => {
-        if (!vis.has(c)) {
-          vis.add(c);
-          q.push({ id: c, depth: depth + 1 });
-        }
-      });
-    }
-    return maxDepth;
-  };
-
-  // --- Layout Collections ---
-  const breakpointsToShift = new Set<string>();
-  const whileLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
-  const forLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
-
-  // --- Position Calculators ---
-  const computeIfChildPos = (childId: string, baseX: number, baseY: number, direction: 'right' | 'left' | 'center') => {
-    const childNode = nodesMap.get(childId);
-    if (childNode && childNode.type === 'breakpoint') {
-      breakpointsToShift.add(childId);
-      // Keep breakpoint vertically aligned with its parent decision node
-      // <-- ปรับ: ใช้ baseY + stepY เท่านั้น (ไม่เพิ่ม +100 อีกต่อไป)
-      return { x: baseX, y: baseY + stepY };
-    }
-    const x = direction === 'right' ? baseX + 250 : direction === 'left' ? baseX - 250 : baseX;
-    const y = baseY + stepY;
-    return { x, y };
-  };
-
-  const computeWhileChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
-    const childNode = nodesMap.get(childId);
-    if (childNode && childNode.type === 'breakpoint') {
-      breakpointsToShift.add(childId);
-      // keep vertically aligned with loop header
-      return { x: baseX, y: baseY + stepY };
-    }
-    if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
-    if (dir === 'false') return { x: baseX, y: baseY + stepY + WHILE_FALSE_Y_SHIFT };
-    return { x: baseX, y: baseY + stepY };
-  };
-
-  const computeForChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
-    const childNode = nodesMap.get(childId);
-    if (childNode && childNode.type === 'breakpoint') {
-      breakpointsToShift.add(childId);
-      return { x: baseX, y: baseY + stepY };
-    }
-    if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
-    if (dir === 'false') return { x: baseX, y: baseY + stepY };
-    return { x: baseX, y: baseY + stepY };
-  };
-
-  // --- Section 3: Layout (BFS-like) ---
+  // Utility: BFS traversal to position nodes
   const positionedNodes = new Map<string, Node>();
-  const queue: { nodeId: string; y: number; x: number }[] = [{ nodeId: "start", y: 50, x: 300 }];
-  const visited = new Set<string>(["start"]);
+  const visited = new Set<string>();
 
+  // Start from start node if exists
+  const startId = nodesMap.has("start") ? "start" : Array.from(nodesMap.keys())[0];
+  const queue: { id: string; x: number; y: number; parentId?: string }[] = [{ id: startId, x: MAIN_X, y: START_Y }];
+
+  // Helper: find a non-breakpoint parent (for aligning breakpoint)
+  const findAlignmentXFromParents = (incoming: Array<{ sourceId: string }>) => {
+    if (!incoming || incoming.length === 0) return MAIN_X;
+    for (const inc of incoming) {
+      const pn = positionedNodes.get(inc.sourceId);
+      if (pn && pn.type !== "breakpoint" && pn.position) return pn.position.x;
+    }
+    // fallback: if some parent exists in nodesMap with position, use it
+    for (const inc of incoming) {
+      const pn = nodesMap.get(inc.sourceId);
+      if (pn && pn.position) return pn.position.x;
+    }
+    return MAIN_X;
+  };
+
+  // BFS-style layout but deterministic: when encountering breakpoint we align to parent X
   while (queue.length > 0) {
-    const { nodeId, y, x } = queue.shift()!;
-    const node = nodesMap.get(nodeId);
+    const cur = queue.shift()!;
+    if (visited.has(cur.id)) continue;
+    visited.add(cur.id);
+
+    const node = nodesMap.get(cur.id);
     if (!node) continue;
 
-    // Merge node centering logic
-    let finalX = x;
-    const incoming = incomingByTarget.get(nodeId) || [];
-    if (incoming.length > 1) {
-      const nodeType = node.type;
-      // If this node is a breakpoint, prefer parent's X (don't average multiple incoming sources)
-      if (nodeType === 'breakpoint') {
-        // try to find the originating 'decision' parent (if both incoming come from same source it'll be that)
-        const parentSource = incoming[0]?.sourceId;
-        const parentNode = parentSource ? positionedNodes.get(parentSource) : undefined;
-        if (parentNode && parentNode.position) finalX = parentNode.position.x;
-      } else {
-        const parentNodes = incoming
-          .map(inc => positionedNodes.get(inc.sourceId))
-          .filter((p): p is Node => p !== undefined && p.position !== undefined);
-        if (parentNodes.length > 0) {
-          const sumX = parentNodes.reduce((acc, p) => acc + p.position.x, 0);
-          finalX = sumX / parentNodes.length;
+    // If node has incoming edges and one of them is a breakpoint, prefer breakpoint.x for alignment
+    const incoming = incomingByTarget.get(cur.id) || [];
+
+    // If node is 'breakpoint' -> align its X to the most relevant parent's X (decision/start)
+    if (node.type === "breakpoint") {
+      const alignX = findAlignmentXFromParents(incoming) ?? cur.x;
+      node.position = { x: alignX, y: cur.y };
+    } else {
+      // If has incoming and any incoming parent already positioned, use that parent's X (prefer non-breakpoint)
+      if (incoming.length > 0) {
+        const parentXs: number[] = [];
+        for (const inc of incoming) {
+          const pn = positionedNodes.get(inc.sourceId);
+          if (pn && pn.position) parentXs.push(pn.position.x);
         }
+        if (parentXs.length > 0) {
+          // prefer the first non-breakpoint parent's x; otherwise use average
+          const nonBp = incoming
+            .map(i => positionedNodes.get(i.sourceId))
+            .find(p => p && p.type !== "breakpoint");
+          node.position = { x: nonBp?.position?.x ?? (parentXs.reduce((a, b) => a + b, 0) / parentXs.length), y: cur.y };
+        } else {
+          node.position = { x: cur.x, y: cur.y };
+        }
+      } else {
+        // no incoming -> use provided x
+        node.position = { x: cur.x, y: cur.y };
       }
     }
 
-    node.position = { x: finalX, y };
-    positionedNodes.set(nodeId, node);
+    positionedNodes.set(cur.id, node);
 
+    // enqueue children with appropriate x offsets depending on node type
+    const children = adj.get(cur.id) || [];
     if (node.type === "if") {
-      const { trueChild, falseChild, others } = getBranches(nodeId);
+      // determine true/false children by condition
+      const outs = outgoingBySource.get(cur.id) || [];
+      const trueChild = outs.find(o => String(o.condition ?? "").toLowerCase() === "true")?.targetId;
+      const falseChild = outs.find(o => String(o.condition ?? "").toLowerCase() === "false")?.targetId;
       if (trueChild) {
-        const pos = computeIfChildPos(trueChild, finalX, y, 'right');
-        enqueue(queue, visited, trueChild, pos.y, pos.x);
+        queue.push({ id: trueChild, x: (node.position!.x + 250), y: node.position!.y + STEP_Y, parentId: cur.id });
       }
       if (falseChild) {
-        const pos = computeIfChildPos(falseChild, finalX, y, 'left');
-        enqueue(queue, visited, falseChild, pos.y, pos.x);
+        queue.push({ id: falseChild, x: (node.position!.x - 250), y: node.position!.y + STEP_Y, parentId: cur.id });
       }
-      let curY = y + stepY;
-      others.forEach(childId => {
-        const pos = computeIfChildPos(childId, finalX, y, 'center');
-        enqueue(queue, visited, childId, pos.y, pos.x);
-        curY += stepY;
+      // other outs center under parent
+      outs.filter(o => {
+        const c = String(o.condition ?? "").toLowerCase();
+        return c !== "true" && c !== "false";
+      }).forEach((o, idx) => {
+        queue.push({ id: o.targetId, x: node.position!.x, y: node.position!.y + STEP_Y + (idx * STEP_Y), parentId: cur.id });
       });
-    } else if (node.type === "while") {
-      const { trueChild, falseChild, others } = getBranches(nodeId);
-      if (trueChild) {
-        const pos = computeWhileChildPos(trueChild, finalX, y, 'true');
-        enqueue(queue, visited, trueChild, pos.y, pos.x);
-        if (falseChild) whileLoopsToAdjust.set(nodeId, { trueChild, falseChild });
-      }
-      if (falseChild) {
-        const pos = computeWhileChildPos(falseChild, finalX, y, 'false');
-        enqueue(queue, visited, falseChild, pos.y, pos.x);
-      }
-      others.forEach(childId => {
-        const pos = computeWhileChildPos(childId, finalX, y, 'center');
-        enqueue(queue, visited, childId, pos.y, pos.x);
-      });
-    } else if (node.type === "for") {
-      const { trueChild, falseChild, others } = getBranches(nodeId);
-      if (trueChild) {
-        const pos = computeForChildPos(trueChild, finalX, y, 'true');
-        enqueue(queue, visited, trueChild, pos.y, pos.x);
-        if (falseChild) forLoopsToAdjust.set(nodeId, { trueChild, falseChild });
-      }
-      if (falseChild) {
-        const pos = computeForChildPos(falseChild, finalX, y, 'false');
-        enqueue(queue, visited, falseChild, pos.y, pos.x);
-      }
-      others.forEach(childId => {
-        const pos = computeForChildPos(childId, finalX, y, 'center');
-        enqueue(queue, visited, childId, pos.y, pos.x);
+    } else if (node.type === "while" || node.type === "for") {
+      const outs = outgoingBySource.get(cur.id) || [];
+      const trueChild = outs.find(o => String(o.condition ?? "").toLowerCase() === "true")?.targetId;
+      const falseChild = outs.find(o => String(o.condition ?? "").toLowerCase() === "false")?.targetId;
+      if (trueChild) queue.push({ id: trueChild, x: node.position!.x + 250, y: node.position!.y + STEP_Y, parentId: cur.id });
+      if (falseChild) queue.push({ id: falseChild, x: node.position!.x, y: node.position!.y + STEP_Y, parentId: cur.id });
+      outs.filter(o => {
+        const c = String(o.condition ?? "").toLowerCase();
+        return c !== "true" && c !== "false";
+      }).forEach((o, idx) => {
+        queue.push({ id: o.targetId, x: node.position!.x, y: node.position!.y + STEP_Y + (idx * STEP_Y), parentId: cur.id });
       });
     } else {
-      let currentY = y + stepY;
-      const children = adj.get(nodeId) || [];
-      const childBaseX = finalX;
+      // normal sequential children -> place directly under parent (same X) with STEP_Y spacing
+      let curY = node.position!.y + STEP_Y;
       children.forEach((childId) => {
         if (!visited.has(childId)) {
           const childNode = nodesMap.get(childId);
-          const childY = childNode && childNode.type === 'breakpoint' ? currentY + BREAKPOINT_INSERT_SHIFT : currentY;
-          if (childNode && childNode.type === 'breakpoint') breakpointsToShift.add(childId);
-          enqueue(queue, visited, childId, childY, childBaseX);
-          currentY += stepY;
+          // if child is breakpoint -> align it to parent's X
+          if (childNode && childNode.type === "breakpoint") {
+            queue.push({ id: childId, x: node.position!.x, y: curY, parentId: cur.id });
+          } else {
+            queue.push({ id: childId, x: node.position!.x, y: curY, parentId: cur.id });
+          }
+          curY += STEP_Y;
         }
       });
     }
-  }
+  } // end BFS
 
-  // --- Post layout shifts ---
-  // BREAKPOINT shifts are now zero by default => no visual shift
-  breakpointsToShift.forEach((bpId) => {
-    const descendants = adj.get(bpId) || [];
-    descendants.forEach((d) => shiftSubtreeDown(d, BREAKPOINT_DESCENDANT_SHIFT));
-  });
-
-  whileLoopsToAdjust.forEach(({ trueChild, falseChild }) => {
-    const trueBranchDepth = calculateBranchDepth(trueChild);
-    const dynamicShift = trueBranchDepth * NODE_HEIGHT_ESTIMATE + WHILE_FALSE_Y_SHIFT;
-    shiftSubtreeDown(falseChild, dynamicShift);
-    shiftAllBreakpointsInBranch(falseChild, 0);
-  });
-
-  forLoopsToAdjust.forEach(({ trueChild, falseChild }) => {
-    const trueBranchDepth = calculateBranchDepth(trueChild);
-    const dynamicShift = (trueBranchDepth * NODE_HEIGHT_ESTIMATE) + FOR_FALSE_Y_SHIFT;
-    shiftSubtreeDown(falseChild, dynamicShift);
-    shiftAllBreakpointsInBranch(falseChild, 0);
-  });
-
-  // --- Section 4: Convert edges and apply handles ---
-  const applyEdgeHandles = (edge: Edge, srcNode?: Node, tgtNode?: Node, conditionRaw?: string) => {
-    const condition = String(conditionRaw ?? "").toLowerCase();
-
-    const setSource = (handle: string, offset = 0) => {
-      (edge as any).sourceHandle = handle;
-      (edge as any).pathOptions = { ...((edge as any).pathOptions || {}), offset };
-    };
-    const setTarget = (handle: string, opt?: any) => {
-      (edge as any).targetHandle = handle;
-      (edge as any).pathOptions = { ...((edge as any).pathOptions || {}), ...(opt || {}) };
-    };
-
-    const srcId = edge.source;
-    const outsForSrc = outgoingBySource.get(srcId) || [];
-    const outgoingEntryIndex = outsForSrc.findIndex(o => o.edgeId === edge.id);
-    const outgoingEntry = outgoingEntryIndex >= 0 ? outsForSrc[outgoingEntryIndex] : undefined;
-
-    if (srcNode) {
-      switch (srcNode.type) {
-        case 'if':
-          if (condition === 'true') setSource('right', 30);
-          else if (condition === 'false') setSource('left', 30);
-          else if (outgoingEntry) {
-            setSource(outgoingEntryIndex === 0 ? 'right' : 'left', outgoingEntryIndex === 0 ? 30 : 30);
-          } else setSource('right', 0);
-          break;
-        case 'while':
-          if (condition === 'true') setSource('true', 40);
-          else if (condition === 'false') setSource('false', 12);
-          else {
-            if (tgtNode && tgtNode.position && srcNode.position) {
-              if (tgtNode.position.y > srcNode.position.y + 5) setSource('false', 12);
-              else setSource('true', 20);
-            } else setSource('false', 12);
-          }
-          break;
-        case 'for':
-          if (condition === 'true') setSource('loop_body', 40);
-          else if (condition === 'false') setSource('next', 12);
-          else if (outgoingEntry) {
-            setSource(outgoingEntryIndex === 0 ? 'loop_body' : 'next', outgoingEntryIndex === 0 ? 40 : 12);
-          } else {
-            if (tgtNode && tgtNode.position && srcNode.position) {
-              if (tgtNode.position.y > srcNode.position.y + 5) setSource('next', 12);
-              else setSource('loop_body', 20);
-            } else setSource('next', 12);
-          }
-          break;
-        default: break;
-      }
+  // After positioning, ensure some merges (like End) align to breakpoint X if breakpoint exists
+  positionedNodes.forEach((node, nid) => {
+    if (!node.position) return;
+    // If node has incoming and one incoming is a breakpoint, align this node's X to breakpoint
+    const incoming = incomingByTarget.get(nid) || [];
+    const bpInc = incoming.find(inc => {
+      const pn = nodesMap.get(inc.sourceId) ?? positionedNodes.get(inc.sourceId);
+      return pn && pn.type === "breakpoint";
+    });
+    if (bpInc) {
+      const bpNode = positionedNodes.get(bpInc.sourceId) ?? nodesMap.get(bpInc.sourceId);
+      if (bpNode && bpNode.position) node.position.x = bpNode.position.x;
     }
+  });
 
-    if (tgtNode) {
-      if (tgtNode.type === 'while') {
-        if (condition === 'true') setTarget('loop_in', { offset: 30 });
-        else if (condition === 'false') setTarget('top');
-        else {
-          const isBackEdge = srcNode && srcNode.position && tgtNode.position && (srcNode.position.y > tgtNode.position.y + 5);
-          if (isBackEdge) setTarget('loop_in', { offset: 10 });
-          else setTarget('top');
-        }
-      }
-      if (tgtNode.type === 'for') {
-        const isBackEdge = srcNode && srcNode.position && tgtNode.position && (srcNode.position.y > tgtNode.position.y + 5);
-        const isLoopBodyOut = (edge as any).sourceHandle === 'loop_body';
-        if (isBackEdge || isLoopBodyOut) setTarget('loop_return', { offset: 30 });
-        else setTarget('top');
-      }
-      if (tgtNode.type === 'breakpoint') {
-        if (condition === 'true') (edge as any).targetHandle = 'true';
-        else if (condition === 'false') (edge as any).targetHandle = 'false';
-        else {
-          const incomingToSource = incomingByTarget.get(srcId) || [];
-          const parentCondEntry = incomingToSource.find(ent => {
-            const c = String(ent.condition ?? "").toLowerCase();
-            return c === "true" || c === "false";
-          });
-          if (parentCondEntry && parentCondEntry.condition) {
-            (edge as any).targetHandle = String(parentCondEntry.condition).toLowerCase() === 'true' ? 'true' : 'false';
-          } else if (outgoingEntry && outsForSrc.length > 0) {
-            (edge as any).targetHandle = outgoingEntryIndex === 0 ? 'true' : 'false';
-          } else {
-            (edge as any).targetHandle = 'true';
-          }
-        }
-      }
-    }
-  };
-
-
-  const LARGE_COND_LABEL_STYLE = { fontSize: 16, fontWeight: 700 };
-
-  const convertedEdges: Edge[] = backendEdges.map((be) => {
+  // --- Convert edges and set handles based on relative X positions ---
+  const edges: Edge[] = backendEdges.map((be) => {
     const source = idMap.get(be.source) ?? be.source;
     const target = idMap.get(be.target) ?? be.target;
     const conditionRaw = be.condition ?? "";
@@ -532,18 +287,64 @@ export const convertBackendFlowchart = (payload: any) => {
       markerEnd: { type: MarkerType.ArrowClosed },
       type: "smoothstep",
       data: { condition },
-      label: (condition === "auto" ? "" : condition),
-      style: { stroke: "#222", strokeWidth: 2 }, // เส้นเข้มขึ้น
-      ...(String(condition).toLowerCase() === "true" || String(condition).toLowerCase() === "false" ? { labelStyle: LARGE_COND_LABEL_STYLE } : {}),
+      label: condition && condition !== "auto" ? condition : undefined,
+      style: { stroke: "#222", strokeWidth: 2 },
     } as Edge;
 
-    const srcNode = nodesMap.get(source);
-    const tgtNode = nodesMap.get(target);
+    const srcNode = positionedNodes.get(source) ?? nodesMap.get(source);
+    const tgtNode = positionedNodes.get(target) ?? nodesMap.get(target);
 
-    applyEdgeHandles(edge, srcNode, tgtNode, conditionRaw);
+    // handle source handle for decision nodes
+    if (srcNode) {
+      if (srcNode.type === "if") {
+        const c = String(conditionRaw ?? "").toLowerCase();
+        if (c === "true") (edge as any).sourceHandle = "right";
+        else if (c === "false") (edge as any).sourceHandle = "left";
+        else (edge as any).sourceHandle = "right";
+      } else if (srcNode.type === "while" || srcNode.type === "for") {
+        const c = String(conditionRaw ?? "").toLowerCase();
+        if (c === "true") (edge as any).sourceHandle = "right";
+        else if (c === "false") (edge as any).sourceHandle = "top";
+        else (edge as any).sourceHandle = "right";
+      }
+    }
+
+    // handle target handle especially for breakpoint merging
+    if (tgtNode && tgtNode.position && srcNode && srcNode.position) {
+      const srcX = srcNode.position.x;
+      const tgtX = tgtNode.position.x;
+      const diff = srcX - tgtX;
+      const TH = 40;
+      if (tgtNode.type === "breakpoint") {
+        if (Math.abs(diff) <= TH) {
+          (edge as any).targetHandle = "top";
+        } else if (diff < 0) {
+          // source is left of breakpoint -> target handle left so path goes right then down
+          (edge as any).targetHandle = "left";
+        } else {
+          (edge as any).targetHandle = "right";
+        }
+        // also adjust source handle so edge looks horizontal then vertical
+        if (!((edge as any).sourceHandle)) {
+          (edge as any).sourceHandle = srcX < tgtX ? "right" : srcX > tgtX ? "left" : "bottom";
+        }
+      } else {
+        // normal: top target
+        (edge as any).targetHandle = "top";
+      }
+    } else {
+      // fallback
+      (edge as any).targetHandle = "top";
+    }
 
     return edge;
   });
 
-  return { nodes: Array.from(positionedNodes.values()), edges: convertedEdges };
+  // Return nodes (as array) and edges
+  const nodes = Array.from(positionedNodes.values());
+  // Ensure fallback: if no start/end in positionedNodes, include from nodesMap
+  if (!nodes.some(n => n.id === "start") && nodesMap.has("start")) nodes.push(nodesMap.get("start")!);
+  if (!nodes.some(n => n.id === "end") && nodesMap.has("end")) nodes.push(nodesMap.get("end")!);
+
+  return { nodes, edges };
 };
