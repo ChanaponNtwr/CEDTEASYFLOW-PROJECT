@@ -27,7 +27,6 @@ import OutputNodeComponent from "../_components/OutputNodeComponent";
 import DeclareComponent from "../_components/DeclareComponent";
 import AssignComponent from "../_components/AssignComponent";
 import ForNodeComponent from "../_components/ForNodeComponent";
-import StepEdge from "../_components/StepEdge";
 
 // --- Hooks & Services ---
 import { useFlowchartState } from "../hooks/useFlowchartState";
@@ -50,10 +49,6 @@ const nodeTypes = {
   declare: DeclareComponent,
   assign: AssignComponent,
   for: ForNodeComponent,
-};
-
-const edgeTypes = {
-  step: StepEdge,
 };
 
 type Props = {
@@ -254,7 +249,6 @@ const FlowchartEditor = (props: Props) => {
           onNodeClick={onNodeClick}
           onEdgeClick={onEdgeClick}
           nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
           fitView={false}
           defaultViewport={{ x: 600, y: 150, zoom: 1 }}
         >
