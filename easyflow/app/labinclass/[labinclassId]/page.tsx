@@ -109,7 +109,8 @@ function LabInClass() {
   const isConfirmedStatus = (status?: string) => {
     if (!status) return false;
     const s = String(status).trim().toUpperCase();
-    return ["PASS", "PASSED", "CONFIRMED", "GRADED", "SUCCESS"].includes(s);
+    // NOTE: allow "PASS" to be confirmable — treat only already-confirmed statuses here.
+    return ["CONFIRMED", "GRADED", "SUCCESS"].includes(s);
   };
 
   const fetchData = useCallback(async () => {
@@ -435,15 +436,7 @@ function LabInClass() {
   const selectedCount = students.filter(s => s.selected).length;
 
   // determine if any selected student is already confirmed (used to disable Confirm button)
-  // NOTE: treat a student as "already confirmed" if:
-  //  - their overall status is confirmed (e.g. PASS / CONFIRMED)
-  //  - OR at least one of their testcase results is confirmed/passed
-  const hasAlreadyConfirmedSelected = students.some(s => {
-    if (!s.selected) return false;
-    if (isConfirmedStatus(s.status)) return true;
-    if (Array.isArray(s.results) && s.results.some(r => isConfirmedStatus(r.status))) return true;
-    return false;
-  });
+  const hasAlreadyConfirmedSelected = students.some(s => s.selected && isConfirmedStatus(s.status));
 
   const filterOptions = ["All", "Confirmed", "Pass", "Submitted", "Pending", "Fail", "Error"];
 
