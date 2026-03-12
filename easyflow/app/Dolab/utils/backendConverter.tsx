@@ -443,11 +443,18 @@ export const convertBackendFlowchart = (payload: any) => {
     if (srcNode) {
       switch (srcNode.type) {
         case 'if':
-          if (condition === 'true') setSource('right', 30);
-          else if (condition === 'false') setSource('left', 30);
-          else if (outgoingEntry) {
-            setSource(outgoingEntryIndex === 0 ? 'right' : 'left', outgoingEntryIndex === 0 ? 30 : 30);
-          } else setSource('right', 0);
+          // ถ้าปลายทางเป็น breakpoint จะให้ใช้ก้านล่างร่วมกัน เพื่อให้เส้นลงมาตรงกลาง
+          if (tgtNode && tgtNode.type === 'breakpoint') {
+            setSource('bottom', 0);
+          } else if (condition === 'true') {
+            setSource('right', 30);
+          } else if (condition === 'false') {
+            setSource('left', 30);
+          } else if (outgoingEntry) {
+            setSource(outgoingEntryIndex === 0 ? 'right' : 'left', 30);
+          } else {
+            setSource('right', 0);
+          }
           break;
         case 'while':
           if (condition === 'true') setSource('true', 40);
@@ -492,6 +499,7 @@ export const convertBackendFlowchart = (payload: any) => {
         else setTarget('top');
       }
       if (tgtNode.type === 'breakpoint') {
+        // breakpoint มี handle true/false ซ้อนกันด้านบนกลางแล้ว แค่ระบุว่าเส้นนี้คือ true/false
         if (condition === 'true') (edge as any).targetHandle = 'true';
         else if (condition === 'false') (edge as any).targetHandle = 'false';
         else {
