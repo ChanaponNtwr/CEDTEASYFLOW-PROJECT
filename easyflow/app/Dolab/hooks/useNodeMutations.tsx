@@ -144,9 +144,8 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
           const bp = createNode("breakpoint", "", newX, newY + stepY);
           nodesToAdd.push(ifNode, bp);
           edgesToAdd.push(createArrowEdge(sourceNode.id, ifNode.id, { label: loopLabel, sourceHandle: bodyHandle }));
-          // ใช้ bottom handle เดียวกันให้เส้นลงมาตรงกลาง breakpoint
-          edgesToAdd.push(createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "bottom", targetHandle: "true" }));
-          edgesToAdd.push(createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "bottom", targetHandle: "false" }));
+          edgesToAdd.push(createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }));
+          edgesToAdd.push(createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }));
           edgesToAdd.push({ ...createArrowEdge(bp.id, sourceNode.id, { targetHandle: returnHandle }), type: "smoothstep" });
         } else {
           const createdType = mapTypeForNode(type) as string;
@@ -181,8 +180,8 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
             const newBp = createNode("breakpoint", "", offsetX, baseYEdge + stepY);
             const newEdges = [
               createArrowEdge(sourceNode.id, newIf.id, { label: isTrue ? "True" : "False", sourceHandle: sourceHandle ?? undefined }),
-              createArrowEdge(newIf.id, newBp.id, { label: "True", sourceHandle: "bottom", targetHandle: "true" }),
-              createArrowEdge(newIf.id, newBp.id, { label: "False", sourceHandle: "bottom", targetHandle: "false" }),
+              createArrowEdge(newIf.id, newBp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
+              createArrowEdge(newIf.id, newBp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
               createArrowEdge(newBp.id, targetNode.id, { targetHandle: targetHandle ?? undefined }),
             ];
 
@@ -234,8 +233,8 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
         newNodesToAdd.push(ifNode, bp);
         newEdgesToAdd.push(
           createArrowEdge(sourceNode.id, ifNode.id, { sourceHandle: sourceHandle ?? undefined }),
-          createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "bottom", targetHandle: "true" }),
-          createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "bottom", targetHandle: "false" }),
+          createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
+          createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
           createArrowEdge(bp.id, targetNode.id, { targetHandle: targetHandle ?? undefined })
         );
       } else if (type === "while") {
@@ -289,11 +288,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
         const ifNode = createNode("if", label, anchorNode.position.x, anchorNode.position.y + stepY);
         const bp = createNode("breakpoint", "", anchorNode.position.x, anchorNode.position.y + stepY + stepY);
         const outgoing = edges.filter((e) => e.source === anchorId);
-        const newEdges: Edge[] = [
-          createArrowEdge(anchorId, ifNode.id),
-          createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "bottom", targetHandle: "true" }),
-          createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "bottom", targetHandle: "false" }),
-        ];
+        const newEdges: Edge[] = [createArrowEdge(anchorId, ifNode.id), createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }), createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" })];
         if (outgoing.length === 0) newEdges.push(createArrowEdge(bp.id, endNode.id));
         else outgoing.forEach((o) => newEdges.push(createArrowEdge(bp.id, o.target, { targetHandle: o.targetHandle ?? undefined })));
 
@@ -343,12 +338,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
     if (type === "if") {
       const ifNode = createNode("if", label, 300, baseY);
       const bp = createNode("breakpoint", "", 300, baseY + stepY);
-      const newEdges = [
-        createArrowEdge(previousNode.id, ifNode.id),
-        createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "bottom", targetHandle: "true" }),
-        createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "bottom", targetHandle: "false" }),
-        createArrowEdge(bp.id, nodes.find((n) => n.id === "end")!.id),
-      ];
+      const newEdges = [createArrowEdge(previousNode.id, ifNode.id), createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }), createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }), createArrowEdge(bp.id, nodes.find((n) => n.id === "end")!.id)];
       const updatedNodes = [...nodes.filter(n => n.id !== 'end'), ifNode, bp, {...(nodes.find(n => n.id === 'end')!), position: {x: 300, y: computeEndY([...nodes, ifNode, bp])}}];
       setNodes(updatedNodes);
       setEdges((eds) => [...eds.filter((e) => !(e.source === previousNode.id && e.target === (nodes.find(n => n.id === 'end')!.id))), ...newEdges]);
