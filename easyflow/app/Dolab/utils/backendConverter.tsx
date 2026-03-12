@@ -26,8 +26,10 @@ const mapBackendTypeToNodeType = (backendType?: string, label?: string) => {
   return TYPE_MAP[backendType.toUpperCase()] ?? "assign";
 };
 
-// Default Start-End if nothing
+// ✅ ฟังก์ชันสร้าง Default Flowchart (Start -> End)
+// ใช้กรณีข้อมูลว่าง หรือหา Nodes ไม่เจอ
 const generateDefaultFlowchart = () => {
+  console.log("🛠️ [Converter] Generating DEFAULT Start-End nodes.");
   const startNode: Node = {
     id: "start",
     type: "start",
@@ -50,8 +52,8 @@ const generateDefaultFlowchart = () => {
     id: "e-start-end",
     source: "start",
     target: "end",
-    type: "step",
-    animated: false,
+    type: "smoothstep",
+    animated: true,
     markerEnd: { type: MarkerType.ArrowClosed },
     style: { strokeWidth: 2 },
   };
@@ -63,34 +65,53 @@ const generateDefaultFlowchart = () => {
 };
 
 export const convertBackendFlowchart = (payload: any) => {
+  // 🔍 DEBUG: ดู Payload ที่ได้รับ
   console.log("🔍 [Converter] Processing Payload:", payload);
 
+  // --- 1. Robust Payload Parsing (ส่วนสำคัญที่เพิ่มใหม่) ---
   let backendNodes: any[] = [];
   let backendEdges: any[] = [];
 
-  if (!payload) return generateDefaultFlowchart();
+  if (!payload) {
+    console.warn("⚠️ Payload is null/undefined.");
+    return generateDefaultFlowchart();
+  }
 
+  // พยายามเจาะหา nodes จากโครงสร้างต่างๆ
   if (payload.flowchart && Array.isArray(payload.flowchart.nodes)) {
+    // Case 1: มาตรฐาน หรือ Create Response { flowchart: { nodes: ... } }
+    console.log("🎯 [Converter] Found nodes in payload.flowchart.nodes");
     backendNodes = payload.flowchart.nodes;
     backendEdges = payload.flowchart.edges || [];
   } else if (Array.isArray(payload.nodes)) {
+    // Case 2: โครงสร้างย่อ { nodes: ... }
+    console.log("🎯 [Converter] Found nodes in payload.nodes");
     backendNodes = payload.nodes;
     backendEdges = payload.edges || [];
   } else if (payload.data && payload.data.flowchart && Array.isArray(payload.data.flowchart.nodes)) {
+    // Case 3: Axios wrapper ซ้อน { data: { flowchart: ... } }
+    console.log("🎯 [Converter] Found nodes in payload.data.flowchart.nodes");
     backendNodes = payload.data.flowchart.nodes;
     backendEdges = payload.data.flowchart.edges || [];
   } else if (Array.isArray(payload)) {
+    // Case 4: ส่งมาเป็น Array ตรงๆ
+    console.log("🎯 [Converter] Payload is an array of nodes");
     backendNodes = payload;
   }
 
-  if (!backendNodes || backendNodes.length === 0) return generateDefaultFlowchart();
+  // --- 2. Empty Check ---
+  if (!backendNodes || backendNodes.length === 0) {
+    console.warn("⚠️ [Converter] No nodes found after parsing. Returning Default.");
+    return generateDefaultFlowchart();
+  }
 
   console.log(`✅ [Converter] Converting ${backendNodes.length} nodes...`);
 
-  // --- maps & normalize ---
+  // --- Section 1: Create Maps ---
   const nodesMap = new Map<string, Node>();
   const idMap = new Map<string, string>();
 
+  // normalize IDs consistently
   const normalizeId = (origId: string, label?: string) =>
     (label === "Start" ? "start" : label === "End" ? "end" : origId).toLowerCase();
 
@@ -113,7 +134,7 @@ export const convertBackendFlowchart = (payload: any) => {
     nodesMap.set(newId, frontEndNode);
   });
 
-  // outgoing/incoming/adj
+  // --- Build outgoing/incoming maps ---
   const outgoingBySource = new Map<string, Array<{ targetId: string; condition?: string; edgeId?: string }>>();
   const addOutgoing = (s: string, t: string, condition?: string, edgeId?: string) => {
     if (!outgoingBySource.has(s)) outgoingBySource.set(s, []);
@@ -142,15 +163,15 @@ export const convertBackendFlowchart = (payload: any) => {
     if (adj.has(source)) adj.get(source)!.push(target);
   });
 
-  // --- layout constants (tweakable) ---
-  const BREAKPOINT_INSERT_SHIFT = 18;
-  const BREAKPOINT_DESCENDANT_SHIFT = 18;
-  const WHILE_TRUE_X_OFFSET = 220;
-  const WHILE_FALSE_Y_SHIFT = 18;
-  const FOR_FALSE_Y_SHIFT = 48;
+  // --- Constants for Layout ---
+  const BREAKPOINT_INSERT_SHIFT = 30;
+  const BREAKPOINT_DESCENDANT_SHIFT = 30;
+  const WHILE_TRUE_X_OFFSET = 250;
+  const WHILE_FALSE_Y_SHIFT = 10;
+  const FOR_FALSE_Y_SHIFT = 60;
   const NODE_HEIGHT_ESTIMATE = 60;
 
-  // Helpers
+  // --- Layout Helpers ---
   const shiftSubtreeDown = (startNodeId: string, deltaY: number) => {
     if (!deltaY || deltaY === 0) return;
     const q = [startNodeId];
@@ -193,6 +214,13 @@ export const convertBackendFlowchart = (payload: any) => {
       const dn = nodesMap.get(d);
       if (dn?.type === 'breakpoint') shiftSubtreeDown(d, deltaY);
     });
+  };
+
+  const enqueue = (queue: Array<any>, visited: Set<string>, nodeId: string, y: number, x: number) => {
+    if (!visited.has(nodeId)) {
+      visited.add(nodeId);
+      queue.push({ nodeId, y, x });
+    }
   };
 
   const getBranches = (nodeId: string) => {
@@ -244,25 +272,18 @@ export const convertBackendFlowchart = (payload: any) => {
     return maxDepth;
   };
 
-  // --- New: proposed positions + propagation queue ---
-  const positionedNodes = new Map<string, Node>();
-  const proposed = new Map<string, { x: number; y: number }>();
-  const queue: string[] = [];
+  // --- Layout Collections ---
+  const breakpointsToShift = new Set<string>();
+  const whileLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
+  const forLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
 
-  const propose = (nodeId: string, y: number, x: number) => {
-    const prev = proposed.get(nodeId);
-    if (!prev || prev.x !== x || prev.y !== y) {
-      proposed.set(nodeId, { x, y });
-      queue.push(nodeId);
-    }
-  };
-
-  // Position calculators (breakpoint gets baseX to align vertically)
+  // --- Position Calculators ---
   const computeIfChildPos = (childId: string, baseX: number, baseY: number, direction: 'right' | 'left' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
-      // Align breakpoint X with parent to keep vertical connector
-      return { x: baseX, y: baseY + stepY + BREAKPOINT_INSERT_SHIFT };
+      breakpointsToShift.add(childId);
+      const bpXOffset = direction === 'right' ? 70 : direction === 'left' ? -70 : 70;
+      return { x: baseX + bpXOffset, y: baseY + stepY + 100 };
     }
     const x = direction === 'right' ? baseX + 250 : direction === 'left' ? baseX - 250 : baseX;
     const y = baseY + stepY;
@@ -272,7 +293,9 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeWhileChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
-      return { x: baseX, y: baseY + stepY + BREAKPOINT_INSERT_SHIFT };
+      breakpointsToShift.add(childId);
+      const bpXOffset = dir === 'true' ? 70 : dir === 'false' ? -70 : 70;
+      return { x: baseX + bpXOffset, y: baseY + stepY + 30 };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY + WHILE_FALSE_Y_SHIFT };
@@ -282,126 +305,107 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeForChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
-      return { x: baseX, y: baseY + stepY + BREAKPOINT_INSERT_SHIFT };
+      breakpointsToShift.add(childId);
+      const bpXOffset = dir === 'true' ? 70 : dir === 'false' ? -70 : 70;
+      return { x: baseX + bpXOffset, y: baseY + stepY + 30 };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY };
     return { x: baseX, y: baseY + stepY };
   };
 
-  // seed queue with start
-  propose("start", 50, 300);
+  // --- Section 3: Layout (BFS-like) ---
+  const positionedNodes = new Map<string, Node>();
+  const queue: { nodeId: string; y: number; x: number }[] = [{ nodeId: "start", y: 50, x: 300 }];
+  const visited = new Set<string>(["start"]);
 
-  // process queue: use proposed positions to set final positions and propagate to children
   while (queue.length > 0) {
-    const nodeId = queue.shift()!;
-    const proposal = proposed.get(nodeId);
-    if (!proposal) continue;
-
-    const { x: proposedX, y: proposedY } = proposal;
+    const { nodeId, y, x } = queue.shift()!;
     const node = nodesMap.get(nodeId);
     if (!node) continue;
 
-    // center logic: average positions of already-positioned parents (if any)
+    // Merge node centering logic
+    let finalX = x;
     const incoming = incomingByTarget.get(nodeId) || [];
-    let finalX = proposedX;
-    if (incoming.length > 0) {
+    if (incoming.length > 1) {
       const parentNodes = incoming
         .map(inc => positionedNodes.get(inc.sourceId))
         .filter((p): p is Node => p !== undefined && p.position !== undefined);
       if (parentNodes.length > 0) {
         const sumX = parentNodes.reduce((acc, p) => acc + p.position.x, 0);
         finalX = sumX / parentNodes.length;
-      } else {
-        // fallback: if parents exist but not yet positioned, derive from first parent's last-known position in nodesMap
-        const firstParent = incoming[0]?.sourceId;
-        const parentNode = firstParent ? nodesMap.get(firstParent) : undefined;
-        if (parentNode && parentNode.position) finalX = parentNode.position.x;
       }
     }
 
-    node.position = { x: finalX, y: proposedY };
+    node.position = { x: finalX, y };
     positionedNodes.set(nodeId, node);
 
-    // propagate to children depending on type
     if (node.type === "if") {
       const { trueChild, falseChild, others } = getBranches(nodeId);
       if (trueChild) {
-        const pos = computeIfChildPos(trueChild, finalX, proposedY, 'right');
-        propose(trueChild, pos.y, pos.x);
+        const pos = computeIfChildPos(trueChild, finalX, y, 'right');
+        enqueue(queue, visited, trueChild, pos.y, pos.x);
       }
       if (falseChild) {
-        const pos = computeIfChildPos(falseChild, finalX, proposedY, 'left');
-        propose(falseChild, pos.y, pos.x);
+        const pos = computeIfChildPos(falseChild, finalX, y, 'left');
+        enqueue(queue, visited, falseChild, pos.y, pos.x);
       }
+      let curY = y + stepY;
       others.forEach(childId => {
-        const pos = computeIfChildPos(childId, finalX, proposedY, 'center');
-        propose(childId, pos.y, pos.x);
+        const pos = computeIfChildPos(childId, finalX, y, 'center');
+        enqueue(queue, visited, childId, pos.y, pos.x);
+        curY += stepY;
       });
     } else if (node.type === "while") {
       const { trueChild, falseChild, others } = getBranches(nodeId);
       if (trueChild) {
-        const pos = computeWhileChildPos(trueChild, finalX, proposedY, 'true');
-        propose(trueChild, pos.y, pos.x);
+        const pos = computeWhileChildPos(trueChild, finalX, y, 'true');
+        enqueue(queue, visited, trueChild, pos.y, pos.x);
+        if (falseChild) whileLoopsToAdjust.set(nodeId, { trueChild, falseChild });
       }
       if (falseChild) {
-        const pos = computeWhileChildPos(falseChild, finalX, proposedY, 'false');
-        propose(falseChild, pos.y, pos.x);
+        const pos = computeWhileChildPos(falseChild, finalX, y, 'false');
+        enqueue(queue, visited, falseChild, pos.y, pos.x);
       }
       others.forEach(childId => {
-        const pos = computeWhileChildPos(childId, finalX, proposedY, 'center');
-        propose(childId, pos.y, pos.x);
+        const pos = computeWhileChildPos(childId, finalX, y, 'center');
+        enqueue(queue, visited, childId, pos.y, pos.x);
       });
     } else if (node.type === "for") {
       const { trueChild, falseChild, others } = getBranches(nodeId);
       if (trueChild) {
-        const pos = computeForChildPos(trueChild, finalX, proposedY, 'true');
-        propose(trueChild, pos.y, pos.x);
+        const pos = computeForChildPos(trueChild, finalX, y, 'true');
+        enqueue(queue, visited, trueChild, pos.y, pos.x);
+        if (falseChild) forLoopsToAdjust.set(nodeId, { trueChild, falseChild });
       }
       if (falseChild) {
-        const pos = computeForChildPos(falseChild, finalX, proposedY, 'false');
-        propose(falseChild, pos.y, pos.x);
+        const pos = computeForChildPos(falseChild, finalX, y, 'false');
+        enqueue(queue, visited, falseChild, pos.y, pos.x);
       }
       others.forEach(childId => {
-        const pos = computeForChildPos(childId, finalX, proposedY, 'center');
-        propose(childId, pos.y, pos.x);
+        const pos = computeForChildPos(childId, finalX, y, 'center');
+        enqueue(queue, visited, childId, pos.y, pos.x);
       });
     } else {
-      // linear children
-      let currentY = proposedY + stepY;
+      let currentY = y + stepY;
       const children = adj.get(nodeId) || [];
+      const childBaseX = finalX;
       children.forEach((childId) => {
-        const childNode = nodesMap.get(childId);
-        const childY = childNode && childNode.type === 'breakpoint' ? currentY + BREAKPOINT_INSERT_SHIFT : currentY;
-        propose(childId, childY, finalX); // use parent's finalX so child aligns unless it's a branch-populated offset
-        currentY += stepY;
+        if (!visited.has(childId)) {
+          const childNode = nodesMap.get(childId);
+          const childY = childNode && childNode.type === 'breakpoint' ? currentY + BREAKPOINT_INSERT_SHIFT : currentY;
+          if (childNode && childNode.type === 'breakpoint') breakpointsToShift.add(childId);
+          enqueue(queue, visited, childId, childY, childBaseX);
+          currentY += stepY;
+        }
       });
     }
   }
 
-  // After propagation: adjust breakpoint descendants and loop false branches
-  const breakpointsToShift = new Set<string>();
-  nodesMap.forEach((n, id) => {
-    if (n.type === 'breakpoint') breakpointsToShift.add(id);
-  });
-
+  // --- Post layout shifts ---
   breakpointsToShift.forEach((bpId) => {
     const descendants = adj.get(bpId) || [];
     descendants.forEach((d) => shiftSubtreeDown(d, BREAKPOINT_DESCENDANT_SHIFT));
-  });
-
-  // adjust while/for false branch based on depth (recompute by scanning outgoingBySource)
-  const whileLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
-  const forLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
-
-  nodesMap.forEach((n, id) => {
-    if (n.type === 'while' || n.type === 'for') {
-      const { trueChild, falseChild } = getBranches(id);
-      if (trueChild && falseChild) {
-        if (n.type === 'while') whileLoopsToAdjust.set(id, { trueChild: trueChild!, falseChild: falseChild! });
-        if (n.type === 'for') forLoopsToAdjust.set(id, { trueChild: trueChild!, falseChild: falseChild! });
-      }
-    }
   });
 
   whileLoopsToAdjust.forEach(({ trueChild, falseChild }) => {
@@ -418,7 +422,7 @@ export const convertBackendFlowchart = (payload: any) => {
     shiftAllBreakpointsInBranch(falseChild, 0);
   });
 
-  // --- convert edges and apply handles (use step edges so elbows are straight) ---
+  // --- Section 4: Convert edges and apply handles ---
   const applyEdgeHandles = (edge: Edge, srcNode?: Node, tgtNode?: Node, conditionRaw?: string) => {
     const condition = String(conditionRaw ?? "").toLowerCase();
 
@@ -441,42 +445,73 @@ export const convertBackendFlowchart = (payload: any) => {
         case 'if':
           if (condition === 'true') setSource('right', 30);
           else if (condition === 'false') setSource('left', 30);
-          else if (outgoingEntry) setSource(outgoingEntryIndex === 0 ? 'right' : 'left', 30);
-          else setSource('right', 0);
+          else if (outgoingEntry) {
+            setSource(outgoingEntryIndex === 0 ? 'right' : 'left', outgoingEntryIndex === 0 ? 30 : 30);
+          } else setSource('right', 0);
           break;
         case 'while':
           if (condition === 'true') setSource('true', 40);
           else if (condition === 'false') setSource('false', 12);
-          else setSource('false', 12);
+          else {
+            if (tgtNode && tgtNode.position && srcNode.position) {
+              if (tgtNode.position.y > srcNode.position.y + 5) setSource('false', 12);
+              else setSource('true', 20);
+            } else setSource('false', 12);
+          }
           break;
         case 'for':
           if (condition === 'true') setSource('loop_body', 40);
           else if (condition === 'false') setSource('next', 12);
-          else setSource('next', 12);
+          else if (outgoingEntry) {
+            setSource(outgoingEntryIndex === 0 ? 'loop_body' : 'next', outgoingEntryIndex === 0 ? 40 : 12);
+          } else {
+            if (tgtNode && tgtNode.position && srcNode.position) {
+              if (tgtNode.position.y > srcNode.position.y + 5) setSource('next', 12);
+              else setSource('loop_body', 20);
+            } else setSource('next', 12);
+          }
           break;
         default: break;
       }
     }
 
     if (tgtNode) {
-      // for while/for we keep some special handling
       if (tgtNode.type === 'while') {
         if (condition === 'true') setTarget('loop_in', { offset: 30 });
         else if (condition === 'false') setTarget('top');
-        else setTarget('top');
-      } else if (tgtNode.type === 'for') {
+        else {
+          const isBackEdge = srcNode && srcNode.position && tgtNode.position && (srcNode.position.y > tgtNode.position.y + 5);
+          if (isBackEdge) setTarget('loop_in', { offset: 10 });
+          else setTarget('top');
+        }
+      }
+      if (tgtNode.type === 'for') {
         const isBackEdge = srcNode && srcNode.position && tgtNode.position && (srcNode.position.y > tgtNode.position.y + 5);
         const isLoopBodyOut = (edge as any).sourceHandle === 'loop_body';
         if (isBackEdge || isLoopBodyOut) setTarget('loop_return', { offset: 30 });
         else setTarget('top');
-      } else if (tgtNode.type === 'breakpoint') {
-        // connect breakpoints to top center to keep vertical lines
-        setTarget('top');
-      } else {
-        setTarget('top');
+      }
+      if (tgtNode.type === 'breakpoint') {
+        if (condition === 'true') (edge as any).targetHandle = 'true';
+        else if (condition === 'false') (edge as any).targetHandle = 'false';
+        else {
+          const incomingToSource = incomingByTarget.get(srcId) || [];
+          const parentCondEntry = incomingToSource.find(ent => {
+            const c = String(ent.condition ?? "").toLowerCase();
+            return c === "true" || c === "false";
+          });
+          if (parentCondEntry && parentCondEntry.condition) {
+            (edge as any).targetHandle = String(parentCondEntry.condition).toLowerCase() === 'true' ? 'true' : 'false';
+          } else if (outgoingEntry && outsForSrc.length > 0) {
+            (edge as any).targetHandle = outgoingEntryIndex === 0 ? 'true' : 'false';
+          } else {
+            (edge as any).targetHandle = 'true';
+          }
+        }
       }
     }
   };
+
 
   const LARGE_COND_LABEL_STYLE = { fontSize: 16, fontWeight: 700 };
 
@@ -490,12 +525,13 @@ export const convertBackendFlowchart = (payload: any) => {
       id: be.id ?? `e-${source}-${target}`,
       source,
       target,
-      animated: false,
+      animated: true,
       markerEnd: { type: MarkerType.ArrowClosed },
-      type: "step", // use step (elbow) so connectors are straight elbows (not curved)
+      type: "smoothstep",
       data: { condition },
       label: (condition === "auto" ? "" : condition),
       style: { strokeWidth: 2 },
+      // เพิ่ม labelStyle เฉพาะกรณี condition เป็น true/false (case-insensitive)
       ...(String(condition).toLowerCase() === "true" || String(condition).toLowerCase() === "false" ? { labelStyle: LARGE_COND_LABEL_STYLE } : {}),
     } as Edge;
 
