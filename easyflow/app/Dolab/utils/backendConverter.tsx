@@ -281,10 +281,9 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeIfChildPos = (childId: string, baseX: number, baseY: number, direction: 'right' | 'left' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
-      // Breakpoint must be centered exactly below the IF node (same X)
-      // so that true (right) and false (left) edges converge symmetrically
       breakpointsToShift.add(childId);
-      return { x: baseX, y: baseY + stepY * 2 };
+      // Keep breakpoint vertically aligned with its parent decision node
+      return { x: baseX, y: baseY + stepY + 100 };
     }
     const x = direction === 'right' ? baseX + 250 : direction === 'left' ? baseX - 250 : baseX;
     const y = baseY + stepY;
@@ -295,8 +294,8 @@ export const convertBackendFlowchart = (payload: any) => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
       breakpointsToShift.add(childId);
-      const bpXOffset = dir === 'true' ? 70 : dir === 'false' ? -70 : 70;
-      return { x: baseX + bpXOffset, y: baseY + stepY + 30 };
+      // Keep breakpoint vertically aligned with loop header
+      return { x: baseX, y: baseY + stepY + 30 };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY + WHILE_FALSE_Y_SHIFT };
@@ -307,8 +306,8 @@ export const convertBackendFlowchart = (payload: any) => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
       breakpointsToShift.add(childId);
-      const bpXOffset = dir === 'true' ? 70 : dir === 'false' ? -70 : 70;
-      return { x: baseX + bpXOffset, y: baseY + stepY + 30 };
+      // Keep breakpoint vertically aligned with loop header
+      return { x: baseX, y: baseY + stepY + 30 };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY };
@@ -393,7 +392,10 @@ export const convertBackendFlowchart = (payload: any) => {
       const childBaseX = finalX;
       children.forEach((childId) => {
         if (!visited.has(childId)) {
-          enqueue(queue, visited, childId, currentY, childBaseX);
+          const childNode = nodesMap.get(childId);
+          const childY = childNode && childNode.type === 'breakpoint' ? currentY + BREAKPOINT_INSERT_SHIFT : currentY;
+          if (childNode && childNode.type === 'breakpoint') breakpointsToShift.add(childId);
+          enqueue(queue, visited, childId, childY, childBaseX);
           currentY += stepY;
         }
       });
@@ -490,29 +492,21 @@ export const convertBackendFlowchart = (payload: any) => {
         else setTarget('top');
       }
       if (tgtNode.type === 'breakpoint') {
-        // Determine which side this edge comes from
-        let resolvedCondition = condition;
-        if (!resolvedCondition || resolvedCondition === 'auto') {
+        if (condition === 'true') (edge as any).targetHandle = 'true';
+        else if (condition === 'false') (edge as any).targetHandle = 'false';
+        else {
           const incomingToSource = incomingByTarget.get(srcId) || [];
           const parentCondEntry = incomingToSource.find(ent => {
             const c = String(ent.condition ?? "").toLowerCase();
             return c === "true" || c === "false";
           });
           if (parentCondEntry && parentCondEntry.condition) {
-            resolvedCondition = String(parentCondEntry.condition).toLowerCase();
+            (edge as any).targetHandle = String(parentCondEntry.condition).toLowerCase() === 'true' ? 'true' : 'false';
           } else if (outgoingEntry && outsForSrc.length > 0) {
-            resolvedCondition = outgoingEntryIndex === 0 ? 'true' : 'false';
+            (edge as any).targetHandle = outgoingEntryIndex === 0 ? 'true' : 'false';
           } else {
-            resolvedCondition = 'true';
+            (edge as any).targetHandle = 'true';
           }
-        }
-        const isTrue = resolvedCondition.toLowerCase() === 'true';
-        (edge as any).targetHandle = isTrue ? 'true' : 'false';
-
-        // Override source handle on the IF node so the line goes straight down each side
-        if (srcNode?.type === 'if') {
-          (edge as any).sourceHandle = isTrue ? 'right' : 'left';
-          delete (edge as any).pathOptions;
         }
       }
     }
