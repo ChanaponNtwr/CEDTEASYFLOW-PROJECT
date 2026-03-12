@@ -164,11 +164,12 @@ export const convertBackendFlowchart = (payload: any) => {
   });
 
   // --- Constants for Layout ---
-  const BREAKPOINT_INSERT_SHIFT = 30;
-  const BREAKPOINT_DESCENDANT_SHIFT = 30;
-  const WHILE_TRUE_X_OFFSET = 250;
-  const WHILE_FALSE_Y_SHIFT = 10;
-  const FOR_FALSE_Y_SHIFT = 60;
+  // ปรับค่าที่เกี่ยวกับ breakpoint/shift ให้ไม่ขยับเกินความจำเป็น
+  const BREAKPOINT_INSERT_SHIFT = 20;       // เดิม 30 -> ลดลงเพื่อไม่ให้เบี้ยวมาก
+  const BREAKPOINT_DESCENDANT_SHIFT = 20;   // เดิม 30
+  const WHILE_TRUE_X_OFFSET = 220;          // เล็กน้อย
+  const WHILE_FALSE_Y_SHIFT = 20;
+  const FOR_FALSE_Y_SHIFT = 50;
   const NODE_HEIGHT_ESTIMATE = 60;
 
   // --- Layout Helpers ---
@@ -278,12 +279,13 @@ export const convertBackendFlowchart = (payload: any) => {
   const forLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
 
   // --- Position Calculators ---
+  // ปรับ logic: ถ้า node เป็น breakpoint ให้วางที่แกน X เดียวกับ parent (ไม่เลื่อนขวา/ซ้าย)
   const computeIfChildPos = (childId: string, baseX: number, baseY: number, direction: 'right' | 'left' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
+      // --- สำคัญ: ไม่เลื่อนแกน X สำหรับ breakpoint เพื่อให้เส้นเข้า/ออกตรง ---
       breakpointsToShift.add(childId);
-      const bpXOffset = direction === 'right' ? 70 : direction === 'left' ? -70 : 70;
-      return { x: baseX + bpXOffset, y: baseY + stepY + 100 };
+      return { x: baseX, y: baseY + stepY + BREAKPOINT_INSERT_SHIFT };
     }
     const x = direction === 'right' ? baseX + 250 : direction === 'left' ? baseX - 250 : baseX;
     const y = baseY + stepY;
@@ -294,8 +296,8 @@ export const convertBackendFlowchart = (payload: any) => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
       breakpointsToShift.add(childId);
-      const bpXOffset = dir === 'true' ? 70 : dir === 'false' ? -70 : 70;
-      return { x: baseX + bpXOffset, y: baseY + stepY + 30 };
+      // วาง breakpoint ตรงแกน X ของ parent เช่นกัน (ไม่เอียง)
+      return { x: baseX, y: baseY + stepY + BREAKPOINT_INSERT_SHIFT };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY + WHILE_FALSE_Y_SHIFT };
@@ -306,8 +308,7 @@ export const convertBackendFlowchart = (payload: any) => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
       breakpointsToShift.add(childId);
-      const bpXOffset = dir === 'true' ? 70 : dir === 'false' ? -70 : 70;
-      return { x: baseX + bpXOffset, y: baseY + stepY + 30 };
+      return { x: baseX, y: baseY + stepY + BREAKPOINT_INSERT_SHIFT };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY };
@@ -403,6 +404,7 @@ export const convertBackendFlowchart = (payload: any) => {
   }
 
   // --- Post layout shifts ---
+  // ย้าย subtree หลัง breakpoint เล็กน้อย (descendants ของ breakpoint)
   breakpointsToShift.forEach((bpId) => {
     const descendants = adj.get(bpId) || [];
     descendants.forEach((d) => shiftSubtreeDown(d, BREAKPOINT_DESCENDANT_SHIFT));
@@ -446,7 +448,7 @@ export const convertBackendFlowchart = (payload: any) => {
           if (condition === 'true') setSource('right', 30);
           else if (condition === 'false') setSource('left', 30);
           else if (outgoingEntry) {
-            setSource(outgoingEntryIndex === 0 ? 'right' : 'left', outgoingEntryIndex === 0 ? 30 : 30);
+            setSource(outgoingEntryIndex === 0 ? 'right' : 'left', 30);
           } else setSource('right', 0);
           break;
         case 'while':
@@ -492,6 +494,7 @@ export const convertBackendFlowchart = (payload: any) => {
         else setTarget('top');
       }
       if (tgtNode.type === 'breakpoint') {
+        // ให้ breakpoint target handle ชัดเจน (true/false) เพื่อรักษาเส้นให้เรียบ
         if (condition === 'true') (edge as any).targetHandle = 'true';
         else if (condition === 'false') (edge as any).targetHandle = 'false';
         else {
