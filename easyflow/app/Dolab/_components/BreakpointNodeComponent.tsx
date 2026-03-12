@@ -24,8 +24,19 @@ const BreakpointNodeComponent: React.FC<{ data: { label: string } }> = ({ data }
       position: "relative",
     }}
   >
-    <Handle type="target" position={Position.Left} id="false" style={{ ...hiddenHandleStyle, left: -8, top: "50%", transform: "translateY(-50%)" }} />
-    <Handle type="target" position={Position.Right} id="true" style={{ ...hiddenHandleStyle, right: -8, top: "50%", transform: "translateY(-50%)" }}/>
+    {/* ใช้ handle true/false ซ้อนกันที่ด้านบน เพื่อให้เส้นจาก branch มาชน breakpoint แบบตรงลงกลาง */}
+    <Handle
+      type="target"
+      position={Position.Top}
+      id="false"
+      style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
+    />
+    <Handle
+      type="target"
+      position={Position.Top}
+      id="true"
+      style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
+    />
     <Handle type="source" position={Position.Bottom} style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }}/>
     <div>{data.label}</div>
   </div>
