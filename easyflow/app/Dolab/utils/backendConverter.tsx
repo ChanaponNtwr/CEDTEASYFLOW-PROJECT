@@ -55,7 +55,7 @@ const generateDefaultFlowchart = () => {
     type: "smoothstep",
     animated: true,
     markerEnd: { type: MarkerType.ArrowClosed },
-    style: { strokeWidth: 2 },
+    style: { stroke: "#222", strokeWidth: 2 }, // เข้มขึ้น
   };
 
   return {
@@ -79,23 +79,15 @@ export const convertBackendFlowchart = (payload: any) => {
 
   // พยายามเจาะหา nodes จากโครงสร้างต่างๆ
   if (payload.flowchart && Array.isArray(payload.flowchart.nodes)) {
-    // Case 1: มาตรฐาน หรือ Create Response { flowchart: { nodes: ... } }
-    console.log("🎯 [Converter] Found nodes in payload.flowchart.nodes");
     backendNodes = payload.flowchart.nodes;
     backendEdges = payload.flowchart.edges || [];
   } else if (Array.isArray(payload.nodes)) {
-    // Case 2: โครงสร้างย่อ { nodes: ... }
-    console.log("🎯 [Converter] Found nodes in payload.nodes");
     backendNodes = payload.nodes;
     backendEdges = payload.edges || [];
   } else if (payload.data && payload.data.flowchart && Array.isArray(payload.data.flowchart.nodes)) {
-    // Case 3: Axios wrapper ซ้อน { data: { flowchart: ... } }
-    console.log("🎯 [Converter] Found nodes in payload.data.flowchart.nodes");
     backendNodes = payload.data.flowchart.nodes;
     backendEdges = payload.data.flowchart.edges || [];
   } else if (Array.isArray(payload)) {
-    // Case 4: ส่งมาเป็น Array ตรงๆ
-    console.log("🎯 [Converter] Payload is an array of nodes");
     backendNodes = payload;
   }
 
@@ -164,8 +156,9 @@ export const convertBackendFlowchart = (payload: any) => {
   });
 
   // --- Constants for Layout ---
-  const BREAKPOINT_INSERT_SHIFT = 30;
-  const BREAKPOINT_DESCENDANT_SHIFT = 30;
+  // ลดการเลื่อนพิเศษของ breakpoints ให้เป็น 0 เพื่อไม่ให้มันหลุดแกน
+  const BREAKPOINT_INSERT_SHIFT = 0;
+  const BREAKPOINT_DESCENDANT_SHIFT = 0;
   const WHILE_TRUE_X_OFFSET = 250;
   const WHILE_FALSE_Y_SHIFT = 10;
   const FOR_FALSE_Y_SHIFT = 60;
@@ -283,7 +276,8 @@ export const convertBackendFlowchart = (payload: any) => {
     if (childNode && childNode.type === 'breakpoint') {
       breakpointsToShift.add(childId);
       // Keep breakpoint vertically aligned with its parent decision node
-      return { x: baseX, y: baseY + stepY + 100 };
+      // <-- ปรับ: ใช้ baseY + stepY เท่านั้น (ไม่เพิ่ม +100 อีกต่อไป)
+      return { x: baseX, y: baseY + stepY };
     }
     const x = direction === 'right' ? baseX + 250 : direction === 'left' ? baseX - 250 : baseX;
     const y = baseY + stepY;
@@ -294,8 +288,8 @@ export const convertBackendFlowchart = (payload: any) => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
       breakpointsToShift.add(childId);
-      // Keep breakpoint vertically aligned with loop header
-      return { x: baseX, y: baseY + stepY + 30 };
+      // keep vertically aligned with loop header
+      return { x: baseX, y: baseY + stepY };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY + WHILE_FALSE_Y_SHIFT };
@@ -306,8 +300,7 @@ export const convertBackendFlowchart = (payload: any) => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
       breakpointsToShift.add(childId);
-      // Keep breakpoint vertically aligned with loop header
-      return { x: baseX, y: baseY + stepY + 30 };
+      return { x: baseX, y: baseY + stepY };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY };
@@ -328,12 +321,21 @@ export const convertBackendFlowchart = (payload: any) => {
     let finalX = x;
     const incoming = incomingByTarget.get(nodeId) || [];
     if (incoming.length > 1) {
-      const parentNodes = incoming
-        .map(inc => positionedNodes.get(inc.sourceId))
-        .filter((p): p is Node => p !== undefined && p.position !== undefined);
-      if (parentNodes.length > 0) {
-        const sumX = parentNodes.reduce((acc, p) => acc + p.position.x, 0);
-        finalX = sumX / parentNodes.length;
+      const nodeType = node.type;
+      // If this node is a breakpoint, prefer parent's X (don't average multiple incoming sources)
+      if (nodeType === 'breakpoint') {
+        // try to find the originating 'decision' parent (if both incoming come from same source it'll be that)
+        const parentSource = incoming[0]?.sourceId;
+        const parentNode = parentSource ? positionedNodes.get(parentSource) : undefined;
+        if (parentNode && parentNode.position) finalX = parentNode.position.x;
+      } else {
+        const parentNodes = incoming
+          .map(inc => positionedNodes.get(inc.sourceId))
+          .filter((p): p is Node => p !== undefined && p.position !== undefined);
+        if (parentNodes.length > 0) {
+          const sumX = parentNodes.reduce((acc, p) => acc + p.position.x, 0);
+          finalX = sumX / parentNodes.length;
+        }
       }
     }
 
@@ -403,6 +405,7 @@ export const convertBackendFlowchart = (payload: any) => {
   }
 
   // --- Post layout shifts ---
+  // BREAKPOINT shifts are now zero by default => no visual shift
   breakpointsToShift.forEach((bpId) => {
     const descendants = adj.get(bpId) || [];
     descendants.forEach((d) => shiftSubtreeDown(d, BREAKPOINT_DESCENDANT_SHIFT));
@@ -530,8 +533,7 @@ export const convertBackendFlowchart = (payload: any) => {
       type: "smoothstep",
       data: { condition },
       label: (condition === "auto" ? "" : condition),
-      style: { strokeWidth: 2 },
-      // เพิ่ม labelStyle เฉพาะกรณี condition เป็น true/false (case-insensitive)
+      style: { stroke: "#222", strokeWidth: 2 }, // เส้นเข้มขึ้น
       ...(String(condition).toLowerCase() === "true" || String(condition).toLowerCase() === "false" ? { labelStyle: LARGE_COND_LABEL_STYLE } : {}),
     } as Edge;
 
