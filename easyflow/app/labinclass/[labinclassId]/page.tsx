@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
-import { FaFilter, FaCheck, FaTimes, FaChevronDown, FaSpinner, FaCube, FaPlus } from "react-icons/fa";
+import { FaFilter, FaCheck, FaTimes, FaSearch, FaChevronDown, FaSpinner, FaExclamationTriangle, FaQuestionCircle, FaInfoCircle, FaCube, FaPlus } from "react-icons/fa";
+import { IoCheckmarkCircle, IoCloseCircle, IoRemoveCircleOutline } from "react-icons/io5";
 import Link from "next/link";
 import SymbolSection from "./_components/SymbolSection";
 import { useSession } from "next-auth/react";
@@ -81,7 +82,7 @@ function LabInClass() {
   const [isProcessingAction, setIsProcessingAction] = useState(false);
   const [processingType, setProcessingType] = useState<"confirm" | "reject" | null>(null);
 
-  // --- Modal state ---
+  // --- Modal state (use same pattern as StudentLabPage) ---
   const [modalVisible, setModalVisible] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
   const [modalMessage, setModalMessage] = useState("");
@@ -117,6 +118,8 @@ function LabInClass() {
     
     try {
       setError(null);
+      // keep page-level loading as originally used
+      // but we set studentsLoading around submissions fetch
       const [labResp, tcResp] = await Promise.all([
          apiGetLab(String(labId)),
          apiGetTestcases(String(labId))
@@ -155,88 +158,56 @@ function LabInClass() {
       // --- Fetch Submissions ---
       setStudentsLoading(true);
       try {
-        let subResp = await apiGetSubmissionDetailsByLab(String(labId));
-        let rawData: any = subResp?.data ?? subResp ?? [];
-
-        // If wrapped as { lab: { submissions: [...] } } or { submissions: [...] }
-        if (rawData?.lab && Array.isArray(rawData.lab.submissions)) {
-          rawData = rawData.lab.submissions;
-        } else if (rawData?.submissions && Array.isArray(rawData.submissions)) {
-          rawData = rawData.submissions;
-        }
-
+        const subResp = await apiGetSubmissionDetailsByLab(String(labId));
+        const rawData = subResp?.data ?? subResp ?? [];
         const rawSubs = Array.isArray(rawData) ? rawData : [];
 
-        // NORMALIZE: If rawSubs looks like per-testcase rows (has testcaseId + userId), group by userId
-        let normalizedStudents: any[] = [];
-
-        if (rawSubs.length > 0 && rawSubs[0].testcaseId !== undefined && rawSubs[0].userId !== undefined) {
-          // group rows by userId
-          const grouped: Record<string, { userId: any; user?: any; testcases: any[] }> = {};
-          for (const row of rawSubs) {
-            const uid = row.userId ?? (row.user && (row.user.id ?? row.user.userId)) ?? String(row.user ?? row.userId ?? "unknown");
-            if (!grouped[uid]) grouped[uid] = { userId: uid, user: row.user ?? undefined, testcases: [] };
-            // push the row into user's testcases
-            grouped[uid].testcases.push(row);
-          }
-          // convert grouped to normalized student-like objects
-          normalizedStudents = Object.keys(grouped).map((k) => {
-            const g = grouped[k];
-            return {
-              userId: g.userId,
-              user: g.user,
-              testcases: g.testcases
-            };
-          });
-        } else {
-          // assume rawSubs already in aggregated-per-student format (each has testcases[] or results[])
-          normalizedStudents = rawSubs;
-        }
-
-        // Map normalizedStudents -> StudentSubmission[]
-        const mappedStudents: StudentSubmission[] = normalizedStudents.map((item: any) => {
+        const mappedStudents: StudentSubmission[] = rawSubs.map((item: any) => {
             const userObj = item.user || item.User || item.student || item.Student || item;
             const join = (f: any, l: any) => `${f || ""} ${l || ""}`.trim();
 
             let studentName = "Unknown Student";
             if (item.userName) studentName = item.userName;
-            else if (userObj?.firstname || userObj?.lastname) studentName = join(userObj.firstname, userObj.lastname);
-            else if (userObj?.firstName || userObj?.lastName) studentName = join(userObj.firstName, userObj.lastName);
-            else if (userObj?.name) studentName = userObj.name;
-            else if (userObj?.username) studentName = userObj.username;
-            else if (userObj?.email) studentName = userObj.email;
+            else if (userObj.firstname || userObj.lastname) studentName = join(userObj.firstname, userObj.lastname);
+            else if (userObj.firstName || userObj.lastName) studentName = join(userObj.firstName, userObj.lastName);
+            else if (userObj.name) studentName = userObj.name;
+            else if (userObj.username) studentName = userObj.username;
+            else if (userObj.email) studentName = userObj.email;
 
-            // rawResults: unify names (testcases | results | submission?.results | item.testcases)
             const rawResults = item.testcases || item.results || item.submission?.results || [];
 
-            // Determine finalStatus: prefer item.status, then submission.status, then first testcase status
-            let finalStatus = item.status ?? item.submission?.status ?? "PENDING";
-            if ((!finalStatus || finalStatus === "PENDING") && Array.isArray(rawResults) && rawResults.length > 0) {
+            let finalStatus = "PENDING"; 
+            if (item.status) finalStatus = item.status;
+            else if (item.submission?.status) finalStatus = item.submission.status;
+            else if (Array.isArray(item.submissions) && item.submissions.length > 0) finalStatus = item.submissions[0].status;
+
+            if ((!finalStatus || finalStatus === "PENDING") && rawResults.length > 0) {
                 const firstTc = rawResults[0];
-                if (firstTc && firstTc.status) finalStatus = firstTc.status;
+                if (firstTc && firstTc.status) {
+                    finalStatus = firstTc.status;
+                }
             }
 
             const score = item.totalScore ?? item.submission?.score ?? 0;
             const submissionId = item.flowchartId ?? item.submission?.id ?? item.submissionId ?? undefined;
 
-            // Map per-testcases results with robust fallback:
+            // --------- FIXED HERE ----------
+            // If overall submission is confirmed (PASS/CONFIRMED...), but per-testcase rawResults are empty or missing,
+            // we should consider each testcase as CONFIRMED and give full points. Previously code only used match?.status
+            // so scores became zero when per-testcase entries missing.
             const results: TestResult[] = tcs.map((tc) => {
-                const match = Array.isArray(rawResults) ? rawResults.find((r: any) => {
+                const match = rawResults.find((r: any) => {
                     if (r.testcaseId !== undefined) return r.testcaseId === tc.testcaseId;
-                    // some responses may use "testcase_id" or "tcId" — try some fallbacks
-                    if (r.testcase_id !== undefined) return r.testcase_id === tc.testcaseId;
-                    if (r.tcId !== undefined) return r.tcId === tc.testcaseId;
                     return false;
-                }) : undefined;
+                });
 
                 // Prefer testcase-level status if present; otherwise, if overall finalStatus indicates confirmed, use CONFIRMED
-                const rStatusFromMatch = match?.status ?? match?.resultStatus ?? match?.state;
+                const rStatusFromMatch = match?.status;
                 const rStatus = rStatusFromMatch ? String(rStatusFromMatch).toUpperCase() : (isConfirmedStatus(finalStatus) ? "CONFIRMED" : "PENDING");
 
                 let rScore = 0;
                 if (match?.scoreAwarded !== undefined) rScore = Number(match.scoreAwarded);
                 else if (match?.score !== undefined) rScore = Number(match.score);
-                else if (match?.points !== undefined) rScore = Number(match.points);
                 else if (rStatus === "PASS" || rStatus === "CONFIRMED") rScore = tc.score;
 
                 return { 
@@ -245,8 +216,9 @@ function LabInClass() {
                     maxScore: tc.score
                 };
             });
+            // --------- end fix ----------
 
-            const studentId = item.userId ?? userObj?.id ?? userObj?.userId ?? userObj?.studentId;
+            const studentId = item.userId ?? userObj.id ?? userObj.userId ?? userObj.studentId;
 
             return {
                 studentId: studentId,
@@ -264,6 +236,7 @@ function LabInClass() {
       } catch (subErr) {
         console.error("Failed to fetch submissions:", subErr);
         setStudents([]);
+        // do not override overall error unless needed
       } finally {
         setStudentsLoading(false);
       }
@@ -349,6 +322,7 @@ function LabInClass() {
       const failed: Array<{ id: string | number | undefined; error: any }> = [];
       await Promise.all(withUserId.map(async (student) => {
         try {
+          // call API with studentId (user id). This avoids FK violation from sending submissionId as userId.
           await apiConfirmSubmission(String(labId), String(student.studentId), String(reviewerId));
         } catch (err) {
           console.error("confirm error for", student.studentId, err);
@@ -437,6 +411,7 @@ function LabInClass() {
   // determine if any selected student is already confirmed (used to disable Confirm button)
   const hasAlreadyConfirmedSelected = students.some(s => s.selected && isConfirmedStatus(s.status));
 
+  // <-- Added "Error" option here -->
   const filterOptions = ["All", "Confirmed", "Pass", "Submitted", "Pending", "Fail", "Error"];
 
   const renderStatusBadge = (status: string) => {
@@ -447,13 +422,17 @@ function LabInClass() {
       if (["PASS", "PASSED", "CONFIRMED", "GRADED", "SUCCESS"].includes(s)) {
           badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200";
           dotColor = "bg-emerald-500";
-      } else if (["FAIL", "FAILED", "REJECTED", "WRONG", "ERROR"].includes(s)) {
+      }
+      // <-- include ERROR in fail group so it shows red -->
+      else if (["FAIL", "FAILED", "REJECTED", "WRONG", "ERROR"].includes(s)) {
           badgeStyle = "bg-red-50 text-red-700 border-red-200";
           dotColor = "bg-red-500";
-      } else if (["SUBMITTED", "SUBMIT"].includes(s)) {
+      }
+      else if (["SUBMITTED", "SUBMIT"].includes(s)) {
           badgeStyle = "bg-blue-50 text-blue-700 border-blue-200";
           dotColor = "bg-blue-500";
-      } else if (["PENDING", "WAITING", "UNKNOWN"].includes(s) || s === "") {
+      }
+      else if (["PENDING", "WAITING", "UNKNOWN"].includes(s) || s === "") {
           badgeStyle = "bg-amber-50 text-amber-700 border-amber-200";
           dotColor = "bg-amber-500";
       }
@@ -466,7 +445,8 @@ function LabInClass() {
       );
   };
 
-  // NOTE: UI kept exactly as before; only data normalization & mapping changed.
+  // NOTE: removed the early full-page loading and "lab not found" returns
+  // so the UI renders immediately and only section-level spinners/placeholders appear.
 
   return (
     <div className="min-h-screen w-full bg-[#F9FAFB]">
@@ -499,6 +479,7 @@ function LabInClass() {
                 <h3 className="text-base font-bold text-gray-800">Problem Description</h3>
             </div>
 
+            {/* If still loading and no labData yet, show a section-level loader rather than full-page loader */}
             {loading && !labData ? (
               <div className="flex items-center justify-center py-12 text-gray-400">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-4"></div>
@@ -510,6 +491,7 @@ function LabInClass() {
               </p>
             )}
 
+            {/* Test Cases Table (Inside Details) */}
             {labData?.testCases && labData.testCases.length > 0 ? (
                 <div className="mt-6 border rounded-xl overflow-hidden border-gray-100">
                     <div className="px-4 py-3 bg-gray-50/50 text-xs font-semibold text-gray-500 border-b border-gray-100 uppercase tracking-wider">
@@ -539,6 +521,7 @@ function LabInClass() {
                     </div>
                 </div>
             ) : (
+              // When labData exists but has no test cases, show nothing (preserves UI). If labData is null and not loading, show a small notice.
               labData ? null : (!loading && (
                 <div className="mt-6 border rounded-xl overflow-hidden border-gray-100 px-6 py-8 text-center text-sm text-gray-400">Lab not found or no test cases available.</div>
               ))
@@ -605,6 +588,7 @@ function LabInClass() {
 
             {/* Table */}
             <div className="overflow-x-auto relative">
+              {/* studentsLoading overlay / inline loader */}
               {studentsLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
@@ -640,6 +624,7 @@ function LabInClass() {
                         <tr><td colSpan={10} className="px-6 py-16 text-center text-gray-400 italic bg-gray-50/30">No students found matching your filter.</td></tr>
                     ) : (
                         filteredStudents.map((student, index) => {
+                          // use submissionId as primary key, fallback to studentId, then index
                           const uniqueKey = student.submissionId ?? student.studentId ?? index;
                           const keyForStudent = student.submissionId ?? student.studentId;
 
@@ -735,7 +720,7 @@ function LabInClass() {
         </div>
       </div>
 
-      {/* Modal (AnimatePresence) */}
+      {/* Modal (AnimatePresence) - same visual pattern as StudentLabPage */}
       <AnimatePresence>
         {modalVisible && (
           <motion.div
