@@ -127,17 +127,17 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
         {data.label}
       </span>
 
-      {/* Handles */}
+      {/* Handles (Fixed: left is now 50%) */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ ...hiddenHandleStyle, top: -8, left: "43.5%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         id="bottom"
         position={Position.Bottom}
-        style={{ ...hiddenHandleStyle, bottom: -8, left: "43.5%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }}
       />
     </div>
   );
