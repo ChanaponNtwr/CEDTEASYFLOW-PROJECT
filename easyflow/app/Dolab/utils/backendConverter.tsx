@@ -281,9 +281,9 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeIfChildPos = (childId: string, baseX: number, baseY: number, direction: 'right' | 'left' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
+      // <-- CHANGED: place breakpoint centered under parent (no left/right offset)
       breakpointsToShift.add(childId);
-      const bpXOffset = direction === 'right' ? 70 : direction === 'left' ? -70 : 70;
-      return { x: baseX + bpXOffset, y: baseY + stepY + 100 };
+      return { x: baseX, y: baseY + stepY };
     }
     const x = direction === 'right' ? baseX + 250 : direction === 'left' ? baseX - 250 : baseX;
     const y = baseY + stepY;
@@ -293,9 +293,9 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeWhileChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
+      // <-- CHANGED: keep breakpoint centered vertically under the while node
       breakpointsToShift.add(childId);
-      const bpXOffset = dir === 'true' ? 70 : dir === 'false' ? -70 : 70;
-      return { x: baseX + bpXOffset, y: baseY + stepY + 30 };
+      return { x: baseX, y: baseY + stepY };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY + WHILE_FALSE_Y_SHIFT };
@@ -305,9 +305,9 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeForChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
+      // <-- CHANGED: same rule for for-loop breakpoints
       breakpointsToShift.add(childId);
-      const bpXOffset = dir === 'true' ? 70 : dir === 'false' ? -70 : 70;
-      return { x: baseX + bpXOffset, y: baseY + stepY + 30 };
+      return { x: baseX, y: baseY + stepY };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY };
