@@ -10,9 +10,9 @@ type Props = {
 };
 
 const InputNodeComponent: React.FC<Props> = ({ data }) => {
-  const baseWidth = 180;
-  const baseHeight = 50;
-  const padding = 30;
+  const baseWidth = 170;
+  const baseHeight = 60;
+  const padding = 40;
   const skew = 20; // ค่าความเอียง
   const [width, setWidth] = useState(baseWidth);
 
