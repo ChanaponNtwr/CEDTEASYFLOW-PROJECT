@@ -30,6 +30,7 @@ const DeclareComponent: React.FC<Props> = ({ data }) => {
 
   const highlighted = Boolean(data?.__highlight);
 
+  // SVG overlay will draw highlight to match node shape exactly.
   const rootStyle: React.CSSProperties = {
     position: "relative",
     width,
@@ -42,62 +43,78 @@ const DeclareComponent: React.FC<Props> = ({ data }) => {
     width: 0,
     height: 0,
     background: "transparent",
-    border: "none",
   };
 
   return (
-    <div style={rootStyle} className={highlighted ? "highlighted-node" : ""}>
+    <div style={rootStyle} className={highlighted ? "my-node-highlight" : undefined}>
       <svg
-        width={width}
-        height={height}
-        style={{ position: "absolute", top: 0, left: 0, overflow: "visible" }}
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${width} ${height}`}
+        style={{ display: "block", overflow: "visible" }}
+        aria-hidden
       >
         <defs>
-          <filter id="declare-glow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="6" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          {/* glow filter for highlight */}
+          <filter id="declare-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
           </filter>
         </defs>
 
-        {/* Base shape */}
+        {/* base rectangle */}
         <rect
           x={0}
           y={0}
           width={width}
           height={height}
-          fill="#FFF"
-          stroke="#000"
-          strokeWidth={1}
           rx={6}
           ry={6}
+          fill="#FFFFD8"
+          stroke="#000000"
+          strokeWidth={1}
         />
-        {/* left divider line */}
+
+        {/* left vertical divider */}
         <line
           x1={verticalLineWidth}
           y1={0}
           x2={verticalLineWidth}
           y2={height}
-          stroke="#000"
+          stroke="#000000"
           strokeWidth={1}
         />
 
-        {/* text */}
+        {/* optional horizontal divider */}
+        <line
+          x1={0}
+          y1={height / 2 - 20}
+          x2={width}
+          y2={height / 2 - 20}
+          stroke="#000000"
+          strokeWidth={1}
+        />
+
+        {/* label text */}
         <text
-          x={width / 2 + verticalLineWidth / 2}
+          x={width / 2}
           y={height / 2}
           textAnchor="middle"
           alignmentBaseline="middle"
           fontSize="14"
-          fill="black"
-          style={{ pointerEvents: "none", userSelect: "none" }}
+          fill="#000000"
+          style={{ userSelect: "none", pointerEvents: "none" }}
         >
           {data.label}
         </text>
 
-        {/* Highlighting */}
+        {/* highlight overlay: same rectangle shape, stroke-only + glow */}
         {highlighted && (
           <>
-            {/* outer glow */}
+            {/* thick blurred stroke for glow */}
             <rect
               x={-2}
               y={-2}
@@ -144,17 +161,16 @@ const DeclareComponent: React.FC<Props> = ({ data }) => {
         {data.label}
       </span>
 
-      {/* Handles (แก้ไข left เป็น 50%) */}
+      {/* Handles */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "51.5%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
-        id="bottom"
         position={Position.Bottom}
-        style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "51.5%", transform: "translateX(-50%)" }}
       />
     </div>
   );

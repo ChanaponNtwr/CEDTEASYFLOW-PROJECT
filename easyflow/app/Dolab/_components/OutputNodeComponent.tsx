@@ -28,7 +28,8 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
 
   const height = baseHeight;
   const points = `${skew},0 ${width},0 ${width - skew},${height} 0,${height}`;
-  
+  const xOffset = skew / 2;
+
   const highlighted = Boolean(data?.__highlight);
 
   const rootStyle: React.CSSProperties = {
@@ -42,32 +43,50 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
     width: 0,
     height: 0,
     background: "transparent",
-    border: "none",
   };
 
   return (
-    <div style={rootStyle} className={highlighted ? "highlighted-node" : ""}>
+    <div style={rootStyle} className={highlighted ? "my-node-highlight" : undefined}>
       <svg
-        width={width}
-        height={height}
-        style={{ position: "absolute", top: 0, left: 0, overflow: "visible" }}
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${width} ${height}`}
+        style={{ display: "block", overflow: "visible" }}
+        aria-hidden
       >
         <defs>
-          <filter id="output-glow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="6" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          <filter id="output-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
           </filter>
         </defs>
-        <g>
-          {/* Base shape */}
+
+        <g transform={`translate(-${xOffset}, 0)`}>
+          {/* Base polygon */}
           <polygon
             points={points}
-            fill="#C0E5B1"
-            stroke="#000"
+            fill="#D8FFD8"
+            stroke="#000000"
             strokeWidth={1}
-            strokeLinejoin="round"
           />
 
+          {/* Label */}
+          <text
+            x={width / 2}
+            y={height / 2}
+            textAnchor="middle"
+            alignmentBaseline="middle"
+            fontSize={14}
+            fill="black"
+            style={{ userSelect: "none", pointerEvents: "none" }}
+          >
+            {data.label}
+          </text>
+
+          {/* Highlight overlay */}
           {highlighted && (
             <>
               {/* Glow */}
@@ -92,19 +111,6 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
               />
             </>
           )}
-
-          {/* text */}
-          <text
-            x={width / 2}
-            y={height / 2}
-            textAnchor="middle"
-            alignmentBaseline="middle"
-            fontSize="14"
-            fill="black"
-            style={{ pointerEvents: "none", userSelect: "none" }}
-          >
-            {data.label}
-          </text>
         </g>
       </svg>
 
@@ -121,17 +127,17 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
         {data.label}
       </span>
 
-      {/* Handles (แก้ไข left เป็น 50%) */}
+      {/* Handles */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "43.5%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         id="bottom"
         position={Position.Bottom}
-        style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "43.5%", transform: "translateX(-50%)" }}
       />
     </div>
   );
