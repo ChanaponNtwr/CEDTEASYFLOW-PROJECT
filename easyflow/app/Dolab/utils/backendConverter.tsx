@@ -1,5 +1,4 @@
 // File: app/flowchart/utils/backendConverter.tsx
-
 import { Node, Edge, MarkerType } from "@xyflow/react";
 import { stepY } from "./flowchartUtils";
 
@@ -27,9 +26,7 @@ const mapBackendTypeToNodeType = (backendType?: string, label?: string) => {
 };
 
 // ✅ ฟังก์ชันสร้าง Default Flowchart (Start -> End)
-// ใช้กรณีข้อมูลว่าง หรือหา Nodes ไม่เจอ
 const generateDefaultFlowchart = () => {
-  console.log("🛠️ [Converter] Generating DEFAULT Start-End nodes.");
   const startNode: Node = {
     id: "start",
     type: "start",
@@ -65,53 +62,31 @@ const generateDefaultFlowchart = () => {
 };
 
 export const convertBackendFlowchart = (payload: any) => {
-  // 🔍 DEBUG: ดู Payload ที่ได้รับ
-  console.log("🔍 [Converter] Processing Payload:", payload);
-
-  // --- 1. Robust Payload Parsing (ส่วนสำคัญที่เพิ่มใหม่) ---
+  // --- Robust parsing ---
   let backendNodes: any[] = [];
   let backendEdges: any[] = [];
 
-  if (!payload) {
-    console.warn("⚠️ Payload is null/undefined.");
-    return generateDefaultFlowchart();
-  }
+  if (!payload) return generateDefaultFlowchart();
 
-  // พยายามเจาะหา nodes จากโครงสร้างต่างๆ
   if (payload.flowchart && Array.isArray(payload.flowchart.nodes)) {
-    // Case 1: มาตรฐาน หรือ Create Response { flowchart: { nodes: ... } }
-    console.log("🎯 [Converter] Found nodes in payload.flowchart.nodes");
     backendNodes = payload.flowchart.nodes;
     backendEdges = payload.flowchart.edges || [];
   } else if (Array.isArray(payload.nodes)) {
-    // Case 2: โครงสร้างย่อ { nodes: ... }
-    console.log("🎯 [Converter] Found nodes in payload.nodes");
     backendNodes = payload.nodes;
     backendEdges = payload.edges || [];
   } else if (payload.data && payload.data.flowchart && Array.isArray(payload.data.flowchart.nodes)) {
-    // Case 3: Axios wrapper ซ้อน { data: { flowchart: ... } }
-    console.log("🎯 [Converter] Found nodes in payload.data.flowchart.nodes");
     backendNodes = payload.data.flowchart.nodes;
     backendEdges = payload.data.flowchart.edges || [];
   } else if (Array.isArray(payload)) {
-    // Case 4: ส่งมาเป็น Array ตรงๆ
-    console.log("🎯 [Converter] Payload is an array of nodes");
     backendNodes = payload;
   }
 
-  // --- 2. Empty Check ---
-  if (!backendNodes || backendNodes.length === 0) {
-    console.warn("⚠️ [Converter] No nodes found after parsing. Returning Default.");
-    return generateDefaultFlowchart();
-  }
+  if (!backendNodes || backendNodes.length === 0) return generateDefaultFlowchart();
 
-  console.log(`✅ [Converter] Converting ${backendNodes.length} nodes...`);
-
-  // --- Section 1: Create Maps ---
+  // --- Build maps & normalize ids ---
   const nodesMap = new Map<string, Node>();
   const idMap = new Map<string, string>();
 
-  // normalize IDs consistently
   const normalizeId = (origId: string, label?: string) =>
     (label === "Start" ? "start" : label === "End" ? "end" : origId).toLowerCase();
 
@@ -134,7 +109,7 @@ export const convertBackendFlowchart = (payload: any) => {
     nodesMap.set(newId, frontEndNode);
   });
 
-  // --- Build outgoing/incoming maps ---
+  // --- outgoing / incoming / adjacency ---
   const outgoingBySource = new Map<string, Array<{ targetId: string; condition?: string; edgeId?: string }>>();
   const addOutgoing = (s: string, t: string, condition?: string, edgeId?: string) => {
     if (!outgoingBySource.has(s)) outgoingBySource.set(s, []);
@@ -163,59 +138,13 @@ export const convertBackendFlowchart = (payload: any) => {
     if (adj.has(source)) adj.get(source)!.push(target);
   });
 
-  // --- Constants for Layout ---
-  const BREAKPOINT_INSERT_SHIFT = 30;
-  const BREAKPOINT_DESCENDANT_SHIFT = 30;
+  // --- Layout constants ---
   const WHILE_TRUE_X_OFFSET = 250;
   const WHILE_FALSE_Y_SHIFT = 10;
   const FOR_FALSE_Y_SHIFT = 60;
   const NODE_HEIGHT_ESTIMATE = 60;
 
-  // --- Layout Helpers ---
-  const shiftSubtreeDown = (startNodeId: string, deltaY: number) => {
-    if (!deltaY || deltaY === 0) return;
-    const q = [startNodeId];
-    const visitedShift = new Set<string>([startNodeId]);
-    while (q.length) {
-      const nid = q.shift()!;
-      const n = nodesMap.get(nid);
-      if (n && n.position) n.position = { x: n.position.x, y: n.position.y + deltaY };
-      const children = adj.get(nid) || [];
-      children.forEach((c) => {
-        if (!visitedShift.has(c)) {
-          visitedShift.add(c);
-          q.push(c);
-        }
-      });
-    }
-  };
-
-  const getAllDescendants = (startId: string) => {
-    const res: string[] = [];
-    const q = [startId];
-    const vis = new Set<string>([startId]);
-    while (q.length) {
-      const id = q.shift()!;
-      const children = adj.get(id) || [];
-      children.forEach((c) => {
-        if (!vis.has(c)) {
-          vis.add(c);
-          res.push(c);
-          q.push(c);
-        }
-      });
-    }
-    return res;
-  };
-
-  const shiftAllBreakpointsInBranch = (branchRootId: string, deltaY: number) => {
-    const descendants = getAllDescendants(branchRootId);
-    descendants.forEach((d) => {
-      const dn = nodesMap.get(d);
-      if (dn?.type === 'breakpoint') shiftSubtreeDown(d, deltaY);
-    });
-  };
-
+  // --- helpers ---
   const enqueue = (queue: Array<any>, visited: Set<string>, nodeId: string, y: number, x: number) => {
     if (!visited.has(nodeId)) {
       visited.add(nodeId);
@@ -272,17 +201,11 @@ export const convertBackendFlowchart = (payload: any) => {
     return maxDepth;
   };
 
-  // --- Layout Collections ---
-  const breakpointsToShift = new Set<string>();
-  const whileLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
-  const forLoopsToAdjust = new Map<string, { trueChild: string; falseChild: string }>();
-
-  // --- Position Calculators ---
+  // --- Position calculators (BREAKPOINTS : center on parent's X) ---
   const computeIfChildPos = (childId: string, baseX: number, baseY: number, direction: 'right' | 'left' | 'center') => {
     const childNode = nodesMap.get(childId);
+    // If child is a breakpoint, **center it under parent** (same x) and keep y at next-step (no large offset)
     if (childNode && childNode.type === 'breakpoint') {
-      // <-- CHANGED: place breakpoint centered under parent (no left/right offset)
-      breakpointsToShift.add(childId);
       return { x: baseX, y: baseY + stepY };
     }
     const x = direction === 'right' ? baseX + 250 : direction === 'left' ? baseX - 250 : baseX;
@@ -293,8 +216,6 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeWhileChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
-      // <-- CHANGED: keep breakpoint centered vertically under the while node
-      breakpointsToShift.add(childId);
       return { x: baseX, y: baseY + stepY };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
@@ -305,8 +226,6 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeForChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
-      // <-- CHANGED: same rule for for-loop breakpoints
-      breakpointsToShift.add(childId);
       return { x: baseX, y: baseY + stepY };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
@@ -314,7 +233,7 @@ export const convertBackendFlowchart = (payload: any) => {
     return { x: baseX, y: baseY + stepY };
   };
 
-  // --- Section 3: Layout (BFS-like) ---
+  // --- BFS-like layout ---
   const positionedNodes = new Map<string, Node>();
   const queue: { nodeId: string; y: number; x: number }[] = [{ nodeId: "start", y: 50, x: 300 }];
   const visited = new Set<string>(["start"]);
@@ -324,7 +243,7 @@ export const convertBackendFlowchart = (payload: any) => {
     const node = nodesMap.get(nodeId);
     if (!node) continue;
 
-    // Merge node centering logic
+    // center node horizontally if multiple parents
     let finalX = x;
     const incoming = incomingByTarget.get(nodeId) || [];
     if (incoming.length > 1) {
@@ -361,9 +280,14 @@ export const convertBackendFlowchart = (payload: any) => {
       if (trueChild) {
         const pos = computeWhileChildPos(trueChild, finalX, y, 'true');
         enqueue(queue, visited, trueChild, pos.y, pos.x);
-        if (falseChild) whileLoopsToAdjust.set(nodeId, { trueChild, falseChild });
+        if (falseChild) {
+          // schedule adjust for false branch later
+          const trueBranchDepth = calculateBranchDepth(trueChild);
+          const dynamicShift = trueBranchDepth * NODE_HEIGHT_ESTIMATE + WHILE_FALSE_Y_SHIFT;
+          enqueue(queue, visited, falseChild, y + dynamicShift, finalX);
+        }
       }
-      if (falseChild) {
+      if (falseChild && !visited.has(falseChild)) {
         const pos = computeWhileChildPos(falseChild, finalX, y, 'false');
         enqueue(queue, visited, falseChild, pos.y, pos.x);
       }
@@ -376,9 +300,13 @@ export const convertBackendFlowchart = (payload: any) => {
       if (trueChild) {
         const pos = computeForChildPos(trueChild, finalX, y, 'true');
         enqueue(queue, visited, trueChild, pos.y, pos.x);
-        if (falseChild) forLoopsToAdjust.set(nodeId, { trueChild, falseChild });
+        if (falseChild) {
+          const trueBranchDepth = calculateBranchDepth(trueChild);
+          const dynamicShift = (trueBranchDepth * NODE_HEIGHT_ESTIMATE) + FOR_FALSE_Y_SHIFT;
+          enqueue(queue, visited, falseChild, y + dynamicShift, finalX);
+        }
       }
-      if (falseChild) {
+      if (falseChild && !visited.has(falseChild)) {
         const pos = computeForChildPos(falseChild, finalX, y, 'false');
         enqueue(queue, visited, falseChild, pos.y, pos.x);
       }
@@ -393,8 +321,7 @@ export const convertBackendFlowchart = (payload: any) => {
       children.forEach((childId) => {
         if (!visited.has(childId)) {
           const childNode = nodesMap.get(childId);
-          const childY = childNode && childNode.type === 'breakpoint' ? currentY + BREAKPOINT_INSERT_SHIFT : currentY;
-          if (childNode && childNode.type === 'breakpoint') breakpointsToShift.add(childId);
+          const childY = childNode && childNode.type === 'breakpoint' ? currentY : currentY;
           enqueue(queue, visited, childId, childY, childBaseX);
           currentY += stepY;
         }
@@ -402,27 +329,7 @@ export const convertBackendFlowchart = (payload: any) => {
     }
   }
 
-  // --- Post layout shifts ---
-  breakpointsToShift.forEach((bpId) => {
-    const descendants = adj.get(bpId) || [];
-    descendants.forEach((d) => shiftSubtreeDown(d, BREAKPOINT_DESCENDANT_SHIFT));
-  });
-
-  whileLoopsToAdjust.forEach(({ trueChild, falseChild }) => {
-    const trueBranchDepth = calculateBranchDepth(trueChild);
-    const dynamicShift = trueBranchDepth * NODE_HEIGHT_ESTIMATE + WHILE_FALSE_Y_SHIFT;
-    shiftSubtreeDown(falseChild, dynamicShift);
-    shiftAllBreakpointsInBranch(falseChild, 0);
-  });
-
-  forLoopsToAdjust.forEach(({ trueChild, falseChild }) => {
-    const trueBranchDepth = calculateBranchDepth(trueChild);
-    const dynamicShift = (trueBranchDepth * NODE_HEIGHT_ESTIMATE) + FOR_FALSE_Y_SHIFT;
-    shiftSubtreeDown(falseChild, dynamicShift);
-    shiftAllBreakpointsInBranch(falseChild, 0);
-  });
-
-  // --- Section 4: Convert edges and apply handles ---
+  // --- Edges: convert and apply handles ---
   const applyEdgeHandles = (edge: Edge, srcNode?: Node, tgtNode?: Node, conditionRaw?: string) => {
     const condition = String(conditionRaw ?? "").toLowerCase();
 
@@ -446,7 +353,7 @@ export const convertBackendFlowchart = (payload: any) => {
           if (condition === 'true') setSource('right', 30);
           else if (condition === 'false') setSource('left', 30);
           else if (outgoingEntry) {
-            setSource(outgoingEntryIndex === 0 ? 'right' : 'left', outgoingEntryIndex === 0 ? 30 : 30);
+            setSource(outgoingEntryIndex === 0 ? 'right' : 'left', 30);
           } else setSource('right', 0);
           break;
         case 'while':
@@ -512,7 +419,6 @@ export const convertBackendFlowchart = (payload: any) => {
     }
   };
 
-
   const LARGE_COND_LABEL_STYLE = { fontSize: 16, fontWeight: 700 };
 
   const convertedEdges: Edge[] = backendEdges.map((be) => {
@@ -531,7 +437,6 @@ export const convertBackendFlowchart = (payload: any) => {
       data: { condition },
       label: (condition === "auto" ? "" : condition),
       style: { strokeWidth: 2 },
-      // เพิ่ม labelStyle เฉพาะกรณี condition เป็น true/false (case-insensitive)
       ...(String(condition).toLowerCase() === "true" || String(condition).toLowerCase() === "false" ? { labelStyle: LARGE_COND_LABEL_STYLE } : {}),
     } as Edge;
 
