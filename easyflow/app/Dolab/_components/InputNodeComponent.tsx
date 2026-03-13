@@ -132,17 +132,17 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
         {data.label}
       </span>
 
-      {/* Handles for connections (Fixed: left is now 50%) */}
+      {/* Handles for connections ชดเชยด้วย -skew/2 (-10px) เพื่อให้อยู่กึ่งกลางรูปทรงพอดี */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: `calc(50% - ${skew / 2}px)`, transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         id="bottom"
         position={Position.Bottom}
-        style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: `calc(50% - ${skew / 2}px)`, transform: "translateX(-50%)" }}
       />
     </div>
   );
