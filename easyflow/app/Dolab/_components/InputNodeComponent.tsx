@@ -34,12 +34,11 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
   // highlight detection
   const highlighted = Boolean(data?.__highlight);
 
-  // root container (no rectangular border — highlight drawn inside SVG)
+  // root container
   const rootStyle: React.CSSProperties = {
     position: "relative",
     width,
     height,
-    borderRadius: 6,
     display: "inline-block",
   };
 
@@ -47,41 +46,36 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
     width: 0,
     height: 0,
     background: "transparent",
+    border: "none",
   };
 
   return (
-    <div style={rootStyle} className={highlighted ? "my-node-highlight" : undefined}>
+    <div style={rootStyle} className={highlighted ? "highlighted-node" : ""}>
       <svg
-        width="100%"
-        height="100%"
-        viewBox={`0 0 ${width} ${height}`}
-        style={{ overflow: "visible", display: "block" }}
-        aria-hidden
+        width={width}
+        height={height}
+        style={{ position: "absolute", top: 0, left: 0, overflow: "visible" }}
       >
-        {/* defs for glow filter */}
         <defs>
-          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="6" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
+          <filter id="input-glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="6" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
           </filter>
         </defs>
 
-        {/* base parallelogram */}
-        <g transform={`translate(-${skew / 2}, 0)`}>
+        <g>
+          {/* Base shape */}
           <polygon
             points={points}
-            fill="#D0E8FF"
-            stroke="#000000"
-            strokeWidth="1"
+            fill="#B6F3E6"
+            stroke="#000"
+            strokeWidth={1}
+            strokeLinejoin="round"
           />
 
-          {/* highlight overlay: same shape, stroke-only, glow */}
           {highlighted && (
             <>
-              {/* thicker stroke for solid outline */}
+              {/* Glow effect */}
               <polygon
                 points={points}
                 fill="none"
@@ -89,9 +83,9 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
                 strokeWidth={2}
                 strokeLinejoin="round"
                 strokeLinecap="round"
-                style={{ filter: "url(#glow)" }}
+                style={{ filter: "url(#input-glow)" }}
               />
-              {/* thin crisp outer line to make edge sharp */}
+              {/* Crisp outer line */}
               <polygon
                 points={points}
                 fill="none"
@@ -132,17 +126,17 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
         {data.label}
       </span>
 
-      {/* Handles for connections */}
+      {/* Handles for connections (แก้ไข left เป็น 50%) */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ ...hiddenHandleStyle, top: -8, left: "43.5%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         id="bottom"
         position={Position.Bottom}
-        style={{ ...hiddenHandleStyle, bottom: -8, left: "43.5%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }}
       />
     </div>
   );
