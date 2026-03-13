@@ -427,7 +427,7 @@ export const convertBackendFlowchart = (payload: any) => {
 
   // --- NEW: Shift input nodes horizontally to the left by a configurable amount ---
   // ปรับค่าตัวแปรนี้ถ้าต้องการเลื่อนมาก/น้อยขึ้น
-  const INPUT_SHIFT_X = -30; // negative -> move left, positive -> move right
+  const INPUT_SHIFT_X = -20; // negative -> move left, positive -> move right
   const MIN_X = 20; // clamp ไม่ให้ติดขอบซ้ายจนเกินไป
 
   positionedNodes.forEach((node, id) => {
