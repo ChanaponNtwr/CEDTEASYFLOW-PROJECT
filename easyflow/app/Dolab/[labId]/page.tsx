@@ -251,6 +251,7 @@ const FlowchartEditor = (props: Props) => {
           nodeTypes={nodeTypes}
           fitView={false}
           defaultViewport={{ x: 600, y: 150, zoom: 1 }}
+          nodeOrigin={[0.5, 0]}
         >
           <Background color="#aaa" gap={16} />
           <MiniMap style={{ height: 120 }} zoomable pannable />
