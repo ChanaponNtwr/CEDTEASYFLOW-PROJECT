@@ -81,7 +81,6 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
           {/* highlight overlay: same shape, stroke-only, glow */}
           {highlighted && (
             <>
-              {/* thicker stroke for solid outline */}
               <polygon
                 points={points}
                 fill="none"
@@ -91,7 +90,6 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
                 strokeLinecap="round"
                 style={{ filter: "url(#glow)" }}
               />
-              {/* thin crisp outer line to make edge sharp */}
               <polygon
                 points={points}
                 fill="none"
@@ -132,17 +130,17 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
         {data.label}
       </span>
 
-      {/* Handles for connections ชดเชยด้วย -skew/2 (-10px) เพื่อให้อยู่กึ่งกลางรูปทรงพอดี */}
+      {/* Handles for connections (ตั้งค่า 50% กึ่งกลางกล่อง) */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ ...hiddenHandleStyle, top: -8, left: `calc(50% - ${skew / 2}px)`, transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "50%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         id="bottom"
         position={Position.Bottom}
-        style={{ ...hiddenHandleStyle, bottom: -8, left: `calc(50% - ${skew / 2}px)`, transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }}
       />
     </div>
   );
