@@ -37,6 +37,7 @@ const generateDefaultFlowchart = () => {
     data: { label: "Start" },
     sourcePosition: "bottom" as any,
     targetPosition: "top" as any,
+    origin: [0.5, 0], // <--- เพิ่มตรงนี้ เพื่อให้ X:300 คือจุดกึ่งกลาง
   };
 
   const endNode: Node = {
@@ -46,6 +47,7 @@ const generateDefaultFlowchart = () => {
     data: { label: "End" },
     sourcePosition: "bottom" as any,
     targetPosition: "top" as any,
+    origin: [0.5, 0], // <--- เพิ่มตรงนี้ เพื่อให้ X:300 คือจุดกึ่งกลาง
   };
 
   const defaultEdge: Edge = {
@@ -129,6 +131,7 @@ export const convertBackendFlowchart = (payload: any) => {
       draggable: false,
       sourcePosition: "bottom" as any,
       targetPosition: "top" as any,
+      origin: [0.5, 0], // <--- เพิ่มตรงนี้ เพื่อให้ทุก Node จาก API มีจุดกึ่งกลางที่ X เดียวกัน
     };
 
     nodesMap.set(newId, frontEndNode);
