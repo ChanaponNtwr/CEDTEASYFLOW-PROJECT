@@ -425,15 +425,21 @@ export const convertBackendFlowchart = (payload: any) => {
     shiftAllBreakpointsInBranch(falseChild, 0);
   });
 
-  // --- NEW: Shift input nodes horizontally to the left by a configurable amount ---
-  // ปรับค่าตัวแปรนี้ถ้าต้องการเลื่อนมาก/น้อยขึ้น
+  // --- NEW: Shift input/output nodes horizontally by configurable amounts ---
+  // ปรับค่าตัวแปรเหล่านี้ถ้าต้องการเลื่อนมาก/น้อยขึ้น
   const INPUT_SHIFT_X = -20; // negative -> move left, positive -> move right
+  const OUTPUT_SHIFT_X = -20; // negative -> move left, positive -> move right
   const MIN_X = 20; // clamp ไม่ให้ติดขอบซ้ายจนเกินไป
 
   positionedNodes.forEach((node, id) => {
-    if (node && node.position && node.type === "input") {
-      const newX = (node.position.x || 0) + INPUT_SHIFT_X;
-      node.position.x = Math.max(MIN_X, newX);
+    if (node && node.position) {
+      if (node.type === "input") {
+        const newX = (node.position.x || 0) + INPUT_SHIFT_X;
+        node.position.x = Math.max(MIN_X, newX);
+      } else if (node.type === "output") {
+        const newX = (node.position.x || 0) + OUTPUT_SHIFT_X;
+        node.position.x = Math.max(MIN_X, newX);
+      }
     }
   });
 
