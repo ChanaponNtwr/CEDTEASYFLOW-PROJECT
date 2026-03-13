@@ -13,7 +13,7 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
   const baseWidth = 180;
   const baseHeight = 50;
   const padding = 30;
-  const skew = 10; // ค่าความเอียง
+  const skew = 20; // ค่าความเอียง
   const [width, setWidth] = useState(baseWidth);
 
   const textRef = useRef<HTMLSpanElement>(null);
@@ -134,13 +134,13 @@ const InputNodeComponent: React.FC<Props> = ({ data }) => {
       <Handle
         type="target"
         position={Position.Top}
-        style={{ ...hiddenHandleStyle, top: -8, left: "38%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "36%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         id="bottom"
         position={Position.Bottom}
-        style={{ ...hiddenHandleStyle, bottom: -8, left: "38%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "36%", transform: "translateX(-50%)" }}
       />
     </div>
   );
