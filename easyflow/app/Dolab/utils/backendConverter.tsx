@@ -25,7 +25,7 @@ const mapBackendTypeToNodeType = (backendType?: string, label?: string) => {
   return TYPE_MAP[backendType.toUpperCase()] ?? "assign";
 };
 
-// ✅ ฟังก์ชันสร้าง Default Flowchart (Start -> End)
+// Default graph (fallback)
 const generateDefaultFlowchart = () => {
   const startNode: Node = {
     id: "start",
@@ -62,7 +62,7 @@ const generateDefaultFlowchart = () => {
 };
 
 export const convertBackendFlowchart = (payload: any) => {
-  // --- Robust parsing ---
+  // --- Parse backend structures robustly ---
   let backendNodes: any[] = [];
   let backendEdges: any[] = [];
 
@@ -109,7 +109,7 @@ export const convertBackendFlowchart = (payload: any) => {
     nodesMap.set(newId, frontEndNode);
   });
 
-  // --- outgoing / incoming / adjacency ---
+  // --- adjacency, outgoing/incoming maps ---
   const outgoingBySource = new Map<string, Array<{ targetId: string; condition?: string; edgeId?: string }>>();
   const addOutgoing = (s: string, t: string, condition?: string, edgeId?: string) => {
     if (!outgoingBySource.has(s)) outgoingBySource.set(s, []);
@@ -138,8 +138,11 @@ export const convertBackendFlowchart = (payload: any) => {
     if (adj.has(source)) adj.get(source)!.push(target);
   });
 
-  // --- Layout constants ---
-  const WHILE_TRUE_X_OFFSET = 250;
+  // --- Layout constants (tweak these to make "heavier" offsets) ---
+  const BREAKPOINT_X_OFFSET = 180; // <-- เพิ่มให้หนักขึ้น (เลื่อนไกลขึ้น)
+  const BREAKPOINT_CENTER_OFFSET = 120; // center-ish but still offset some
+  const BRANCH_X_OFFSET = 250;
+  const WHILE_TRUE_X_OFFSET = 300;
   const WHILE_FALSE_Y_SHIFT = 10;
   const FOR_FALSE_Y_SHIFT = 60;
   const NODE_HEIGHT_ESTIMATE = 60;
@@ -201,14 +204,16 @@ export const convertBackendFlowchart = (payload: any) => {
     return maxDepth;
   };
 
-  // --- Position calculators (BREAKPOINTS : center on parent's X) ---
+  // --- Position calculators (breakpoint now offset more strongly) ---
   const computeIfChildPos = (childId: string, baseX: number, baseY: number, direction: 'right' | 'left' | 'center') => {
     const childNode = nodesMap.get(childId);
-    // If child is a breakpoint, **center it under parent** (same x) and keep y at next-step (no large offset)
+    // If child is a breakpoint, give it a strong lateral offset (so it's visually "heavy")
     if (childNode && childNode.type === 'breakpoint') {
-      return { x: baseX, y: baseY + stepY };
+      if (direction === 'right') return { x: baseX + BREAKPOINT_X_OFFSET, y: baseY + stepY };
+      if (direction === 'left') return { x: baseX - BREAKPOINT_X_OFFSET, y: baseY + stepY };
+      return { x: baseX + BREAKPOINT_CENTER_OFFSET, y: baseY + stepY };
     }
-    const x = direction === 'right' ? baseX + 250 : direction === 'left' ? baseX - 250 : baseX;
+    const x = direction === 'right' ? baseX + BRANCH_X_OFFSET : direction === 'left' ? baseX - BRANCH_X_OFFSET : baseX;
     const y = baseY + stepY;
     return { x, y };
   };
@@ -216,7 +221,9 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeWhileChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
-      return { x: baseX, y: baseY + stepY };
+      if (dir === 'true') return { x: baseX + BREAKPOINT_X_OFFSET, y: baseY + stepY };
+      if (dir === 'false') return { x: baseX - BREAKPOINT_CENTER_OFFSET, y: baseY + stepY + WHILE_FALSE_Y_SHIFT };
+      return { x: baseX + BREAKPOINT_CENTER_OFFSET, y: baseY + stepY };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY + WHILE_FALSE_Y_SHIFT };
@@ -226,7 +233,9 @@ export const convertBackendFlowchart = (payload: any) => {
   const computeForChildPos = (childId: string, baseX: number, baseY: number, dir: 'true' | 'false' | 'center') => {
     const childNode = nodesMap.get(childId);
     if (childNode && childNode.type === 'breakpoint') {
-      return { x: baseX, y: baseY + stepY };
+      if (dir === 'true') return { x: baseX + BREAKPOINT_X_OFFSET, y: baseY + stepY };
+      if (dir === 'false') return { x: baseX - BREAKPOINT_CENTER_OFFSET, y: baseY + stepY };
+      return { x: baseX + BREAKPOINT_CENTER_OFFSET, y: baseY + stepY };
     }
     if (dir === 'true') return { x: baseX + WHILE_TRUE_X_OFFSET, y: baseY + stepY };
     if (dir === 'false') return { x: baseX, y: baseY + stepY };
@@ -243,7 +252,7 @@ export const convertBackendFlowchart = (payload: any) => {
     const node = nodesMap.get(nodeId);
     if (!node) continue;
 
-    // center node horizontally if multiple parents
+    // If multiple parents, center on average X
     let finalX = x;
     const incoming = incomingByTarget.get(nodeId) || [];
     if (incoming.length > 1) {
@@ -281,7 +290,6 @@ export const convertBackendFlowchart = (payload: any) => {
         const pos = computeWhileChildPos(trueChild, finalX, y, 'true');
         enqueue(queue, visited, trueChild, pos.y, pos.x);
         if (falseChild) {
-          // schedule adjust for false branch later
           const trueBranchDepth = calculateBranchDepth(trueChild);
           const dynamicShift = trueBranchDepth * NODE_HEIGHT_ESTIMATE + WHILE_FALSE_Y_SHIFT;
           enqueue(queue, visited, falseChild, y + dynamicShift, finalX);
@@ -383,6 +391,22 @@ export const convertBackendFlowchart = (payload: any) => {
     }
 
     if (tgtNode) {
+      // for breakpoints we want the edge to target true/false handles that match the offset
+      if (tgtNode.type === 'breakpoint') {
+        if (condition === 'true') (edge as any).targetHandle = 'true';
+        else if (condition === 'false') (edge as any).targetHandle = 'false';
+        else {
+          // If we can't infer, pick handle by relative x to parent (if available)
+          if (srcNode && srcNode.position && tgtNode.position) {
+            if (tgtNode.position.x > srcNode.position.x) (edge as any).targetHandle = 'true';
+            else (edge as any).targetHandle = 'false';
+          } else {
+            (edge as any).targetHandle = 'true';
+          }
+        }
+      }
+
+      // while/for special targets
       if (tgtNode.type === 'while') {
         if (condition === 'true') setTarget('loop_in', { offset: 30 });
         else if (condition === 'false') setTarget('top');
@@ -397,24 +421,6 @@ export const convertBackendFlowchart = (payload: any) => {
         const isLoopBodyOut = (edge as any).sourceHandle === 'loop_body';
         if (isBackEdge || isLoopBodyOut) setTarget('loop_return', { offset: 30 });
         else setTarget('top');
-      }
-      if (tgtNode.type === 'breakpoint') {
-        if (condition === 'true') (edge as any).targetHandle = 'true';
-        else if (condition === 'false') (edge as any).targetHandle = 'false';
-        else {
-          const incomingToSource = incomingByTarget.get(srcId) || [];
-          const parentCondEntry = incomingToSource.find(ent => {
-            const c = String(ent.condition ?? "").toLowerCase();
-            return c === "true" || c === "false";
-          });
-          if (parentCondEntry && parentCondEntry.condition) {
-            (edge as any).targetHandle = String(parentCondEntry.condition).toLowerCase() === 'true' ? 'true' : 'false';
-          } else if (outgoingEntry && outsForSrc.length > 0) {
-            (edge as any).targetHandle = outgoingEntryIndex === 0 ? 'true' : 'false';
-          } else {
-            (edge as any).targetHandle = 'true';
-          }
-        }
       }
     }
   };
