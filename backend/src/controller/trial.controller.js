@@ -11,10 +11,28 @@ const router = express.Router();
 // In-memory map of trial sessions:
 // trialId -> { labId, labRow, flowchart, createdAt }
 const trialFlowcharts = new Map();
+const TRIAL_TTL_MS = 20 * 60 * 1000;
 
 /* ----------------------
    Helpers
    ---------------------- */
+
+function cleanupExpiredTrials() {
+  const now = Date.now();
+
+  for (const [trialId, trial] of trialFlowcharts.entries()) {
+
+    if (now - trial.createdAt > TRIAL_TTL_MS) {
+
+      trialFlowcharts.delete(trialId);
+
+      console.log(`Trial expired and removed: ${trialId}`);
+    }
+
+  }
+}
+// ---- changed: cleanup interval set to 20 minutes ----
+setInterval(cleanupExpiredTrials, 20 * 60 * 1000);
 
 function normalizeType(t) {
   if (!t) return "";
@@ -123,7 +141,8 @@ router.post("/start", async (req, res) => {
       labId: Number(labId),
       labRow,
       flowchart: fcSerialized,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      lastUsed: Date.now()
     });
 
     const shapeRemaining = computeUsageAndRemaining(fcSerialized, labRow);
