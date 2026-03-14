@@ -91,24 +91,40 @@ export default class Context {
     }
 
     set(name, value, varType) {
+
         for (let i = this._scopeStack.length - 1; i >= 0; i--) {
             const scope = this._scopeStack[i];
+
             if (Object.prototype.hasOwnProperty.call(scope, name)) {
                 scope[name].value = value;
+
                 scope[name].varType =
                     varType || scope[name].varType || Context._inferVarType(value);
+
                 this._syncVariables();
                 return;
             }
         }
 
+        throw new Error(`Variable '${name}' is not declared`);
+    }
+
+    declare(name, value = 0, varType) {
+
+        if (this.isDeclared(name)) {
+            throw new Error(`Variable '${name}' already declared`);
+        }
+
         const top = this._scopeStack[this._scopeStack.length - 1];
+
         top[name] = {
             value,
             varType: varType || Context._inferVarType(value)
         };
+
         this._syncVariables();
     }
+
 
     showAll() {
         return (this.variables || [])
@@ -152,4 +168,9 @@ export default class Context {
             console.warn("Context.restore failed:", e);
         }
     }
+
+    isDeclared(name) {
+        return this.variables.some(v => v.name === name);
+    }
+
 }

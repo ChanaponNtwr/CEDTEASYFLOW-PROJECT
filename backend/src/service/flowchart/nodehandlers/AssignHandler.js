@@ -1,28 +1,31 @@
 export default function AssignHandler(node, context /*, flowchart */) {
+
   const varName = node?.data?.variable || node?.data?.name;
   const raw = node?.data?.value;
 
   if (!varName) return { nextCondition: "auto" };
 
+  /* ❗ CHECK DECLARE FIRST */
+  if (!context.isDeclared(varName)) {
+    throw new Error(`Variable '${varName}' is not declared before assignment`);
+  }
+
   /* ================= build env ================= */
 
   const env = {};
+
   context.variables.forEach(v => {
     let val = v.value;
 
-    // 🔥 FIX: auto-cast numeric strings
     if (typeof val === "string") {
       const s = val.trim();
 
-      // int
       if (/^[+-]?\d+$/.test(s)) {
         val = Number(s);
       }
-      // float
       else if (/^[+-]?\d*\.\d+$/.test(s) || /^[+-]?\d+\.\d*$/.test(s)) {
         val = Number(s);
       }
-      // boolean
       else if (s.toLowerCase() === "true") {
         val = true;
       }
@@ -40,31 +43,44 @@ export default function AssignHandler(node, context /*, flowchart */) {
   /* ================= evaluate ================= */
 
   let value;
+
   try {
+
     if (typeof raw !== "string") {
       value = raw;
-    } else {
+    }
+    else {
+
       const expr = raw.trim();
+
       if (expr === "") {
         value = "";
-      } else {
+      }
+      else {
         const fn = new Function(...names, `return (${expr});`);
         value = fn(...vals);
       }
+
     }
+
   } catch (e) {
+
     console.error(`❌ Assign eval error: ${raw}`, e.message);
-    return { nextCondition: "auto" };
+    throw new Error(`Invalid expression in Assign: ${raw}`);
+
   }
 
   /* ================= set result ================= */
 
   let varType;
+
   if (typeof value === "number") {
     varType = Number.isInteger(value) ? "int" : "float";
-  } else if (typeof value === "boolean") {
+  }
+  else if (typeof value === "boolean") {
     varType = "bool";
-  } else {
+  }
+  else {
     varType = "string";
   }
 

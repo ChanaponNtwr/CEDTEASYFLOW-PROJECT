@@ -7,6 +7,41 @@ const router = express.Router();
 
 const savedFlowcharts = new Map();
 
+/**
+ * Permission helper: ตรวจสอบว่า req (client) เป็นผู้สร้าง flowchart หรือไม่
+ * - รับ userId จาก req.body.userId หรือ req.query.userId
+ * - ถ้าไม่มี userId จะ throw error status 400
+ * - ถ้า userId != flowchart.userId จะ throw error status 403
+ *
+ * หมายเหตุ: ถ้าคุณใช้ระบบ auth แบบ JWT ให้เปลี่ยนให้ assertFlowchartOwner อ่านจาก req.user.id แทนการให้ client ส่ง userId
+ */
+function assertFlowchartOwner(req, flowchart) {
+  const userId = req.body?.userId ?? req.query?.userId;
+
+  if (!userId) {
+    const err = new Error("Missing userId for permission check.");
+    err.status = 400;
+    throw err;
+  }
+
+  if (Number(userId) !== Number(flowchart.userId)) {
+    const err = new Error("สามารถแก้ไข Flowchart ได้เฉพาะผู้สร้าง Flowchart เท่านั้น");
+    err.status = 403;
+    throw err;
+  }
+}
+
+/**
+ * ตรวจสอบว่า userId ใน request ตรงกับเจ้าของ flowchart หรือไม่
+ * คืนค่า true = เป็นเจ้าของ, false = ไม่ใช่เจ้าของ
+ * ถ้าไม่มี userId ใน request คืนค่า false
+ */
+function isFlowchartOwner(req, flowchart) {
+  const userId = req.body?.userId ?? req.query?.userId;
+  if (!userId) return false;
+  return Number(userId) === Number(flowchart.userId);
+}
+
 function normalizeList(maybe) {
   if (!maybe) return [];
   if (Array.isArray(maybe)) return maybe;
@@ -223,13 +258,6 @@ function computeDiffs(before = { nodes: [], edges: [] }, after = { nodes: [], ed
 
 /**
  * Helper: compute shape limits for a lab.
- * Priority:
- *  1) If lab.problemSolving contains JSON with shapeConfig and a key for the short type, use that.
- *     Accept numeric or string "unlimited" (case-insensitive).
- *  2) Else fallback to lab.<field> (e.g. lab.declareSymVal).
- *  3) If value is "unlimited" or equals the string 'unlimited', return Infinity.
- *
- * Returns an object keyed by shape short-codes -> number | Infinity
  */
 function computeShapeLimitFromLab(lab) {
   const mapping = {
@@ -269,7 +297,6 @@ function computeShapeLimitFromLab(lab) {
       }
     }
 
-    // interpret strings "unlimited"
     if (typeof val === "string") {
       if (String(val).trim().toLowerCase() === "unlimited") {
         shapeLimit[key] = Infinity;
@@ -290,7 +317,6 @@ function computeShapeLimitFromLab(lab) {
       continue;
     }
 
-    // default: PH and start/end unlimited; others default 0
     if (key === "PH" || key === "ST" || key === "EN") shapeLimit[key] = Infinity;
     else shapeLimit[key] = 0;
   }
@@ -299,10 +325,12 @@ function computeShapeLimitFromLab(lab) {
 }
 
 /* -------------------------
-   ROUTES (unchanged behavior,
-   but shape-limit logic uses helper)
+   ROUTES
    ------------------------- */
 
+// ─────────────────────────────────────────────
+// POST /create  →  เจ้าของเท่านั้น
+// ─────────────────────────────────────────────
 router.post("/create", async (req, res) => {
   try {
     let raw = req.body;
@@ -322,21 +350,13 @@ router.post("/create", async (req, res) => {
     });
     const submissionLocked = Boolean(confirmedSubmission);
 
-    // =========================
-    // 🔎 CHECK EXISTING FLOWCHART
-    // =========================
     const existingFC = await prisma.flowchart.findFirst({
       where: { userId, labId }
     });
 
-    /**
-     * ✅ ถ้ามีอยู่แล้ว และไม่ overwrite
-     * → ดึงของเดิมกลับไปใช้
-     */
     if (existingFC && !overwrite) {
       const hydrated = hydrateFlowchart(existingFC.content);
       const serialized = serializeFlowchart(hydrated);
-
       savedFlowcharts.set(existingFC.flowchartId, existingFC.content);
 
       return res.json({
@@ -349,9 +369,16 @@ router.post("/create", async (req, res) => {
       });
     }
 
-    // =========================
-    // 🆕 CREATE / OVERWRITE
-    // =========================
+    // ถ้า overwrite ต้องเป็นเจ้าของเท่านั้น
+    if (existingFC && overwrite) {
+      if (Number(existingFC.userId) !== Number(userId)) {
+        return res.status(403).json({
+          ok: false,
+          error: "สามารถแก้ไข Flowchart ได้เฉพาะผู้สร้าง Flowchart เท่านั้น"
+        });
+      }
+    }
+
     const fcPayload = {
       nodes: [
         {
@@ -385,13 +412,11 @@ router.post("/create", async (req, res) => {
 
     let newFC;
     if (existingFC && overwrite) {
-      // 🔁 overwrite ของเดิม
       newFC = await prisma.flowchart.update({
         where: { flowchartId: existingFC.flowchartId },
         data: { content: fcPayload }
       });
     } else {
-      // 🆕 สร้างใหม่
       newFC = await prisma.flowchart.create({
         data: { userId, labId, content: fcPayload }
       });
@@ -417,7 +442,9 @@ router.post("/create", async (req, res) => {
   }
 });
 
-
+// ─────────────────────────────────────────────
+// POST /insert-node  →  เจ้าของเท่านั้น
+// ─────────────────────────────────────────────
 router.post("/insert-node", async (req, res) => {
   try {
     let raw = req.body;
@@ -433,7 +460,6 @@ router.post("/insert-node", async (req, res) => {
     if (!edgeId) return res.status(400).json({ ok: false, error: "Missing 'edgeId'." });
     if (!nodeSpec || typeof nodeSpec !== "object") return res.status(400).json({ ok: false, error: "Missing 'node' object." });
 
-    // load cached or DB
     let saved = savedFlowcharts.get(flowchartId);
     let fcFromDB = null;
 
@@ -447,33 +473,32 @@ router.post("/insert-node", async (req, res) => {
       if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
     }
 
-    // submission lock
+    // 🔐 เจ้าของเท่านั้นที่ insert node ได้
+    try {
+      assertFlowchartOwner(req, fcFromDB);
+    } catch (err) {
+      return res.status(err.status || 403).json({ ok: false, error: err.message });
+    }
+
+    // 🔒 submission lock
     const confirmedSubmission = await prisma.submission.findFirst({
-      where: {
-        userId: fcFromDB.userId,
-        labId: fcFromDB.labId,
-        status: "CONFIRMED"
-      }
+      where: { userId: fcFromDB.userId, labId: fcFromDB.labId, status: "CONFIRMED" }
     });
     if (confirmedSubmission) {
       return res.status(403).json({ ok: false, error: "This lab has already been confirmed by instructor. Flowchart is read-only." });
     }
 
-    // hydrate flowchart
     const fc = hydrateFlowchart(saved);
 
-    // check edge exists
     if (!fc.getEdge(edgeId)) return res.status(400).json({ ok: false, error: `Edge '${edgeId}' not found in flowchart.` });
 
     const typ = normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH");
 
-    // load lab config (for shape limits)
     const lab = await prisma.lab.findUnique({ where: { labId: fcFromDB.labId } });
     if (!lab) return res.status(404).json({ ok: false, error: "Lab config not found." });
 
     const shapeLimit = computeShapeLimitFromLab(lab);
 
-    // count used BEFORE insertion
     const fcNodesBefore = Object.values(fc.nodes || {});
     const usedCountBefore = {};
     for (const key of Object.keys(shapeLimit)) usedCountBefore[key] = 0;
@@ -482,7 +507,6 @@ router.post("/insert-node", async (req, res) => {
       if (usedCountBefore[nodeType] !== undefined) usedCountBefore[nodeType]++;
     }
 
-    // limit check (honor Infinity/unlimited)
     if (shapeLimit[typ] !== Infinity && usedCountBefore[typ] >= shapeLimit[typ]) {
       return res.status(409).json({
         ok: false,
@@ -492,60 +516,55 @@ router.post("/insert-node", async (req, res) => {
       });
     }
 
-    // DC conflict check (same as before)
     if (typ === "DC") {
       const declaredNames = [];
       const d = nodeSpec.data || {};
-      if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
-      if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
+      if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim().toLowerCase());
+      if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim().toLowerCase());
       if (Array.isArray(d.names)) {
-        for (const nm of d.names) if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
+        for (const nm of d.names) {
+          if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim().toLowerCase());
+        }
       }
-
       const uniqueNames = [...new Set(declaredNames)];
 
       if (uniqueNames.length > 0 && !force) {
         const conflicts = [];
-        const nodesArr = saved.nodes || [];
+        const nodesArr = Object.values(fc.nodes || {});
         for (const n of nodesArr) {
-          if (!n || !n.id) continue;
           const nodeType = normalizeType(n.type ?? n.typeShort ?? n.typeFull ?? "");
           if (nodeType !== "DC") continue;
           const nd = n.data || {};
           const existingNames = [];
-          if (typeof nd.name === "string" && nd.name.trim()) existingNames.push(nd.name.trim());
-          if (typeof nd.varName === "string" && nd.varName.trim()) existingNames.push(nd.varName.trim());
+          if (typeof nd.name === "string" && nd.name.trim()) existingNames.push(nd.name.trim().toLowerCase());
+          if (typeof nd.varName === "string" && nd.varName.trim()) existingNames.push(nd.varName.trim().toLowerCase());
           if (Array.isArray(nd.names)) {
-            for (const nm of nd.names) if (typeof nm === "string" && nm.trim()) existingNames.push(nm.trim());
+            for (const nm of nd.names) {
+              if (typeof nm === "string" && nm.trim()) existingNames.push(nm.trim().toLowerCase());
+            }
           }
           for (const newName of uniqueNames) {
-            if (existingNames.includes(newName)) conflicts.push({ varName: newName, nodeId: n.id, foundIn: "declare" });
+            if (existingNames.includes(newName)) {
+              conflicts.push({ varName: newName, nodeId: n.id, foundIn: "declare" });
+            }
           }
         }
-
         if (conflicts.length > 0) {
           return res.status(409).json({ ok: false, error: "Variable already declared in this flowchart.", conflicts });
         }
       }
     }
 
-    // create new Node instance
     const nodeId = nodeSpec.id || (typeof fc.genId === "function" ? fc.genId() : `n_${Date.now()}`);
     const newNode = new Node(
-      nodeId,
-      typ,
-      nodeSpec.label ?? "",
-      nodeSpec.data ?? {},
+      nodeId, typ, nodeSpec.label ?? "", nodeSpec.data ?? {},
       nodeSpec.position ?? { x: 0, y: 0 },
-      nodeSpec.incomingEdgeIds ?? [],
-      nodeSpec.outgoingEdgeIds ?? []
+      nodeSpec.incomingEdgeIds ?? [], nodeSpec.outgoingEdgeIds ?? []
     );
     if (nodeSpec.loopEdge) newNode.loopEdge = nodeSpec.loopEdge;
     if (nodeSpec.loopExitEdge) newNode.loopExitEdge = nodeSpec.loopExitEdge;
 
     const beforeSerialized = serializeFlowchart(fc);
-
-    // perform insertion
     try {
       fc.insertNodeAtEdge(edgeId, newNode);
     } catch (err) {
@@ -555,13 +574,10 @@ router.post("/insert-node", async (req, res) => {
     const afterSerialized = serializeFlowchart(fc);
     const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
-    // persist new flowchart content
     savedFlowcharts.set(flowchartId, afterSerialized);
     await prisma.flowchart.update({ where: { flowchartId: Number(flowchartId) }, data: { content: afterSerialized } });
 
-    // --- compute shapeRemaining based on fc AFTER insertion ---
     const fcNodesAfter = Object.values(fc.nodes || {});
-    // compute used counts for keys in shapeLimit
     const usedCount = {};
     for (const k of Object.keys(shapeLimit)) usedCount[k] = 0;
     for (const n of fcNodesAfter) {
@@ -569,29 +585,19 @@ router.post("/insert-node", async (req, res) => {
       if (usedCount[t] !== undefined) usedCount[t]++;
     }
 
-    // build shapeRemaining with keys: PH, DC, AS, IF, FOR, WHILE, ST, EN
     const shapeRemaining = {};
     const keysMap = [
-      { out: "PH", in: "PH" },
-      { out: "DC", in: "DC" },
-      { out: "AS", in: "AS" },
-      { out: "IF", in: "IF" },
-      { out: "FOR", in: "FOR" },
-      // WH in computeShapeLimitFromLab -> map to WHILE in output
-      { out: "WHILE", in: "WH" },
-      { out: "ST", in: "ST" },
-      { out: "EN", in: "EN" }
+      { out: "PH", in: "PH" }, { out: "DC", in: "DC" }, { out: "AS", in: "AS" },
+      { out: "IF", in: "IF" }, { out: "FOR", in: "FOR" }, { out: "WHILE", in: "WH" },
+      { out: "ST", in: "ST" }, { out: "EN", in: "EN" }
     ];
-
     for (const mapping of keysMap) {
-      const outKey = mapping.out;
-      const inKey = mapping.in;
-      const lim = shapeLimit[inKey];
-      const used = usedCount[inKey] ?? 0;
+      const lim = shapeLimit[mapping.in];
+      const used = usedCount[mapping.in] ?? 0;
       if (lim === Infinity) {
-        shapeRemaining[outKey] = { limit: "unlimited", used, remaining: "unlimited" };
+        shapeRemaining[mapping.out] = { limit: "unlimited", used, remaining: "unlimited" };
       } else {
-        shapeRemaining[outKey] = { limit: lim, used, remaining: Math.max(lim - used, 0) };
+        shapeRemaining[mapping.out] = { limit: lim, used, remaining: Math.max(lim - used, 0) };
       }
     }
 
@@ -609,7 +615,9 @@ router.post("/insert-node", async (req, res) => {
   }
 });
 
-
+// ─────────────────────────────────────────────
+// DELETE /:id/node/:nodeId  →  เจ้าของเท่านั้น
+// ─────────────────────────────────────────────
 router.delete("/:id/node/:nodeId", async (req, res) => {
   try {
     const rawId = req.params.id;
@@ -618,55 +626,35 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
     if (!rawId) return res.status(400).json({ ok: false, error: "Missing flowchart id in path." });
     if (!nodeId) return res.status(400).json({ ok: false, error: "Missing nodeId in path." });
 
-    // normalize id
     const numId = Number(rawId);
     const mapKey = Number.isNaN(numId) ? String(rawId) : numId;
 
-    // =========================
-    // LOAD FLOWCHART + DB ROW
-    // =========================
     let saved = savedFlowcharts.get(mapKey);
     let fcFromDB = null;
 
     if (!saved) {
       const whereKey = Number.isNaN(numId) ? Number(rawId) : numId;
-      fcFromDB = await prisma.flowchart.findUnique({
-        where: { flowchartId: whereKey }
-      });
-
-      if (!fcFromDB) {
-        return res.status(404).json({ ok: false, error: "Flowchart not found" });
-      }
-
+      fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: whereKey } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: "Flowchart not found" });
       saved = fcFromDB.content;
-
       const cacheKey = Number(fcFromDB.flowchartId);
-      savedFlowcharts.set(
-        Number.isNaN(cacheKey) ? String(fcFromDB.flowchartId) : cacheKey,
-        saved
-      );
+      savedFlowcharts.set(Number.isNaN(cacheKey) ? String(fcFromDB.flowchartId) : cacheKey, saved);
     } else {
-      // cache hit → still need DB row for lock check
-      fcFromDB = await prisma.flowchart.findUnique({
-        where: { flowchartId: Number(mapKey) }
-      });
-
-      if (!fcFromDB) {
-        return res.status(404).json({ ok: false, error: "Flowchart not found" });
-      }
+      fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: Number(mapKey) } });
+      if (!fcFromDB) return res.status(404).json({ ok: false, error: "Flowchart not found" });
     }
 
-    // =========================
-    // 🔒 SUBMISSION LOCK
-    // =========================
-    const confirmedSubmission = await prisma.submission.findFirst({
-      where: {
-        userId: fcFromDB.userId,
-        labId: fcFromDB.labId,
-        status: "CONFIRMED"
-      }
-    });
+    // 🔐 เจ้าของเท่านั้นที่ลบ node ได้
+    try {
+      assertFlowchartOwner(req, fcFromDB);
+    } catch (err) {
+      return res.status(err.status || 403).json({ ok: false, error: err.message });
+    }
 
+    // 🔒 submission lock
+    const confirmedSubmission = await prisma.submission.findFirst({
+      where: { userId: fcFromDB.userId, labId: fcFromDB.labId, status: "CONFIRMED" }
+    });
     if (confirmedSubmission) {
       return res.status(403).json({
         ok: false,
@@ -674,107 +662,56 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
       });
     }
 
-    // =========================
-    // CHECK NODE EXISTS
-    // =========================
     const nodeExists = (saved.nodes || []).some(n => n.id === nodeId);
-    if (!nodeExists) {
-      return res.status(404).json({ ok: false, error: "Node not found" });
-    }
+    if (!nodeExists) return res.status(404).json({ ok: false, error: "Node not found" });
 
-    // =========================
-    // EXTRACT DECLARED VARIABLES
-    // =========================
     const deletedNodeRaw = (saved.nodes || []).find(n => n.id === nodeId) || null;
     const declaredNames = [];
-
     if (deletedNodeRaw) {
-      const nodeType = normalizeType(
-        deletedNodeRaw.type ??
-        deletedNodeRaw.typeShort ??
-        deletedNodeRaw.typeFull ??
-        ""
-      );
-
+      const nodeType = normalizeType(deletedNodeRaw.type ?? deletedNodeRaw.typeShort ?? deletedNodeRaw.typeFull ?? "");
       if (nodeType === "DC") {
         const d = deletedNodeRaw.data || {};
         if (typeof d.name === "string" && d.name.trim()) declaredNames.push(d.name.trim());
         if (typeof d.varName === "string" && d.varName.trim()) declaredNames.push(d.varName.trim());
         if (Array.isArray(d.names)) {
-          for (const nm of d.names) {
-            if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
-          }
+          for (const nm of d.names) if (typeof nm === "string" && nm.trim()) declaredNames.push(nm.trim());
         }
       }
     }
-
     const uniqueDeclaredNames = [...new Set(declaredNames)];
 
-    // =========================
-    // REMOVE NODE
-    // =========================
     const fcBefore = hydrateFlowchart(saved);
     const beforeSerialized = serializeFlowchart(fcBefore);
 
     try {
       fcBefore.removeNode(nodeId);
     } catch (err) {
-      return res.status(400).json({
-        ok: false,
-        error: `Failed to remove node: ${String(err.message ?? err)}`
-      });
+      return res.status(400).json({ ok: false, error: `Failed to remove node: ${String(err.message ?? err)}` });
     }
 
     const afterSerialized = serializeFlowchart(fcBefore);
-
-    // sanity check
     try {
       hydrateFlowchart(afterSerialized);
     } catch (err) {
-      return res.status(400).json({
-        ok: false,
-        error: `Graph invalid after removal: ${String(err.message ?? err)}`
-      });
+      return res.status(400).json({ ok: false, error: `Graph invalid after removal: ${String(err.message ?? err)}` });
     }
 
     const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
-    // =========================
-    // SAVE DB + CACHE
-    // =========================
-    await prisma.flowchart.update({
-      where: { flowchartId: Number(fcFromDB.flowchartId) },
-      data: { content: afterSerialized }
-    });
-
+    await prisma.flowchart.update({ where: { flowchartId: Number(fcFromDB.flowchartId) }, data: { content: afterSerialized } });
     savedFlowcharts.set(mapKey, afterSerialized);
 
-    // =========================
-    // CLEAN EXECUTOR STATES
-    // =========================
     if (uniqueDeclaredNames.length > 0) {
       for (const [k, v] of savedFlowcharts.entries()) {
         try {
-          if (
-            String(k).startsWith("executorState_") &&
-            v &&
-            typeof v === "object" &&
-            v.executor
-          ) {
+          if (String(k).startsWith("executorState_") && v && typeof v === "object" && v.executor) {
             const es = v.executor;
-
             if (es.context && Array.isArray(es.context.variables)) {
-              es.context.variables = es.context.variables.filter(
-                v => !uniqueDeclaredNames.includes(String(v.name))
-              );
+              es.context.variables = es.context.variables.filter(v => !uniqueDeclaredNames.includes(String(v.name)));
             }
-
             if (es.lastNode && Array.isArray(es.lastNode.variables)) {
-              es.lastNode.variables = es.lastNode.variables.filter(
-                v => !uniqueDeclaredNames.includes(String(v.name))
-              );
+              es.lastNode.variables = es.lastNode.variables.filter(v => !uniqueDeclaredNames.includes(String(v.name)));
             }
-
             savedFlowcharts.set(k, v);
           }
         } catch (e) {
@@ -783,12 +720,7 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
       }
     }
 
-    return res.json({
-      ok: true,
-      message: `Node ${nodeId} removed`,
-      flowchartId: fcFromDB.flowchartId,
-      diffs
-    });
+    return res.json({ ok: true, message: `Node ${nodeId} removed`, flowchartId: fcFromDB.flowchartId, diffs });
 
   } catch (err) {
     console.error("delete node error:", err);
@@ -796,6 +728,9 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────
+// GET /:flowchartId/shapes/remaining  →  ทุกคนดูได้
+// ─────────────────────────────────────────────
 router.get("/:flowchartId/shapes/remaining", async (req, res) => {
   try {
     const flowchartId = Number(req.params.flowchartId);
@@ -808,7 +743,6 @@ router.get("/:flowchartId/shapes/remaining", async (req, res) => {
     if (!lab) return res.status(404).json({ ok: false, error: "Lab config not found." });
 
     const shapeLimit = computeShapeLimitFromLab(lab);
-
     const fc = hydrateFlowchart(fcFromDB.content);
     const fcNodes = Object.values(fc.nodes || {});
     const usedCount = {};
@@ -836,9 +770,9 @@ router.get("/:flowchartId/shapes/remaining", async (req, res) => {
   }
 });
 
-
-// GET flowchart list for user profile (lightweight)
-// Place BEFORE router.get("/:id", ...)
+// ─────────────────────────────────────────────
+// GET /by-user  →  ทุกคนดูได้ (lightweight list)
+// ─────────────────────────────────────────────
 router.get("/by-user", async (req, res) => {
   try {
     const userId = Number(req.query.userId);
@@ -846,7 +780,6 @@ router.get("/by-user", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing 'userId' query parameter." });
     }
 
-    // get all flowcharts of user (only metadata)
     const flowcharts = await prisma.flowchart.findMany({
       where: { userId },
       select: {
@@ -858,15 +791,10 @@ router.get("/by-user", async (req, res) => {
       orderBy: { createdAt: "desc" }
     });
 
-    // find confirmed submissions for this user
     const confirmed = await prisma.submission.findMany({
-      where: {
-        userId,
-        status: "CONFIRMED"
-      },
+      where: { userId, status: "CONFIRMED" },
       select: { labId: true }
     });
-
     const confirmedLabIds = new Set(confirmed.map(r => Number(r.labId)));
 
     const result = flowcharts.map(fc => ({
@@ -876,10 +804,7 @@ router.get("/by-user", async (req, res) => {
       submissionLocked: confirmedLabIds.has(Number(fc.labId))
     }));
 
-    return res.json({
-      ok: true,
-      flowcharts: result
-    });
+    return res.json({ ok: true, flowcharts: result });
 
   } catch (err) {
     console.error("by-user error:", err);
@@ -887,6 +812,9 @@ router.get("/by-user", async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────
+// GET /:id  →  ทุกคนดูได้
+// ─────────────────────────────────────────────
 router.get("/:id", async (req, res) => {
   try {
     const idParam = req.params.id;
@@ -899,37 +827,33 @@ router.get("/:id", async (req, res) => {
       fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: parsed } });
     }
     if (!fcFromDB) {
-      try {
-        fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: idParam } });
-      } catch (e) {}
+      try { fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId: idParam } }); } catch (e) {}
     }
+    if (!fcFromDB) return res.status(404).json({ ok: false, error: `Flowchart '${idParam}' not found.` });
 
-    if (!fcFromDB) {
-      return res.status(404).json({ ok: false, error: `Flowchart '${idParam}' not found.` });
-    }
-
-    // 🔒 check submission lock
     const confirmedSubmission = await prisma.submission.findFirst({
-      where: {
-        userId: fcFromDB.userId,
-        labId: fcFromDB.labId,
-        status: "CONFIRMED"
-      }
+      where: { userId: fcFromDB.userId, labId: fcFromDB.labId, status: "CONFIRMED" }
     });
     const submissionLocked = Boolean(confirmedSubmission);
 
     const saved = fcFromDB.content;
-
     const mapKey = Number(fcFromDB.flowchartId);
     savedFlowcharts.set(Number.isNaN(mapKey) ? String(fcFromDB.flowchartId) : mapKey, saved);
 
     const fc = hydrateFlowchart(saved);
     const serialized = serializeFlowchart(fc);
 
+    // แจ้ง client ว่า userId ที่ส่งมาเป็นเจ้าของหรือไม่
+    const requestUserId = req.query.userId ?? req.body?.userId;
+    const isOwner = requestUserId
+      ? Number(requestUserId) === Number(fcFromDB.userId)
+      : false;
+
     return res.json({
       ok: true,
       flowchartId: fcFromDB.flowchartId,
       submissionLocked,
+      isOwner,           // ← client ใช้ flag นี้แสดง/ซ่อน UI สำหรับ edit
       flowchart: serialized,
       raw: saved
     });
@@ -939,14 +863,13 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────
+// GET /:id/edges  →  ทุกคนดูได้
+// ─────────────────────────────────────────────
 router.get("/:id/edges", async (req, res) => {
   try {
     const { id } = req.params;
-
-    const edges = await prisma.edge.findMany({
-      where: { flowchartId: parseInt(id) },
-    });
-
+    const edges = await prisma.edge.findMany({ where: { flowchartId: parseInt(id) } });
     return res.json({ ok: true, edges });
   } catch (err) {
     console.error("GET /:id/edges error:", err);
@@ -954,13 +877,13 @@ router.get("/:id/edges", async (req, res) => {
   }
 });
 
-// Update node data (with variable-name conflict check for Declare nodes)
+// ─────────────────────────────────────────────
+// PUT /:flowchartId/node/:nodeId  →  เจ้าของเท่านั้น
+// ─────────────────────────────────────────────
 router.put("/:flowchartId/node/:nodeId", async (req, res) => {
   try {
     let raw = req.body;
-    if (typeof raw === "string") {
-      try { raw = JSON.parse(raw); } catch (e) {}
-    }
+    if (typeof raw === "string") { try { raw = JSON.parse(raw); } catch (e) {} }
     const body = raw || {};
 
     const flowchartId = Number(req.params.flowchartId);
@@ -969,7 +892,6 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
     if (!flowchartId) return res.status(400).json({ ok: false, error: "Missing flowchartId in path." });
     if (!nodeId) return res.status(400).json({ ok: false, error: "Missing nodeId in path." });
 
-    // โหลดจาก memory หรือ DB
     let saved = savedFlowcharts.get(flowchartId);
     let fcFromDB = null;
 
@@ -979,20 +901,21 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
       saved = fcFromDB.content;
       savedFlowcharts.set(flowchartId, saved);
     } else {
-      // ถ้ามีใน memory ยังต้องโหลด DB เพื่อรู้ userId / labId
       fcFromDB = await prisma.flowchart.findUnique({ where: { flowchartId } });
       if (!fcFromDB) return res.status(404).json({ ok: false, error: `flowchartId '${flowchartId}' not found.` });
     }
 
-    // 🔒 SUBMISSION LOCK (CONFIRMED = แก้ไม่ได้)
-    const confirmedSubmission = await prisma.submission.findFirst({
-      where: {
-        userId: fcFromDB.userId,
-        labId: fcFromDB.labId,
-        status: "CONFIRMED"
-      }
-    });
+    // 🔐 เจ้าของเท่านั้นที่แก้ node ได้
+    try {
+      assertFlowchartOwner(req, fcFromDB);
+    } catch (err) {
+      return res.status(err.status || 403).json({ ok: false, error: err.message });
+    }
 
+    // 🔒 submission lock
+    const confirmedSubmission = await prisma.submission.findFirst({
+      where: { userId: fcFromDB.userId, labId: fcFromDB.labId, status: "CONFIRMED" }
+    });
     if (confirmedSubmission) {
       return res.status(403).json({
         ok: false,
@@ -1000,14 +923,12 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
       });
     }
 
-    // hydrate
     const fc = hydrateFlowchart(saved);
     const beforeSerialized = serializeFlowchart(fc);
 
     const node = fc.getNode(nodeId);
     if (!node) return res.status(404).json({ ok: false, error: `Node '${nodeId}' not found in flowchart.` });
 
-    // type check (existing behavior)
     const rawType = body.type ?? body.typeShort ?? body.typeFull;
     if (!rawType) {
       return res.status(400).json({ ok: false, error: "Missing 'type' in request body. Provide node type for validation." });
@@ -1020,7 +941,6 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
       });
     }
 
-    // data validate (existing behavior)
     const newData = body.data;
     if (!newData || typeof newData !== "object") {
       return res.status(400).json({ ok: false, error: "Missing or invalid 'data' object in request body." });
@@ -1036,9 +956,6 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
       });
     }
 
-    // -------------------------
-    // Conflict detection: Declare node
-    // -------------------------
     const force = Boolean(body.force);
 
     if (node.type === "DC") {
@@ -1055,12 +972,10 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
         const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const conflicts = [];
         const nodesArr = saved.nodes || [];
-
         for (const varName of uniqueNames) {
           const wordRe = new RegExp(`\\b${escapeRegExp(varName)}\\b`, "i");
           for (const n of nodesArr) {
-            if (!n || !n.id) continue;
-            if (n.id === nodeId) continue;
+            if (!n || !n.id || n.id === nodeId) continue;
             if (n.label && typeof n.label === "string" && wordRe.test(n.label)) {
               conflicts.push({ varName, nodeId: n.id, label: n.label, foundIn: "label" });
               continue;
@@ -1073,18 +988,12 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
             } catch (e) {}
           }
         }
-
         if (conflicts.length > 0) {
-          return res.status(409).json({
-            ok: false,
-            error: "Variable name(s) already in use in this flowchart.",
-            conflicts
-          });
+          return res.status(409).json({ ok: false, error: "Variable name(s) already in use in this flowchart.", conflicts });
         }
       }
     }
 
-    // update
     try {
       node.updateData(newData);
     } catch (err) {
@@ -1095,29 +1004,24 @@ router.put("/:flowchartId/node/:nodeId", async (req, res) => {
     const diffs = computeDiffs(beforeSerialized, afterSerialized);
 
     savedFlowcharts.set(flowchartId, afterSerialized);
-    await prisma.flowchart.update({
-      where: { flowchartId },
-      data: { content: afterSerialized }
-    });
+    await prisma.flowchart.update({ where: { flowchartId }, data: { content: afterSerialized } });
 
-    return res.json({
-      ok: true,
-      message: `Node ${nodeId} updated`,
-      flowchartId,
-      diffs
-    });
+    return res.json({ ok: true, message: `Node ${nodeId} updated`, flowchartId, diffs });
+
   } catch (err) {
     console.error("update-node error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
-// (ผมไม่ได้แก้ส่วน execute/step/reset/resume — คงพฤติกรรมเดิม)
+// ─────────────────────────────────────────────
+// POST /execute  →  ทุกคนรันได้ (ไม่ต้องเป็นเจ้าของ)
+// ─────────────────────────────────────────────
 router.post("/execute", async (req, res) => {
   try {
     let raw = req.body;
     if (typeof raw === "string") {
-      try { raw = JSON.parse(raw); } catch (e) { /* keep raw */ }
+      try { raw = JSON.parse(raw); } catch (e) {}
     }
     const body = raw || {};
 
@@ -1130,7 +1034,6 @@ router.post("/execute", async (req, res) => {
     let saved = savedFlowcharts.get(fid);
     if (!saved) saved = savedFlowcharts.get(String(flowchartIdRaw));
 
-    // fallback: load from DB
     if (!saved) {
       const fcFromDB = await prisma.flowchart.findUnique({
         where: { flowchartId: isNaN(fid) ? Number(flowchartIdRaw) : fid }
@@ -1141,68 +1044,119 @@ router.post("/execute", async (req, res) => {
       savedFlowcharts.set(isNaN(mapKey) ? String(fcFromDB.flowchartId) : mapKey, saved);
     }
 
+    // ✅ ไม่มีการตรวจ owner ที่นี่ — ทุกคนรันได้
+
     const action = body.action ?? "run";
     const variables = body.variables;
     const options = body.options || {};
     const restoreState = body.restoreState || {};
     const forceAdvanceBP = Boolean(body.forceAdvanceBP);
 
-    // hydrate flowchart
     const fc = hydrateFlowchart(saved);
     const executor = new Executor(fc, options);
 
-    // restore executor state if provided in request.restoreState
-    if (restoreState && restoreState.context && Array.isArray(restoreState.context.variables)) {
-      for (const v of restoreState.context.variables) {
-        if (v && v.name) executor.context.set(v.name, v.value, v.varType);
+    function applyVariablesSafelyToContext(ctx, vars) {
+      if (!ctx || !vars) return;
+      if (Array.isArray(vars)) {
+        for (const v of vars) {
+          if (!v || !v.name) continue;
+          const name = v.name;
+          const value = ("value" in v) ? v.value : v;
+          const varType = v.varType;
+          try {
+            if (typeof ctx.isDeclared === "function" && ctx.isDeclared(name)) {
+              ctx.set(name, value, varType);
+            } else if (typeof ctx.declare === "function") {
+              ctx.declare(name, value, varType);
+            } else {
+              if (Array.isArray(ctx._scopeStack)) {
+                ctx._scopeStack[0] = ctx._scopeStack[0] || {};
+                ctx._scopeStack[0][name] = { value, varType: varType || Context._inferVarType?.(value) };
+                if (typeof ctx._syncVariables === "function") ctx._syncVariables();
+              }
+            }
+          } catch (e) {
+            try { if (typeof ctx.declare === "function") ctx.declare(name, value, varType); } catch (ee) {}
+          }
+        }
+        return;
+      }
+      if (vars && typeof vars === "object") {
+        for (const k of Object.keys(vars)) {
+          const raw = vars[k];
+          let value, varType;
+          if (raw && typeof raw === "object" && ("value" in raw || "varType" in raw)) {
+            value = raw.value; varType = raw.varType;
+          } else {
+            value = raw; varType = undefined;
+          }
+          try {
+            if (typeof ctx.isDeclared === "function" && ctx.isDeclared(k)) {
+              ctx.set(k, value, varType);
+            } else if (typeof ctx.declare === "function") {
+              ctx.declare(k, value, varType);
+            } else {
+              if (Array.isArray(ctx._scopeStack)) {
+                ctx._scopeStack[0] = ctx._scopeStack[0] || {};
+                ctx._scopeStack[0][k] = { value, varType: varType || Context._inferVarType?.(value) };
+                if (typeof ctx._syncVariables === "function") ctx._syncVariables();
+              }
+            }
+          } catch (e) {
+            try { if (typeof ctx.declare === "function") ctx.declare(k, value, varType); } catch (ee) {}
+          }
+        }
       }
     }
-    if (restoreState.currentNodeId) executor.currentNodeId = restoreState.currentNodeId;
-    if (typeof restoreState.finished === "boolean") executor.finished = restoreState.finished;
-    if (typeof restoreState.paused === "boolean") executor.paused = restoreState.paused;
-    if (typeof restoreState.stepCount === "number") executor.stepCount = restoreState.stepCount;
 
-    // If restoreState includes node internals, apply them onto hydrated flowchart nodes
-    if (restoreState.flowchartNodeInternal && typeof restoreState.flowchartNodeInternal === "object") {
+    if (restoreState && typeof restoreState === "object" && Object.keys(restoreState).length > 0) {
       try {
-        for (const nid of Object.keys(restoreState.flowchartNodeInternal)) {
-          const nodeState = restoreState.flowchartNodeInternal[nid];
-          const node = executor.flowchart.getNode(nid);
-          if (!node) continue;
-          // copy only safe properties
-          if ('_initialized' in nodeState) node._initialized = !!nodeState._initialized;
-          if ('_phase' in nodeState) node._phase = nodeState._phase;
-          if ('_loopCount' in nodeState) node._loopCount = Number(nodeState._loopCount) || 0;
-          if ('_scopePushed' in nodeState) node._scopePushed = !!nodeState._scopePushed;
-          if ('_initValue' in nodeState) node._initValue = nodeState._initValue;
+        if (typeof executor.restoreState === "function") {
+          executor.restoreState(restoreState);
+        } else {
+          if (restoreState.context && Array.isArray(restoreState.context.variables)) {
+            applyVariablesSafelyToContext(executor.context, restoreState.context.variables);
+            if (Array.isArray(restoreState.context.output)) executor.context.output = Array.from(restoreState.context.output);
+            if (Array.isArray(restoreState.context._scopeStack) && typeof executor.context.restore === "function") {
+              try { executor.context.restore({ scopeStack: restoreState.context._scopeStack, output: restoreState.context.output }); } catch (e) {}
+            }
+          }
+          if (restoreState.currentNodeId) executor.currentNodeId = restoreState.currentNodeId;
+          if (typeof restoreState.finished === "boolean") executor.finished = restoreState.finished;
+          if (typeof restoreState.paused === "boolean") executor.paused = restoreState.paused;
+          if (typeof restoreState.stepCount === "number") executor.stepCount = Number(restoreState.stepCount || 0);
+          if (restoreState.flowchartNodeInternal && typeof restoreState.flowchartNodeInternal === "object") {
+            try {
+              for (const nid of Object.keys(restoreState.flowchartNodeInternal)) {
+                const nodeState = restoreState.flowchartNodeInternal[nid];
+                const node = executor.flowchart.getNode(nid);
+                if (!node || !nodeState) continue;
+                if ('_initialized' in nodeState) node._initialized = !!nodeState._initialized;
+                if ('_phase' in nodeState) node._phase = nodeState._phase;
+                if ('_loopCount' in nodeState) node._loopCount = Number(nodeState._loopCount || 0);
+                if ('_scopePushed' in nodeState) node._scopePushed = !!nodeState._scopePushed;
+                if ('_initValue' in nodeState) node._initValue = nodeState._initValue;
+              }
+            } catch (e) {}
+          }
         }
       } catch (e) {
-        console.warn("Failed to apply restoreState.flowchartNodeInternal:", e);
+        console.warn("Failed to apply restoreState safely:", e && e.message ? e.message : e);
       }
     }
 
-    // apply variables from request BEFORE action handling
-    if (Array.isArray(variables)) {
-      for (const v of variables) {
-        if (v && v.name) executor.context.set(v.name, v.value, v.varType);
-      }
-    } else if (variables && typeof variables === "object") {
-      for (const k of Object.keys(variables)) {
-        const val = variables[k];
-        if (val && typeof val === "object" && ("value" in val || "varType" in val)) {
-          executor.context.set(k, val.value, val.varType);
-        } else {
-          executor.context.set(k, val);
-        }
+    if (Array.isArray(variables) || (variables && typeof variables === "object")) {
+      try {
+        applyVariablesSafelyToContext(executor.context, variables);
+      } catch (e) {
+        console.warn("applyVariablesSafelyToContext failed:", e && e.message ? e.message : e);
       }
     }
 
-    // --- handle actions ---
     if (action === "reset") {
       executor.reset();
       const lastStateKey = `executorState_${fid}`;
       savedFlowcharts.delete(lastStateKey);
-
       return res.json({
         ok: true,
         message: "reset",
@@ -1213,7 +1167,6 @@ router.post("/execute", async (req, res) => {
     if (action === "runAll") {
       const ignoreBreakpoints = Boolean(options.ignoreBreakpoints || body.ignoreBreakpoints);
       const nodeStates = [];
-
       while (!executor.finished) {
         const nodeIdBefore = executor.currentNodeId;
         const result = executor.step({ forceAdvanceBP: ignoreBreakpoints });
@@ -1225,16 +1178,12 @@ router.post("/execute", async (req, res) => {
         if (result && result.error) break;
         if (executor.paused && !ignoreBreakpoints) break;
       }
-
       return res.json({
         ok: true,
         message: "runAll completed",
         flowchartId: fid,
         nodeStates,
-        finalContext: {
-          variables: executor.context.variables,
-          output: executor.context.output
-        }
+        finalContext: { variables: executor.context.variables, output: executor.context.output }
       });
     }
 
@@ -1242,7 +1191,6 @@ router.post("/execute", async (req, res) => {
       const lastStateKey = `executorState_${fid}`;
       const lastState = savedFlowcharts.get(lastStateKey);
 
-      // restore previous executor state ถ้า state เดิมมีอยู่
       if (lastState && lastState.executor) {
         const es = lastState.executor;
         if (es.currentNodeId) executor.currentNodeId = es.currentNodeId;
@@ -1250,11 +1198,8 @@ router.post("/execute", async (req, res) => {
         if (typeof es.paused === "boolean") executor.paused = es.paused;
         if (typeof es.stepCount === "number") executor.stepCount = es.stepCount;
         if (es.context && Array.isArray(es.context.variables)) {
-          for (const v of es.context.variables) {
-            if (v && v.name) executor.context.set(v.name, v.value, v.varType);
-          }
+          applyVariablesSafelyToContext(executor.context, es.context.variables);
         }
-        // restore flowchart node internals if present
         if (es.flowchartNodeInternal && typeof es.flowchartNodeInternal === "object") {
           for (const nid of Object.keys(es.flowchartNodeInternal)) {
             const nodeState = es.flowchartNodeInternal[nid];
@@ -1262,38 +1207,23 @@ router.post("/execute", async (req, res) => {
             if (!node) continue;
             if ('_initialized' in nodeState) node._initialized = !!nodeState._initialized;
             if ('_phase' in nodeState) node._phase = nodeState._phase;
-            if ('_loopCount' in nodeState) node._loopCount = Number(nodeState._loopCount) || 0;
+            if ('_loopCount' in nodeState) node._loopCount = Number(nodeState._loopCount || 0);
             if ('_scopePushed' in nodeState) node._scopePushed = !!nodeState._scopePushed;
             if ('_initValue' in nodeState) node._initValue = nodeState._initValue;
           }
         }
       }
 
-      // ถ้า finished หรือเพิ่ง reset ให้เริ่มจาก start node
       if (executor.finished || !lastState) {
         executor.reset();
       }
 
-      // apply variables ใหม่ถ้ามีส่งมาพร้อม step
-      if (Array.isArray(variables)) {
-        for (const v of variables) {
-          if (v && v.name) executor.context.set(v.name, v.value, v.varType);
-        }
-      } else if (variables && typeof variables === "object") {
-        for (const k of Object.keys(variables)) {
-          const val = variables[k];
-          if (val && typeof val === "object" && ("value" in val || "varType" in val)) {
-            executor.context.set(k, val.value, val.varType);
-          } else {
-            executor.context.set(k, val);
-          }
-        }
+      if (Array.isArray(variables) || (variables && typeof variables === "object")) {
+        applyVariablesSafelyToContext(executor.context, variables);
       }
 
-      // execute single step
       const result = executor.step({ forceAdvanceBP });
 
-      // build flowchartNodeInternal snapshot to save node-local flags
       const flowchartNodeInternal = {};
       try {
         for (const [nid, nobj] of Object.entries(executor.flowchart.nodes || {})) {
@@ -1309,7 +1239,6 @@ router.post("/execute", async (req, res) => {
         console.warn("Failed to snapshot flowchart node internals:", e);
       }
 
-      // next node info
       let nextNodeId = executor.finished ? null : executor.currentNodeId;
       let nextNodeType = null;
       if (nextNodeId && executor.flowchart && typeof executor.flowchart.getNode === "function") {
@@ -1317,17 +1246,13 @@ router.post("/execute", async (req, res) => {
         if (nextNode) nextNodeType = nextNode.type;
       }
 
-      // save executor state per flowchart (including node internals)
       savedFlowcharts.set(lastStateKey, {
         executor: {
           currentNodeId: executor.currentNodeId,
           finished: executor.finished,
           paused: executor.paused,
           stepCount: executor.stepCount,
-          context: {
-            variables: executor.context.variables,
-            output: executor.context.output
-          },
+          context: { variables: executor.context.variables, output: executor.context.output },
           lastNode: {
             nodeId: result.node?.id,
             type: result.node?.type,
@@ -1341,12 +1266,7 @@ router.post("/execute", async (req, res) => {
       return res.json({
         ok: true,
         node: result.node
-          ? {
-              id: result.node.id,
-              type: result.node.type,
-              output: [...executor.context.output],
-              variables: [...executor.context.variables]
-            }
+          ? { id: result.node.id, type: result.node.type, output: [...executor.context.output], variables: [...executor.context.variables] }
           : null,
         nextNodeId,
         nextNodeType,
