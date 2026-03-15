@@ -38,6 +38,9 @@ import { convertBackendFlowchart } from "../utils/backendConverter";
 // ✅ Import useParams และ useSearchParams
 import { useParams, useSearchParams } from "next/navigation";
 
+// ✅ เพิ่ม: useSession จาก next-auth
+import { useSession } from "next-auth/react";
+
 const nodeTypes = {
   if: IfNodeComponent,
   breakpoint: BreakpointNodeComponent,
@@ -60,11 +63,42 @@ const FlowchartEditor = (props: Props) => {
   const propId = undefined;
   // 1. ดึง Params ผ่าน Hook
   const paramsHook = useParams();
-  const searchParams = useSearchParams(); // ✅ เพิ่ม: ดึง Query Params (?labId=..., ?disableSubmit=1, ?userId=...)
+  const searchParams = useSearchParams(); // ✅ เพิ่ม: ดึง Query Params (?labId=..., ?disableSubmit=1)
 
-  // ✅ เพิ่ม State สำหรับเก็บ labId และ userId
+  // ✅ เพิ่ม State สำหรับเก็บ labId
   const [labId, setLabId] = useState<number | null>(null);
-  const [userId, setUserId] = useState<number | undefined>(undefined);
+
+  // --- next-auth session: ดึง userId จาก session แล้ว normalize เป็น number | undefined (ตรงกับ SymbolSectionProps) ---
+  const { data: session, status: sessionStatus } = useSession();
+  const userId = useMemo<number | undefined>(() => {
+    if (!session) return undefined;
+
+    // ดึงค่า raw ที่เป็นไปได้จาก session.user (บางเซ็ตเก็บเป็น string)
+    // @ts-ignore - session shape varies by project
+    const raw = session?.user?.id ?? session?.user?.sub ?? session?.user?.userId ?? undefined;
+
+    if (raw === undefined || raw === null) return undefined;
+
+    // แปลงเป็น number อย่างปลอดภัย
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+    // ถ้าแปลงแล้วไม่ใช่ number ให้คืน undefined (และ log)
+    console.warn("⚠️ [FlowchartEditor] user id present in session but not a finite number:", raw);
+    return undefined;
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) {
+      console.log("🔒 [FlowchartEditor] session not available yet (status:", sessionStatus, ")");
+    } else if (userId === undefined) {
+      console.warn(
+        "⚠️ [FlowchartEditor] session exists but numeric user id not present in session.user. " +
+          "If you need userId as number populate it in NextAuth callbacks (callbacks.session)."
+      );
+    } else {
+      console.log("🔑 [FlowchartEditor] userId (number) from session:", userId);
+    }
+  }, [session, sessionStatus, userId]);
 
   // 2. คำนวณ ID ของ Flowchart
   const resolvedFlowchartId = useMemo(() => {
@@ -89,41 +123,6 @@ const FlowchartEditor = (props: Props) => {
   // อ่าน disableSubmit จาก query string (เช่น ?disableSubmit=1)
   const disableSubmitFromQS = useMemo(() => {
     return searchParams?.get("disableSubmit") === "1";
-  }, [searchParams]);
-
-  // --- NEW: Resolve userId (priority: query ?userId= > localStorage 'userId' > undefined)
-  useEffect(() => {
-    try {
-      const qUser = searchParams?.get("userId");
-      if (qUser) {
-        const n = Number(qUser);
-        if (!isNaN(n)) {
-          setUserId(n);
-          console.log("[FlowchartEditor] userId from query:", n);
-          return;
-        }
-      }
-
-      // fallback: localStorage (use only if you store userId there)
-      if (typeof window !== "undefined") {
-        const raw = localStorage.getItem("userId");
-        if (raw) {
-          const n = Number(raw);
-          if (!isNaN(n)) {
-            setUserId(n);
-            console.log("[FlowchartEditor] userId from localStorage:", n);
-            return;
-          }
-        }
-      }
-
-      // else undefined
-      setUserId(undefined);
-      console.log("[FlowchartEditor] userId: undefined (no query/localStorage)");
-    } catch (err) {
-      console.warn("[FlowchartEditor] error resolving userId:", err);
-      setUserId(undefined);
-    }
   }, [searchParams]);
 
   // ✅ Effect ใหม่: พยายามหา Lab ID จาก URL หรือ API
@@ -158,11 +157,10 @@ const FlowchartEditor = (props: Props) => {
     }
   }, [resolvedFlowchartId, searchParams]);
 
-  // Debug Flowchart ID + userId
+  // Debug Flowchart ID
   useEffect(() => {
     console.log(`✅ [FlowchartEditor] Resolved ID: "${resolvedFlowchartId}"`);
-    console.log(`✅ [FlowchartEditor] userId (prop to SymbolSection):`, userId);
-  }, [resolvedFlowchartId, userId]);
+  }, [resolvedFlowchartId]);
 
   // --- Logic เดิม ---
   const {
@@ -312,7 +310,8 @@ const FlowchartEditor = (props: Props) => {
               onDeleteNode={deleteNodeAndReconnect}
               onCloseModal={closeModal} // ✅ เติมบรรทัดนี้ลงไปเพื่อสั่งปิดเมื่อกดเสร็จ
               onRefresh={refreshFlowchart}
-              userId={userId} // <-- ส่ง userId มาที่นี่
+              // ✅ ส่ง userId เป็น number | undefined
+              userId={userId}
             />
           </div>
         </div>
@@ -335,7 +334,8 @@ const FlowchartEditor = (props: Props) => {
               onCloseModal={closeNodeModal}
               onAddNode={(type, label) => addNode(type, label, selectedNode?.id)}
               onRefresh={refreshFlowchart}
-              userId={userId} // <-- และส่ง userId ที่นี่ด้วย
+              // ✅ ส่ง userId เป็น number | undefined
+              userId={userId}
             />
           </div>
         </div>
