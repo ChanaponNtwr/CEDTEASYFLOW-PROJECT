@@ -65,6 +65,7 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
         </defs>
 
         <g transform={`translate(-${xOffset}, 0)`}>
+          {/* Base polygon */}
           <polygon
             points={points}
             fill="#D8FFD8"
@@ -72,6 +73,7 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
             strokeWidth={1}
           />
 
+          {/* Label */}
           <text
             x={width / 2}
             y={height / 2}
@@ -84,8 +86,10 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
             {data.label}
           </text>
 
+          {/* Highlight overlay */}
           {highlighted && (
             <>
+              {/* Glow */}
               <polygon
                 points={points}
                 fill="none"
@@ -95,6 +99,7 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
                 strokeLinejoin="round"
                 style={{ filter: "url(#output-glow)"}}
               />
+              {/* Crisp stroke */}
               <polygon
                 points={points}
                 fill="none"
@@ -109,6 +114,7 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
         </g>
       </svg>
 
+      {/* Hidden span for measuring text */}
       <span
         ref={textRef}
         style={{
@@ -121,17 +127,17 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
         {data.label}
       </span>
 
-      {/* Handles (ตั้งค่า 50% กึ่งกลางกล่อง) */}
+      {/* Handles */}
       <Handle
         type="target"
         position={Position.Top}
-        style={{ ...hiddenHandleStyle, top: -8, left: "47%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, top: -8, left: "43.5%", transform: "translateX(-50%)" }}
       />
       <Handle
         type="source"
         id="bottom"
         position={Position.Bottom}
-        style={{ ...hiddenHandleStyle, bottom: -8, left: "47%", transform: "translateX(-50%)" }}
+        style={{ ...hiddenHandleStyle, bottom: -8, left: "43.5%", transform: "translateX(-50%)" }}
       />
     </div>
   );
