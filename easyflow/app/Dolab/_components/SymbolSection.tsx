@@ -283,8 +283,15 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       setLoading(true);
       if (nodeId) {
         // EDIT
-        console.info("Call editNode with:", { flowchartId, nodeId, payload: payloadNode });
-        const res = await editNode(flowchartId, nodeId, payloadNode);
+        // require userId for edit (aligned with insert/delete)
+        if (userId === undefined || userId === null) {
+          setError("Missing userId (ไม่พบ userId สำหรับการแก้ไข node)");
+          setLoading(false);
+          return;
+        }
+
+        console.info("Call editNode with:", { userId, flowchartId, nodeId, payload: payloadNode });
+        const res = await editNode(userId, flowchartId, nodeId, payloadNode);
         console.info("editNode result:", res);
 
         if (onRefresh) {
@@ -782,7 +789,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           }
           setActiveModal(item.key);
         }}
-        title={disabled ? "หมดจำนวนสำหรับ shape นี้แล้ว" : (isUnlimited ? "เหลือ: ไม่จำกัด" : `เหลือ: ${remaining}`)}
+        title={disabled ? "หมดจำนวนสำหรับshape นี้แล้ว" : (isUnlimited ? "เหลือ: ไม่จำกัด" : `เหลือ: ${remaining}`)}
         role="button"
         aria-disabled={disabled}
       >

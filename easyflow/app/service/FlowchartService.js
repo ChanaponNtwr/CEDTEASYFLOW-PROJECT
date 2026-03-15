@@ -90,21 +90,38 @@ export const deleteNode = async (userId, flowchartId, nodeId) => {
 };
 
 
-export const editNode = async (flowchartId, nodeId, updateData) => {
-  if (!flowchartId || !nodeId) {
-    throw new Error("editNode: missing flowchartId or nodeId");
+export const editNode = async (userId, flowchartId, nodeId, updateData) => {
+  if (userId === undefined || userId === null) {
+    throw new Error("editNode: missing userId");
   }
+  if (!flowchartId) {
+    throw new Error("editNode: missing flowchartId");
+  }
+  if (!nodeId) {
+    throw new Error("editNode: missing nodeId");
+  }
+  if (!updateData || (typeof updateData !== "object")) {
+    throw new Error("editNode: missing or invalid updateData");
+  }
+
   try {
-    const resp = await axios.put(`${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`,
-      updateData
+    const payload = {
+      userId,
+      ...updateData,
+    };
+
+    const resp = await axios.put(
+      `${BASE_URL}/flowchart/${encodeURIComponent(flowchartId)}/node/${encodeURIComponent(nodeId)}`,
+      payload,
+      { headers: { "Content-Type": "application/json" } }
     );
-    return resp.data; // { ok: true, message: "...", flowchartId: "...", diffs: {...} }
-  } catch (error) {
-    console.error("Error editing node:", error);
-    throw error;
+    return resp.data; // คาดว่า backend จะคืน { ok: true, ... }
+  } catch (err) {
+    const msg = err?.response?.data?.message ?? err?.message ?? "editNode: unknown error";
+    console.error("editNode error:", msg, err?.response ?? err);
+    throw err;
   }
 };
-
 
 export const executeStepNode = async (flowchartId, variables = [], forceAdvanceBP = false) => {
   if (!flowchartId) {
