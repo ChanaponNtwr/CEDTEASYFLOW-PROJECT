@@ -757,7 +757,7 @@ export default function StudentLabPage() {
                       onClick={closeModal}
                       className="inline-flex items-center justify-center px-6 py-2 rounded-full border border-slate-300 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-200 text-sm font-medium shadow-sm"
                     >
-                      ยกเลิก
+                      ปิด
                     </button>
 
                     {modalAction && (
