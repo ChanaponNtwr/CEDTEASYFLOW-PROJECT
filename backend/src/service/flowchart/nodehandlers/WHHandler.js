@@ -1,7 +1,26 @@
 export default function WHHandler(node, context, flowchart) {
     const { condition, varName, increment } = node.data;
-    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+    // 🔒 ตรวจ varName
+    if (varName && !context.isDeclared(varName)) {
+        throw new Error(`Variable '${varName}' is not declared. Please add a Declare node before the While loop.`);
+    }
+
+    // 🔒 ตรวจตัวแปรทุกตัวใน condition
+    if (condition) {
+        const jsGlobals = new Set(["Math","Number","String","Boolean","Array","Object","Date",
+            "parseInt","parseFloat","console","undefined","null","true","false","NaN","Infinity"]);
+        const usedVars = [...condition.matchAll(/\b([a-zA-Z_]\w*)\b/g)]
+            .map(m => m[1])
+            .filter(name => !jsGlobals.has(name));
+        for (const name of usedVars) {
+            if (!context.isDeclared(name)) {
+                throw new Error(`Variable '${name}' is not declared. Please add a Declare node before using it in While condition.`);
+            }
+        }
+    }
+
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const keys = context.variables.map(v => v.name);
     const values = context.variables.map(v => v.value);
     let conditionResult = false;
@@ -26,7 +45,8 @@ export default function WHHandler(node, context, flowchart) {
                 const ids = new Set();
                 let m;
                 while ((m = idRegex.exec(String(increment))) !== null) ids.add(m[1]);
-                const jsGlobals = new Set(["Math","Number","String","Boolean","Array","Object","Date","parseInt","parseFloat","console","undefined","null","true","false","NaN","Infinity"]);
+                const jsGlobals = new Set(["Math","Number","String","Boolean","Array","Object","Date",
+                    "parseInt","parseFloat","console","undefined","null","true","false","NaN","Infinity"]);
                 ids.delete(varName);
 
                 const keysOther = [];
@@ -34,9 +54,7 @@ export default function WHHandler(node, context, flowchart) {
                 ids.forEach(id => {
                     if (jsGlobals.has(id)) return;
                     const v = context.get(id);
-                    if (v === undefined) {
-                        console.warn(`WHHandler: identifier "${id}" used in increment but not found in context — providing undefined`);
-                    }
+                    if (v === undefined) console.warn(`WHHandler: "${id}" not found in context`);
                     keysOther.push(id);
                     valuesOther.push(v);
                 });
@@ -44,17 +62,10 @@ export default function WHHandler(node, context, flowchart) {
                 const incTrim = String(increment).trim();
                 const varNameRegex = new RegExp(`\\b${escapeRegex(varName)}\\b`);
                 let opExpr;
-                if (varNameRegex.test(incTrim)) {
-                    opExpr = incTrim;
-                } else {
-                    if (/^(\+\+|--)/.test(incTrim) || /^(\+=|-=|\*=|\/=)/.test(incTrim)) {
-                        opExpr = `${varName}${incTrim}`;
-                    } else if (/^[+\-*/]/.test(incTrim)) {
-                        opExpr = `${varName}${incTrim}`;
-                    } else {
-                        opExpr = `${varName} = ${incTrim}`;
-                    }
-                }
+                if (varNameRegex.test(incTrim)) opExpr = incTrim;
+                else if (/^(\+\+|--)/.test(incTrim) || /^(\+=|-=|\*=|\/=)/.test(incTrim)) opExpr = `${varName}${incTrim}`;
+                else if (/^[+\-*/]/.test(incTrim)) opExpr = `${varName}${incTrim}`;
+                else opExpr = `${varName} = ${incTrim}`;
 
                 try {
                     const body = `let ${varName} = ${JSON.stringify(current)}; ${opExpr}; return ${varName};`;
