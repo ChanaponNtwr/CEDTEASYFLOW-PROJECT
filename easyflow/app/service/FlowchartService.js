@@ -27,37 +27,68 @@ export const apiGetFlowchart = async (id) => {
   }
 };
 
-export const insertNode = async (flowchartId, edgeId, node) => {
+// insertNode: require userId, flowchartId, edgeId, node
+export const insertNode = async (userId, flowchartId, edgeId, node) => {
+  if (userId === undefined || userId === null) {
+    throw new Error("insertNode: missing userId");
+  }
   if (!flowchartId) {
     throw new Error("insertNode: missing flowchartId");
   }
+  if (!edgeId) {
+    throw new Error("insertNode: missing edgeId");
+  }
+  if (!node) {
+    throw new Error("insertNode: missing node");
+  }
+
   try {
-    // ถ้า backend ของคุณรับเป็น POST /flowchart/insert-node กับ payload ที่มี flowchartId นี่ก็โอเค,
-    // แต่ผมใส่ path เป็น /flowchart/insert-node และยังส่ง payload เดิมให้เหมือนก่อนหน้า
-    const response = await axios.post(`${BASE_URL}/flowchart/insert-node`, {
+    const payload = {
+      userId,
       flowchartId,
       edgeId,
       node,
+    };
+
+    const response = await axios.post(`${BASE_URL}/flowchart/insert-node`, payload, {
+      headers: { "Content-Type": "application/json" },
     });
+
     return response.data;
   } catch (err) {
-    console.error("insertNode error:", err);
+    // normalize error message for caller
+    const msg = err?.response?.data?.message ?? err?.message ?? "insertNode: unknown error";
+    console.error("insertNode error:", msg, err?.response ?? err);
+    // preserve original axios error for upstream if needed
     throw err;
   }
 };
 
+// deleteNode: require userId, encode IDs, send userId in config.data for axios.delete
+export const deleteNode = async (userId, flowchartId, nodeId) => {
+  if (userId === undefined || userId === null) {
+    throw new Error("deleteNode: missing userId");
+  }
+  if (!flowchartId) {
+    throw new Error("deleteNode: missing flowchartId");
+  }
+  if (!nodeId) {
+    throw new Error("deleteNode: missing nodeId");
+  }
 
-export const deleteNode = async (flowchartId, nodeId) => {
   try {
-    const resp = await axios.delete(`${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`
-    );
-    return resp.data; // { ok: true, message: "...", diffs: {...} }
-  } catch (error) {
-    console.error("Error deleting node:", error);
-    throw error;
+    const url = `${BASE_URL}/flowchart/${encodeURIComponent(flowchartId)}/node/${encodeURIComponent(nodeId)}`;
+    const resp = await axios.delete(url, {
+      headers: { "Content-Type": "application/json" },
+      data: { userId }, // axios supports body via config.data for DELETE
+    });
+    return resp.data;
+  } catch (err) {
+    const msg = err?.response?.data?.message ?? err?.message ?? "deleteNode: unknown error";
+    console.error("deleteNode error:", msg, err?.response ?? err);
+    throw err;
   }
 };
-
 
 export const editNode = async (flowchartId, nodeId, updateData) => {
   if (!flowchartId || !nodeId) {
