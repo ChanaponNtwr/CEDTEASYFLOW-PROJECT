@@ -22,7 +22,6 @@ type FlowNode = Node & {
 
 interface SymbolSectionProps {
   flowchartId: number;
-  userId?: number; // <-- เพิ่ม prop นี้ (ไม่เปลี่ยน UI/logic)
   selectedEdgeId?: string;
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
@@ -127,7 +126,6 @@ type ModalVariant = "danger" | "success" | "info";
 /* --- Component --- */
 const SymbolSection: React.FC<SymbolSectionProps> = ({
   flowchartId,
-  userId,
   selectedEdgeId,
   edge,
   onAddNode,
@@ -297,15 +295,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           setError("กรุณาเลือกเส้น (edge) ที่ต้องการแทรก node ก่อน");
           return;
         }
-
-        // require userId for insert
-        if (userId === undefined || userId === null) {
-          setError("Missing userId (ไม่พบ userId สำหรับการสร้าง node)");
-          return;
-        }
-
-        console.info("Call insertNode with:", { userId, flowchartId, edgeId: selectedEdgeId, node: payloadNode });
-        const res = await insertNode(userId, flowchartId, selectedEdgeId, payloadNode);
+        console.info("Call insertNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
+        const res = await insertNode(flowchartId, selectedEdgeId, payloadNode);
         console.info("insertNode result:", res);
 
         if (onRefresh) {
@@ -367,17 +358,11 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       return;
     }
 
-    // require userId for delete
-    if (userId === undefined || userId === null) {
-      setError("Missing userId (ไม่พบ userId สำหรับการลบ node)");
-      return;
-    }
-
     try {
       setError("");
       setLoading(true);
-      console.info("Deleting node:", nodeId, "from flowchart:", flowchartId, "by user:", userId);
-      const res = await deleteNode(userId, flowchartId, nodeId);
+      console.info("Deleting node:", nodeId, "from flowchart:", flowchartId);
+      const res = await deleteNode(flowchartId, nodeId);
       console.info("deleteNode response:", res);
 
       // attempt to delete associated breakpoint nodes gracefully
@@ -393,7 +378,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           const uniqCandidates = Array.from(new Set(candidates.filter(Boolean)));
           for (const bpId of uniqCandidates) {
             try {
-              const bpRes = await deleteNode(userId, flowchartId, bpId);
+              const bpRes = await deleteNode(flowchartId, bpId);
               console.info("Deleted BP node:", bpId, bpRes);
               break;
             } catch (bpErr: any) {

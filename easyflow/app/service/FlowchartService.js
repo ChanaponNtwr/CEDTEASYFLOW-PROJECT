@@ -27,11 +27,14 @@ export const apiGetFlowchart = async (id) => {
   }
 };
 
-export const insertNode = async (userId, flowchartId, edgeId, node) => {
-  if (!flowchartId) throw new Error("insertNode: missing flowchartId");
+export const insertNode = async (flowchartId, edgeId, node) => {
+  if (!flowchartId) {
+    throw new Error("insertNode: missing flowchartId");
+  }
   try {
+    // ถ้า backend ของคุณรับเป็น POST /flowchart/insert-node กับ payload ที่มี flowchartId นี่ก็โอเค,
+    // แต่ผมใส่ path เป็น /flowchart/insert-node และยังส่ง payload เดิมให้เหมือนก่อนหน้า
     const response = await axios.post(`${BASE_URL}/flowchart/insert-node`, {
-      userId,
       flowchartId,
       edgeId,
       node,
@@ -43,19 +46,18 @@ export const insertNode = async (userId, flowchartId, edgeId, node) => {
   }
 };
 
-// axios.delete ไม่รับ body เป็นพารามโดยตรง — ให้ส่งใน config.data
-export const deleteNode = async (userId, flowchartId, nodeId) => {
+
+export const deleteNode = async (flowchartId, nodeId) => {
   try {
-    const resp = await axios.delete(
-      `${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`,
-      { data: { userId } } // <-- ส่ง userId ใน body ของคำขอ DELETE
+    const resp = await axios.delete(`${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`
     );
-    return resp.data;
+    return resp.data; // { ok: true, message: "...", diffs: {...} }
   } catch (error) {
     console.error("Error deleting node:", error);
     throw error;
   }
 };
+
 
 export const editNode = async (flowchartId, nodeId, updateData) => {
   if (!flowchartId || !nodeId) {
