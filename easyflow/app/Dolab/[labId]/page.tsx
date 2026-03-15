@@ -60,10 +60,11 @@ const FlowchartEditor = (props: Props) => {
   const propId = undefined;
   // 1. ดึง Params ผ่าน Hook
   const paramsHook = useParams();
-  const searchParams = useSearchParams(); // ✅ เพิ่ม: ดึง Query Params (?labId=..., ?disableSubmit=1)
+  const searchParams = useSearchParams(); // ✅ เพิ่ม: ดึง Query Params (?labId=..., ?disableSubmit=1, ?userId=...)
 
-  // ✅ เพิ่ม State สำหรับเก็บ labId
+  // ✅ เพิ่ม State สำหรับเก็บ labId และ userId
   const [labId, setLabId] = useState<number | null>(null);
+  const [userId, setUserId] = useState<number | undefined>(undefined);
 
   // 2. คำนวณ ID ของ Flowchart
   const resolvedFlowchartId = useMemo(() => {
@@ -88,6 +89,41 @@ const FlowchartEditor = (props: Props) => {
   // อ่าน disableSubmit จาก query string (เช่น ?disableSubmit=1)
   const disableSubmitFromQS = useMemo(() => {
     return searchParams?.get("disableSubmit") === "1";
+  }, [searchParams]);
+
+  // --- NEW: Resolve userId (priority: query ?userId= > localStorage 'userId' > undefined)
+  useEffect(() => {
+    try {
+      const qUser = searchParams?.get("userId");
+      if (qUser) {
+        const n = Number(qUser);
+        if (!isNaN(n)) {
+          setUserId(n);
+          console.log("[FlowchartEditor] userId from query:", n);
+          return;
+        }
+      }
+
+      // fallback: localStorage (use only if you store userId there)
+      if (typeof window !== "undefined") {
+        const raw = localStorage.getItem("userId");
+        if (raw) {
+          const n = Number(raw);
+          if (!isNaN(n)) {
+            setUserId(n);
+            console.log("[FlowchartEditor] userId from localStorage:", n);
+            return;
+          }
+        }
+      }
+
+      // else undefined
+      setUserId(undefined);
+      console.log("[FlowchartEditor] userId: undefined (no query/localStorage)");
+    } catch (err) {
+      console.warn("[FlowchartEditor] error resolving userId:", err);
+      setUserId(undefined);
+    }
   }, [searchParams]);
 
   // ✅ Effect ใหม่: พยายามหา Lab ID จาก URL หรือ API
@@ -122,10 +158,11 @@ const FlowchartEditor = (props: Props) => {
     }
   }, [resolvedFlowchartId, searchParams]);
 
-  // Debug Flowchart ID
+  // Debug Flowchart ID + userId
   useEffect(() => {
     console.log(`✅ [FlowchartEditor] Resolved ID: "${resolvedFlowchartId}"`);
-  }, [resolvedFlowchartId]);
+    console.log(`✅ [FlowchartEditor] userId (prop to SymbolSection):`, userId);
+  }, [resolvedFlowchartId, userId]);
 
   // --- Logic เดิม ---
   const {
@@ -275,6 +312,7 @@ const FlowchartEditor = (props: Props) => {
               onDeleteNode={deleteNodeAndReconnect}
               onCloseModal={closeModal} // ✅ เติมบรรทัดนี้ลงไปเพื่อสั่งปิดเมื่อกดเสร็จ
               onRefresh={refreshFlowchart}
+              userId={userId} // <-- ส่ง userId มาที่นี่
             />
           </div>
         </div>
@@ -297,6 +335,7 @@ const FlowchartEditor = (props: Props) => {
               onCloseModal={closeNodeModal}
               onAddNode={(type, label) => addNode(type, label, selectedNode?.id)}
               onRefresh={refreshFlowchart}
+              userId={userId} // <-- และส่ง userId ที่นี่ด้วย
             />
           </div>
         </div>
