@@ -61,7 +61,7 @@ function Trial() {
   // --- IMPORTANT CHANGE ---
   // Avoid using `useSearchParams()` from next/navigation at module render time to prevent
   // Next.js prerender errors during build. Instead read search params on the client in useEffect.
-  const [labIdParam, setLabIdParam] = useState<string>("19");
+  const [labIdParam, setLabIdParam] = useState<string>("5");
 
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [lab, setLab] = useState<RemoteLab | null>(null);
@@ -76,10 +76,10 @@ function Trial() {
     if (typeof window === 'undefined') return;
     try {
       const params = new URLSearchParams(window.location.search);
-      const id = params.get('labId') ?? params.get('lab') ?? '19';
+      const id = params.get('labId') ?? params.get('lab') ?? '5';
       setLabIdParam(String(id));
     } catch (e) {
-      setLabIdParam('19');
+      setLabIdParam('5');
     }
   }, []);
 
