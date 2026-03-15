@@ -258,6 +258,11 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   };
 
   useEffect(() => {
+    // debug: log incoming userId + flowchartId
+    console.log("SymbolSection userId:", userId, "flowchartId:", flowchartId);
+  }, [userId, flowchartId]);
+
+  useEffect(() => {
     // initial load + when flowchartId changes
     fetchShapeRemaining();
   }, [flowchartId]);
