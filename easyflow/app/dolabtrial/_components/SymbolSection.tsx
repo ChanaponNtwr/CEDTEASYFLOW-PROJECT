@@ -1075,7 +1075,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       <div className="w-full bg-white p-4 flex flex-col gap-4 rounded-lg shadow-lg border-1">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-gray-700 mb-2">Input / Output</h3>
-          <div className="text-xs text-gray-500">{srLoading ? "Loading shapes..." : srError ? srError : "Shape counts loaded"}</div>
+          <div className="text-xs text-gray-500">{srLoading ? "Loading shapes..." : srError ? srError : ""}</div>
         </div>
         <div>
           <div className="flex gap-4">
