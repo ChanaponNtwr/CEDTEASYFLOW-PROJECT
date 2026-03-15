@@ -30,6 +30,15 @@ type UseNodeMutationsProps = {
 
 export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdge, closeModal, closeNodeModal }: UseNodeMutationsProps) => {
 
+  // Helper: create a "smoothstep" self-loop edge with pathOptions without putting unknown props in an object literal
+  const createSmoothLoopEdge = (baseEdge: Edge, offset = 60, animated = true) => {
+    const e = { ...baseEdge } as any;
+    e.type = "smoothstep";
+    if (animated) e.animated = true;
+    e.pathOptions = { offset };
+    return e as Edge;
+  };
+
   const onConnect = useCallback(
     (connection: Connection) => {
       console.log("🔌 onConnect called with connection:", connection);
@@ -132,7 +141,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
 
         if (type === "if") {
           const ifNode = createNode("if", label, newX, newY);
-          const bp = createNode("breakpoint", "", newX + 60, newY + stepY);
+          const bp = createNode("breakpoint", "", newX, newY + stepY);
           nodesToAdd.push(ifNode, bp);
           edgesToAdd.push(createArrowEdge(sourceNode.id, ifNode.id, { label: loopLabel, sourceHandle: bodyHandle }));
           edgesToAdd.push(createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }));
@@ -144,12 +153,10 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
           nodesToAdd.push(newNode);
           edgesToAdd.push(createArrowEdge(sourceNode.id, newNode.id, { label: loopLabel, sourceHandle: bodyHandle }));
 
-          // create self-loop edge separately so we don't place unknown props in an object literal
-          const loopEdgeBase = { ...createArrowEdge(newNode.id, newNode.id, { label: "True", sourceHandle: isWhile ? "true" : "loop_body", targetHandle: isWhile ? "loop_in" : "loop_return" }) } as any;
-          loopEdgeBase.type = "smoothstep";
-          loopEdgeBase.animated = true;
-          loopEdgeBase.pathOptions = { offset: 60 };
-          edgesToAdd.push(loopEdgeBase as Edge);
+          // create return edge (smooth) without unknown props in literal
+          const returnEdgeBase = { ...createArrowEdge(newNode.id, sourceNode.id, { targetHandle: returnHandle }) } as any;
+          returnEdgeBase.type = "smoothstep";
+          edgesToAdd.push(returnEdgeBase as Edge);
         }
 
         setNodes((nds) => [...nds, ...nodesToAdd]);
@@ -170,7 +177,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
             const nodesToMove = nodes.filter((n) => n.position.y > sourceNode.position.y);
             const moved = nodesToMove.map((n) => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
             const newIf = createNode("if", label, offsetX, baseYEdge);
-            const newBp = createNode("breakpoint", "", offsetX + 60, baseYEdge + stepY);
+            const newBp = createNode("breakpoint", "", offsetX, baseYEdge + stepY);
             const newEdges = [
               createArrowEdge(sourceNode.id, newIf.id, { label: isTrue ? "True" : "False", sourceHandle: sourceHandle ?? undefined }),
               createArrowEdge(newIf.id, newBp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
@@ -222,7 +229,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
 
       if (type === "if") {
         const ifNode = createNode("if", label, newPosX, sourceNode.position.y + stepY);
-        const bp = createNode("breakpoint", "", newPosX + 73, sourceNode.position.y + stepY * 2);
+        const bp = createNode("breakpoint", "", newPosX, sourceNode.position.y + stepY * 2);
         newNodesToAdd.push(ifNode, bp);
         newEdgesToAdd.push(
           createArrowEdge(sourceNode.id, ifNode.id, { sourceHandle: sourceHandle ?? undefined }),
@@ -238,11 +245,9 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
           createArrowEdge(whileNode.id, targetNode.id, { label: "False", sourceHandle: "false", targetHandle: targetHandle ?? undefined })
         );
 
-        const selfLoopBase = { ...createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }) } as any;
-        selfLoopBase.type = "smoothstep";
-        selfLoopBase.animated = true;
-        selfLoopBase.pathOptions = { offset: 60 };
-        newEdgesToAdd.push(selfLoopBase as Edge);
+        // self loop edge created via helper to avoid unknown-literal props
+        const selfLoop = createSmoothLoopEdge(createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }), 60, false);
+        newEdgesToAdd.push(selfLoop);
       } else if (type === "for") {
         const forNode = createNode("for", label, newPosX, sourceNode.position.y + stepY + 60);
         newNodesToAdd.push(forNode);
@@ -251,11 +256,8 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
           createArrowEdge(forNode.id, targetNode.id, { label: "False", sourceHandle: "next", targetHandle: targetHandle ?? undefined })
         );
 
-        const selfLoopBase = { ...createArrowEdge(forNode.id, forNode.id, { label: "True", sourceHandle: "loop_body", targetHandle: "loop_return" }) } as any;
-        selfLoopBase.type = "smoothstep";
-        selfLoopBase.animated = true;
-        selfLoopBase.pathOptions = { offset: 60 };
-        newEdgesToAdd.push(selfLoopBase as Edge);
+        const selfLoopFor = createSmoothLoopEdge(createArrowEdge(forNode.id, forNode.id, { label: "True", sourceHandle: "loop_body", targetHandle: "loop_return" }), 60, false);
+        newEdgesToAdd.push(selfLoopFor);
       } else {
         const createdType = mapTypeForNode(type) as string;
         const newNode = createNode(createdType, label, newPosX, sourceNode.position.y + stepY);
@@ -284,7 +286,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
 
       if (type === "if") {
         const ifNode = createNode("if", label, anchorNode.position.x, anchorNode.position.y + stepY);
-        const bp = createNode("breakpoint", "", anchorNode.position.x + 73, anchorNode.position.y + stepY + stepY);
+        const bp = createNode("breakpoint", "", anchorNode.position.x, anchorNode.position.y + stepY + stepY);
         const outgoing = edges.filter((e) => e.source === anchorId);
         const newEdges: Edge[] = [createArrowEdge(anchorId, ifNode.id), createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }), createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" })];
         if (outgoing.length === 0) newEdges.push(createArrowEdge(bp.id, endNode.id));
@@ -303,11 +305,9 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
         if (outgoing.length === 0) newEdges.push(createArrowEdge(loopNode.id, endNode.id, { label: "False", sourceHandle: type === "while" ? "false" : "next" }));
         else outgoing.forEach((o) => newEdges.push(createArrowEdge(loopNode.id, o.target, { label: "False", sourceHandle: type === "while" ? "false" : "next", targetHandle: o.targetHandle ?? undefined })));
 
-        const selfLoopBase = { ...createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }) } as any;
-        selfLoopBase.type = "smoothstep";
-        selfLoopBase.animated = true;
-        selfLoopBase.pathOptions = { offset: 60 };
-        newEdges.push(selfLoopBase as Edge);
+        // self-loop created via helper
+        const selfLoop = createSmoothLoopEdge(createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }), 60, true);
+        newEdges.push(selfLoop);
 
         setEdges((eds) => [...eds.filter((e) => !(e.source === anchorId && outgoing.some((o) => o.target === e.target))), ...newEdges]);
         insertAfter(anchorId, [loopNode], newEdges, undefined, undefined, stepY);
@@ -337,7 +337,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
 
     if (type === "if") {
       const ifNode = createNode("if", label, 300, baseY);
-      const bp = createNode("breakpoint", "", 360, baseY + stepY);
+      const bp = createNode("breakpoint", "", 300, baseY + stepY);
       const newEdges = [createArrowEdge(previousNode.id, ifNode.id), createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }), createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }), createArrowEdge(bp.id, nodes.find((n) => n.id === "end")!.id)];
       const updatedNodes = [...nodes.filter(n => n.id !== 'end'), ifNode, bp, {...(nodes.find(n => n.id === 'end')!), position: {x: 300, y: computeEndY([...nodes, ifNode, bp])}}];
       setNodes(updatedNodes);
@@ -351,11 +351,8 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
             createArrowEdge(loopNode.id, (nodes.find(n => n.id === 'end')!).id, { label: "False", sourceHandle: type === "while" ? "false" : "next" })
         ];
 
-        const selfLoopBase = { ...createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }) } as any;
-        selfLoopBase.type = "smoothstep";
-        selfLoopBase.animated = true;
-        selfLoopBase.pathOptions = { offset: 60 };
-        newEdges.push(selfLoopBase as Edge);
+        const selfLoopBase = createSmoothLoopEdge(createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }), 60, true);
+        newEdges.push(selfLoopBase);
 
         const updatedNodes = [...nodes.filter(n => n.id !== 'end'), loopNode, {...(nodes.find(n => n.id === 'end')!), position: {x: 300, y: computeEndY([...nodes, loopNode]) + stepY}}];
         setNodes(updatedNodes);

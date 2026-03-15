@@ -221,6 +221,7 @@ export default function DoLabTrialPage({ params }: PageProps) {
           nodeTypes={nodeTypes}
           fitView={false}
           defaultViewport={{ x: 600, y: 150, zoom: 1 }}
+          nodeOrigin={[0.5, 0]}
         >
           <Background />
           <MiniMap />
