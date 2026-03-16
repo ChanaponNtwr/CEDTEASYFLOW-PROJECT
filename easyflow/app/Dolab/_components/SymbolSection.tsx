@@ -22,7 +22,7 @@ type FlowNode = Node & {
 
 interface SymbolSectionProps {
   flowchartId: number;
-  userId?: number; // <-- เพิ่ม prop นี้ (ไม่เปลี่ยน UI/logic)
+  userId?: number;
   selectedEdgeId?: string;
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
@@ -267,6 +267,20 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     fetchShapeRemaining();
   }, [flowchartId]);
 
+  /* --- Helper to safely extract newOutput from service response (flexible) --- */
+  const extractNewOutput = (serviceResp: any): any | null => {
+    // serviceResp might be:
+    // - the newOutput array directly (e.g. service returns data.newOutput and we returned that)
+    // - an object containing newOutput (data.newOutput)
+    // - an object without newOutput (older backend)
+    if (serviceResp === null || serviceResp === undefined) return null;
+    if (Array.isArray(serviceResp)) return serviceResp;
+    if (serviceResp?.newOutput && Array.isArray(serviceResp.newOutput)) return serviceResp.newOutput;
+    // sometimes backend returns { newOutput: [...], node: {...}, ... } or { node:..., newOutput: ... }
+    if (serviceResp?.newOutput) return serviceResp.newOutput;
+    return null;
+  };
+
   /* --- callUpdateOrAdd (แก้ไขให้เรียก fetchShapeRemaining หลังสำเร็จ) --- */
   const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
     setError("");
@@ -283,7 +297,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       setLoading(true);
       if (nodeId) {
         // EDIT
-        // require userId for edit (aligned with insert/delete)
         if (userId === undefined || userId === null) {
           setError("Missing userId (ไม่พบ userId สำหรับการแก้ไข node)");
           setLoading(false);
@@ -292,7 +305,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
         console.info("Call editNode with:", { userId, flowchartId, nodeId, payload: payloadNode });
         const res = await editNode(userId, flowchartId, nodeId, payloadNode);
-        console.info("editNode result:", res);
+        const newOutput = extractNewOutput(res);
+        if (newOutput) {
+          console.info("editNode newOutput:", newOutput);
+        } else {
+          console.info("editNode result:", res);
+        }
 
         if (onRefresh) {
           try {
@@ -310,7 +328,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           return;
         }
 
-        // require userId for insert
         if (userId === undefined || userId === null) {
           setError("Missing userId (ไม่พบ userId สำหรับการสร้าง node)");
           return;
@@ -318,7 +335,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
         console.info("Call insertNode with:", { userId, flowchartId, edgeId: selectedEdgeId, node: payloadNode });
         const res = await insertNode(userId, flowchartId, selectedEdgeId, payloadNode);
-        console.info("insertNode result:", res);
+        const newOutput = extractNewOutput(res);
+        if (newOutput) {
+          console.info("insertNode newOutput:", newOutput);
+        } else {
+          console.info("insertNode result:", res);
+        }
 
         if (onRefresh) {
           try {
@@ -379,7 +401,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       return;
     }
 
-    // require userId for delete
     if (userId === undefined || userId === null) {
       setError("Missing userId (ไม่พบ userId สำหรับการลบ node)");
       return;
@@ -390,7 +411,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       setLoading(true);
       console.info("Deleting node:", nodeId, "from flowchart:", flowchartId, "by user:", userId);
       const res = await deleteNode(userId, flowchartId, nodeId);
-      console.info("deleteNode response:", res);
+      const newOutput = extractNewOutput(res);
+      if (newOutput) {
+        console.info("deleteNode newOutput:", newOutput);
+      } else {
+        console.info("deleteNode response:", res);
+      }
 
       // attempt to delete associated breakpoint nodes gracefully
       try {
@@ -784,7 +810,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           setError("");
           resetFields();
           if (disabled) {
-            setError("รูปแบบนี้ไม่สามารถเพิ่มได้อีก (จำนวนเต็ม)"); // friendly message
+            setError("รูปแบบนี้ไม่สามารถเพิ่มได้อีก (จำนวนเต็ม)");
             return;
           }
           setActiveModal(item.key);

@@ -275,6 +275,19 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowchartId]);
 
+  /* --- Helper: extract newOutput (flexible) --- */
+  const extractNewOutput = (serviceResp: any): any | null => {
+    if (serviceResp === null || serviceResp === undefined) return null;
+    // If service already returned newOutput array directly
+    if (Array.isArray(serviceResp)) return serviceResp;
+    // If service returned object with newOutput property
+    if (serviceResp?.newOutput && Array.isArray(serviceResp.newOutput)) return serviceResp.newOutput;
+    if (serviceResp?.newOutput) return serviceResp.newOutput;
+    // also handle case resp.data?.newOutput when callers pass full axios response (not used here)
+    if (serviceResp?.data && Array.isArray(serviceResp.data?.newOutput)) return serviceResp.data.newOutput;
+    return null;
+  };
+
   /* --- callUpdateOrAdd --- */
   const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
     setError("");
@@ -292,7 +305,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       if (nodeId) {
         console.info("Call editTrialNode with:", { flowchartId, nodeId, payload: payloadNode });
         const res = await editTrialNode(flowchartId, nodeId, payloadNode);
-        console.info("editTrialNode result:", res);
+
+        // new: extract newOutput when available and log it (otherwise log full res)
+        const newOutput = extractNewOutput(res);
+        if (newOutput) {
+          console.info("editTrialNode newOutput:", newOutput);
+        } else {
+          console.info("editTrialNode result:", res);
+        }
 
         if (onRefresh) {
           try {
@@ -310,7 +330,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         }
         console.info("Call insertTrialNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
         const res = await insertTrialNode(flowchartId, selectedEdgeId, payloadNode);
-        console.info("insertTrialNode result:", res);
+
+        // new: extract newOutput when available and log it (otherwise log full res)
+        const newOutput = extractNewOutput(res);
+        if (newOutput) {
+          console.info("insertTrialNode newOutput:", newOutput);
+        } else {
+          console.info("insertTrialNode result:", res);
+        }
 
         if (onRefresh) {
           try {
@@ -375,7 +402,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       console.info("Deleting node:", nodeId, "from flowchart (trial):", flowchartId);
 
       const res = await deleteTrialNode(flowchartId, nodeId);
-      console.info("deleteTrialNode response:", res);
+
+      // new: extract newOutput when available and log it (otherwise log full res)
+      const newOutput = extractNewOutput(res);
+      if (newOutput) {
+        console.info("deleteTrialNode newOutput:", newOutput);
+      } else {
+        console.info("deleteTrialNode response:", res);
+      }
 
       // delete associated breakpoints (graceful)
       try {
@@ -1065,8 +1099,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
-      </>
-    );
+      </>    );
   }
 
   /* --- Palette --- */
