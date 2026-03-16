@@ -2,14 +2,11 @@
 import express from "express";
 import prisma from "../lib/prisma.js";
 import { hydrateFlowchart, serializeFlowchart } from "./flowchart.controller.js";
-import { normalize as normalizeQuery } from "path"; // dummy import placeholder (not used) - remove if eslint complains
 import { v4 as uuidv4 } from "uuid";
-import { Executor, Node } from "../service/flowchart/index.js"; // Executor for run
+import { Executor, Node } from "../service/flowchart/index.js";
 
 const router = express.Router();
 
-// In-memory map of trial sessions:
-// trialId -> { labId, labRow, flowchart, createdAt }
 const trialFlowcharts = new Map();
 const TRIAL_TTL_MS = 20 * 60 * 1000;
 
@@ -19,19 +16,14 @@ const TRIAL_TTL_MS = 20 * 60 * 1000;
 
 function cleanupExpiredTrials() {
   const now = Date.now();
-
   for (const [trialId, trial] of trialFlowcharts.entries()) {
-
-    if (now - trial.createdAt > TRIAL_TTL_MS) {
-
+    const lastActivity = trial.lastUsed ?? trial.createdAt;
+    if (now - lastActivity > TRIAL_TTL_MS) {
       trialFlowcharts.delete(trialId);
-
       console.log(`Trial expired and removed: ${trialId}`);
     }
-
   }
 }
-// ---- changed: cleanup interval set to 20 minutes ----
 setInterval(cleanupExpiredTrials, 20 * 60 * 1000);
 
 function normalizeType(t) {
@@ -49,70 +41,104 @@ const FIELD_TYPE_MAP = {
   whileSymVal: "WH"
 };
 
-// build shapeConfig from lab row numeric fields OR problemSolving.shapeConfig if present
 function buildShapeConfigFromLab(labRow) {
   const cfg = {};
   if (!labRow) return cfg;
-
   for (const [field, typeKey] of Object.entries(FIELD_TYPE_MAP)) {
     const raw = labRow[field];
     if (raw === undefined || raw === null) continue;
-
     const num = Number(raw);
-
-    // ⭐ 핵심
-    if (num === -1) {
-      cfg[typeKey] = "unlimited";
-    } else if (!Number.isNaN(num)) {
-      cfg[typeKey] = num;
-    }
+    if (num === -1) cfg[typeKey] = "unlimited";
+    else if (!Number.isNaN(num)) cfg[typeKey] = num;
   }
-
   return cfg;
 }
 
-// compute usage + remaining from a serialized flowchart object and a lab row
 function computeUsageAndRemaining(serializedFlowchart, labRow) {
   const nodes = serializedFlowchart?.nodes || [];
   const shapeConfig = buildShapeConfigFromLab(labRow);
-
   const usage = {};
   for (const n of nodes) {
     if (!n?.id) continue;
     const t = normalizeType(n.type || "PH");
     usage[t] = (usage[t] || 0) + 1;
   }
-
-  const ALL_TYPES = ["PH","DC","AS","IF","FOR","WH","IN","OU","ST","EN"];
+  const ALL_TYPES = ["PH", "DC", "AS", "IF", "FOR", "WH", "IN", "OU", "ST", "EN"];
   const shapeRemaining = {};
-
   for (const t of ALL_TYPES) {
     const used = usage[t] || 0;
     const limit = shapeConfig[t] ?? "unlimited";
-
     shapeRemaining[t] = {
       limit,
       used,
-      remaining:
-        limit === "unlimited"
-          ? "unlimited"
-          : Math.max(0, limit - used)
+      remaining: limit === "unlimited" ? "unlimited" : Math.max(0, limit - used)
     };
   }
-
   return shapeRemaining;
 }
 
+/**
+ * ✅ restore context จาก snapshot โดยตรงผ่าน _scopeStack หรือ scopeStack
+ * รองรับทั้ง Context.serialize() ที่ return { scopeStack } (ไม่มี _)
+ * และ snapshot ที่ถูก save ด้วย { _scopeStack } (มี _)
+ */
+function restoreContextFromSnapshot(ctx, snapshot) {
+  if (!snapshot) return;
+
+  // รองรับทั้ง scopeStack และ _scopeStack
+  const scopeStack = snapshot.scopeStack ?? snapshot._scopeStack;
+
+  if (Array.isArray(scopeStack) && scopeStack.length > 0) {
+    if (typeof ctx.restore === "function") {
+      // ✅ ใช้ Context.restore() โดยตรง (ดีที่สุด)
+      ctx.restore({
+        scopeStack: JSON.parse(JSON.stringify(scopeStack)),
+        output: snapshot.output ?? []
+      });
+      return;
+    }
+    // fallback: set _scopeStack manual
+    ctx._scopeStack = JSON.parse(JSON.stringify(scopeStack));
+    if (typeof ctx._syncVariables === "function") ctx._syncVariables();
+    ctx.output = Array.isArray(snapshot.output) ? Array.from(snapshot.output) : [];
+    return;
+  }
+
+  // fallback สุดท้าย: rebuild จาก variables array
+  if (Array.isArray(snapshot.variables) && snapshot.variables.length > 0) {
+    ctx._scopeStack = [{}];
+    for (const v of snapshot.variables) {
+      if (v && v.name) {
+        ctx._scopeStack[0][v.name] = { value: v.value, varType: v.varType || null };
+      }
+    }
+    if (typeof ctx._syncVariables === "function") ctx._syncVariables();
+    ctx.output = Array.isArray(snapshot.output) ? Array.from(snapshot.output) : [];
+  }
+}
+
+/**
+ * ✅ inject input จากผู้ใช้ — เฉพาะตัวแปรที่ declare แล้วเท่านั้น
+ * ไม่ declare อัตโนมัติ
+ */
+function applyUserVariables(ctx, vars) {
+  if (!ctx || !vars || !Array.isArray(vars)) return;
+  for (const v of vars) {
+    if (!v || !v.name) continue;
+    try {
+      if (typeof ctx.isDeclared === "function" && ctx.isDeclared(v.name)) {
+        ctx.set(v.name, v.value, v.varType);
+      }
+    } catch (e) {
+      console.warn(`applyUserVariables: failed to set '${v.name}':`, e?.message);
+    }
+  }
+}
 
 /* ----------------------
    Trial endpoints
    ---------------------- */
 
-/**
- * POST /trial/start
- * body: { labId }
- * -> creates a trial session, returns { trialId, flowchart, lab }
- */
 router.post("/start", async (req, res) => {
   try {
     const { labId } = req.body;
@@ -124,7 +150,6 @@ router.post("/start", async (req, res) => {
     });
     if (!labRow) return res.status(404).json({ ok: false, error: "Lab not found" });
 
-    // build an empty flowchart payload (start/end)
     const initialPayload = {
       nodes: [
         { id: "n_start", type: "ST", label: "Start", data: { label: "Start" }, position: { x: 0, y: 0 }, incomingEdgeIds: [], outgoingEdgeIds: ["n_start-n_end"] },
@@ -134,30 +159,27 @@ router.post("/start", async (req, res) => {
       limits: { maxSteps: 100000, maxTimeMs: 5000, maxLoopIterationsPerNode: 20000 }
     };
 
-    const fcSerialized = initialPayload; // keep serialized form in memory
     const trialId = uuidv4();
-
     trialFlowcharts.set(trialId, {
       labId: Number(labId),
       labRow,
-      flowchart: fcSerialized,
+      flowchart: initialPayload,
+      executor: null,
       createdAt: Date.now(),
       lastUsed: Date.now()
     });
 
-    const shapeRemaining = computeUsageAndRemaining(fcSerialized, labRow);
-
     return res.json({
       ok: true,
       trialId,
-      flowchart: fcSerialized,
+      flowchart: initialPayload,
       lab: {
         labId: labRow.labId,
         labname: labRow.labname,
         inSymVal: labRow.inSymVal,
         outSymVal: labRow.outSymVal
       },
-      shapeRemaining
+      shapeRemaining: computeUsageAndRemaining(initialPayload, labRow)
     });
   } catch (err) {
     console.error("trial start error:", err);
@@ -165,34 +187,29 @@ router.post("/start", async (req, res) => {
   }
 });
 
-/**
- * GET /trial/:trialId/flowchart
- */
 router.get("/:trialId/flowchart", async (req, res) => {
   try {
-    const trialId = req.params.trialId;
-    const state = trialFlowcharts.get(trialId);
-    if (!state) return res.status(404).json({ ok: false, error: "trial not found" });
-
-    const shapeRemaining = computeUsageAndRemaining(state.flowchart, state.labRow);
-
-    return res.json({ ok: true, trialId, flowchart: state.flowchart, shapeRemaining, lab: { labId: state.labRow.labId, labname: state.labRow.labname } });
+    const state = trialFlowcharts.get(req.params.trialId);
+    if (!state) return res.status(404).json({ ok: false, error: "Trial session not found or expired. Please start a new trial." });
+    state.lastUsed = Date.now();
+    return res.json({
+      ok: true,
+      trialId: req.params.trialId,
+      flowchart: state.flowchart,
+      shapeRemaining: computeUsageAndRemaining(state.flowchart, state.labRow),
+      lab: { labId: state.labRow.labId, labname: state.labRow.labname }
+    });
   } catch (err) {
     console.error("trial get flowchart error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
-/**
- * POST /trial/:trialId/flowchart/node
- * body: { edgeId, node: { type?, label?, data?, ... } }
- * -> insert node at edge (like normal insert-node) but not persisted to DB
- */
 router.post("/:trialId/flowchart/node", async (req, res) => {
   try {
-    const trialId = req.params.trialId;
-    const state = trialFlowcharts.get(trialId);
-    if (!state) return res.status(404).json({ ok: false, error: "trial not found" });
+    const state = trialFlowcharts.get(req.params.trialId);
+    if (!state) return res.status(404).json({ ok: false, error: "Trial session not found or expired. Please start a new trial." });
+    state.lastUsed = Date.now();
 
     let raw = req.body;
     if (typeof raw === "string") raw = JSON.parse(raw);
@@ -201,21 +218,16 @@ router.post("/:trialId/flowchart/node", async (req, res) => {
     if (!edgeId) return res.status(400).json({ ok: false, error: "Missing edgeId" });
     if (!nodeSpec || typeof nodeSpec !== "object") return res.status(400).json({ ok: false, error: "Missing node" });
 
-    const saved = state.flowchart;
-    const fc = hydrateFlowchart(saved);
+    const fc = hydrateFlowchart(state.flowchart);
     if (!fc.getEdge(edgeId)) return res.status(400).json({ ok: false, error: `Edge '${edgeId}' not found` });
 
-    // compute current shapeRemaining based on lab
-    const shapeRemainingBefore = computeUsageAndRemaining(saved, state.labRow);
-
+    const shapeRemainingBefore = computeUsageAndRemaining(state.flowchart, state.labRow);
     const incomingType = normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH");
-    // enforce limit if limited
-    const info = shapeRemainingBefore[incomingType] || { limit: "unlimited", used: 0, remaining: "unlimited" };
+    const info = shapeRemainingBefore[incomingType] || { limit: "unlimited", remaining: "unlimited" };
     if (info.limit !== "unlimited" && Number(info.remaining) <= 0) {
       return res.status(409).json({ ok: false, error: `Node limit reached for type ${incomingType}`, shapeRemaining: shapeRemainingBefore });
     }
 
-    // create Node and insert
     const nodeId = nodeSpec.id || fc.genId();
     const newNode = new Node(
       nodeId,
@@ -236,16 +248,14 @@ router.post("/:trialId/flowchart/node", async (req, res) => {
     }
 
     const afterSerialized = serializeFlowchart(fc);
-    // update state
     state.flowchart = afterSerialized;
-    trialFlowcharts.set(trialId, state);
+    // ✅ reset executor state เมื่อ flowchart เปลี่ยน
+    state.executor = null;
+    trialFlowcharts.set(req.params.trialId, state);
 
-    // gather created edge ids touching new node
     const createdEdgeIds = (afterSerialized.edges || [])
       .filter(e => e.source === newNode.id || e.target === newNode.id)
       .map(e => e.id);
-
-    const shapeRemainingAfter = computeUsageAndRemaining(afterSerialized, state.labRow);
 
     return res.json({
       ok: true,
@@ -253,7 +263,7 @@ router.post("/:trialId/flowchart/node", async (req, res) => {
       nodeId: newNode.id,
       createdEdgeIds,
       flowchart: afterSerialized,
-      shapeRemaining: shapeRemainingAfter
+      shapeRemaining: computeUsageAndRemaining(afterSerialized, state.labRow)
     });
   } catch (err) {
     console.error("trial insert-node error:", err);
@@ -261,138 +271,87 @@ router.post("/:trialId/flowchart/node", async (req, res) => {
   }
 });
 
-/**
- * PUT /trial/:trialId/flowchart/node/:nodeId
- * update node data (same validation as DB-backed)
- */
 router.put("/:trialId/flowchart/node/:nodeId", async (req, res) => {
   try {
     const { trialId, nodeId } = req.params;
     const state = trialFlowcharts.get(trialId);
-
-    if (!state) {
-      return res.status(404).json({ ok: false, error: "trial not found" });
-    }
+    if (!state) return res.status(404).json({ ok: false, error: "Trial session not found or expired. Please start a new trial." });
+    state.lastUsed = Date.now();
 
     const { label, data, position, type } = req.body || {};
-
     const fc = hydrateFlowchart(state.flowchart);
     const node = fc.getNode(nodeId);
+    if (!node) return res.status(404).json({ ok: false, error: `Node '${nodeId}' not found` });
 
-    if (!node) {
-      return res.status(404).json({ ok: false, error: `Node '${nodeId}' not found` });
-    }
-
-    // ❗ ถ้าจะ allow เปลี่ยน type ต้องเช็ค limit ด้วย
     if (type) {
       const before = computeUsageAndRemaining(state.flowchart, state.labRow);
       const newType = normalizeType(type);
       const oldType = normalizeType(node.type);
-
       if (newType !== oldType) {
         const info = before[newType] || { limit: "unlimited", remaining: "unlimited" };
         if (info.limit !== "unlimited" && Number(info.remaining) <= 0) {
-          return res.status(409).json({
-            ok: false,
-            error: `Node limit reached for type ${newType}`,
-            shapeRemaining: before
-          });
+          return res.status(409).json({ ok: false, error: `Node limit reached for type ${newType}`, shapeRemaining: before });
         }
         node.type = newType;
       }
     }
 
-    // update fields
     if (label !== undefined) node.label = label;
     if (data !== undefined) node.data = data;
     if (position !== undefined) node.position = position;
 
-    // serialize + save
     const afterSerialized = serializeFlowchart(fc);
     state.flowchart = afterSerialized;
+    // ✅ reset executor state เมื่อ node เปลี่ยน
+    state.executor = null;
     trialFlowcharts.set(trialId, state);
 
     return res.json({
       ok: true,
       message: `Node ${nodeId} updated`,
       nodeId,
-      node: {
-        id: node.id,
-        type: node.type,
-        label: node.label,
-        data: node.data,
-        position: node.position
-      },
+      node: { id: node.id, type: node.type, label: node.label, data: node.data, position: node.position },
       flowchart: afterSerialized,
       shapeRemaining: computeUsageAndRemaining(afterSerialized, state.labRow)
     });
-
   } catch (err) {
     console.error("trial edit-node error:", err);
-    return res.status(500).json({
-      ok: false,
-      error: String(err.message ?? err)
-    });
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
-
-/**
- * DELETE /trial/:trialId/flowchart/node/:nodeId
- */
 router.delete("/:trialId/flowchart/node/:nodeId", async (req, res) => {
   try {
     const { trialId, nodeId } = req.params;
-
     const state = trialFlowcharts.get(trialId);
-    if (!state) {
-      return res.status(404).json({
-        ok: false,
-        error: "trial not found"
-      });
-    }
+    if (!state) return res.status(404).json({ ok: false, error: "Trial session not found or expired. Please start a new trial." });
+    state.lastUsed = Date.now();
 
     const fc = hydrateFlowchart(state.flowchart);
-
-    // ❌ ไม่ต้องเช็ค limit
-    // ❌ ไม่สน unlimited
-    // ✅ ลบได้เสมอ
     fc.removeNode(nodeId);
 
     state.flowchart = serializeFlowchart(fc);
+    // ✅ reset executor state เมื่อ node ถูกลบ
+    state.executor = null;
     trialFlowcharts.set(trialId, state);
 
     return res.json({
       ok: true,
       message: `Node ${nodeId} removed`,
       flowchart: state.flowchart,
-      shapeRemaining: computeUsageAndRemaining(
-        state.flowchart,
-        state.labRow
-      )
+      shapeRemaining: computeUsageAndRemaining(state.flowchart, state.labRow)
     });
-
   } catch (err) {
     console.error("delete node error:", err);
-    return res.status(400).json({
-      ok: false,
-      error: String(err.message ?? err)
-    });
+    return res.status(400).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
-
-/**
- * GET /trial/:trialId/testcases
- * -> return testcases for the lab (so FE can present / run)
- */
 router.get("/:trialId/testcases", async (req, res) => {
   try {
-    const trialId = req.params.trialId;
-    const state = trialFlowcharts.get(trialId);
-    if (!state) return res.status(404).json({ ok: false, error: "trial not found" });
-
-    // labRow already includes testcases if we fetched early; if not, fetch
+    const state = trialFlowcharts.get(req.params.trialId);
+    if (!state) return res.status(404).json({ ok: false, error: "Trial session not found or expired. Please start a new trial." });
+    state.lastUsed = Date.now();
     const labRow = state.labRow || (await prisma.lab.findUnique({ where: { labId: state.labId }, include: { testcases: true } }));
     return res.json({ ok: true, testcases: labRow.testcases || [] });
   } catch (err) {
@@ -401,29 +360,15 @@ router.get("/:trialId/testcases", async (req, res) => {
   }
 });
 
-/**
- * POST /trial/:trialId/execute
- * body:
- * {
- *   action?: "step" | "runAll" | "reset" | "resume",
- *   variables?: [],
- *   options?: {},
- *   forceAdvanceBP?: boolean
- * }
- */
 router.post("/:trialId/execute", async (req, res) => {
   try {
     const trialId = req.params.trialId;
     const trial = trialFlowcharts.get(trialId);
-
-    if (!trial) {
-      return res.status(404).json({ ok: false, error: "trial not found" });
-    }
+    if (!trial) return res.status(404).json({ ok: false, error: "Trial session not found or expired. Please start a new trial." });
+    trial.lastUsed = Date.now();
 
     let raw = req.body;
-    if (typeof raw === "string") {
-      try { raw = JSON.parse(raw); } catch {}
-    }
+    if (typeof raw === "string") { try { raw = JSON.parse(raw); } catch {} }
     const body = raw || {};
 
     const action = body.action ?? "runAll";
@@ -431,11 +376,10 @@ router.post("/:trialId/execute", async (req, res) => {
     const options = body.options || {};
     const forceAdvanceBP = Boolean(body.forceAdvanceBP);
 
-    // hydrate flowchart
     const fc = hydrateFlowchart(trial.flowchart);
     const executor = new Executor(fc, options);
 
-    // restore previous executor state (สำคัญมาก)
+    // ── restore previous executor state ──
     if (trial.executor) {
       const es = trial.executor;
       executor.currentNodeId = es.currentNodeId;
@@ -443,13 +387,10 @@ router.post("/:trialId/execute", async (req, res) => {
       executor.paused = es.paused;
       executor.stepCount = es.stepCount;
 
-      if (es.context?.variables) {
-        for (const v of es.context.variables) {
-          executor.context.set(v.name, v.value, v.varType);
-        }
-      }
+      // ✅ restore context ผ่าน scopeStack (รองรับทั้ง scopeStack และ _scopeStack)
+      restoreContextFromSnapshot(executor.context, es.context);
 
-      // restore node internals (for / while / if)
+      // restore node internals (for / while loop state)
       if (es.flowchartNodeInternal) {
         for (const nid of Object.keys(es.flowchartNodeInternal)) {
           const node = executor.flowchart.getNode(nid);
@@ -459,61 +400,96 @@ router.post("/:trialId/execute", async (req, res) => {
       }
     }
 
-    // apply variables from request
-    if (Array.isArray(variables)) {
-      for (const v of variables) {
-        executor.context.set(v.name, v.value, v.varType);
-      }
-    }
+    // ── inject input จากผู้ใช้ (เฉพาะที่ declare แล้ว) ──
+    applyUserVariables(executor.context, variables);
 
-    /* =========================
-     * ACTION: RESET
-     * ======================= */
+    /* ACTION: RESET */
     if (action === "reset") {
+      for (const node of Object.values(executor.flowchart.nodes)) {
+        node._initialized = false;
+        node._phase = null;
+        node._loopCount = 0;
+        node._scopePushed = false;
+        node._initValue = null;
+      }
       executor.reset();
       trial.executor = null;
-      return res.json({ ok: true, message: "reset" });
+      return res.json({
+        ok: true,
+        message: "reset",
+        context: { variables: executor.context.variables, output: executor.context.output }
+      });
     }
 
-    /* =========================
-     * ACTION: RUN ALL
-     * ======================= */
+    /* ACTION: RUN ALL */
     if (action === "runAll") {
       const nodeStates = [];
+      let runError = null;
 
       while (!executor.finished) {
         const nodeIdBefore = executor.currentNodeId;
         const r = executor.step({ forceAdvanceBP });
-
         nodeStates.push({
           nodeId: nodeIdBefore,
           output: [...executor.context.output],
           variables: [...executor.context.variables]
         });
-
+        if (r?.error) { runError = r.error; break; }
         if (executor.paused && !forceAdvanceBP) break;
-        if (r?.error) break;
+      }
+
+      if (runError) {
+        return res.status(400).json({
+          ok: false,
+          error: String(runError.message ?? runError),
+          nodeStates,
+          context: { variables: executor.context.variables, output: executor.context.output },
+          done: true
+        });
       }
 
       return res.json({
         ok: true,
         nodeStates,
-        finalContext: {
-          variables: executor.context.variables,
-          output: executor.context.output
-        }
+        finalContext: { variables: executor.context.variables, output: executor.context.output }
       });
     }
 
-    /* =========================
-     * ACTION: STEP
-     * ======================= */
     if (action === "step") {
-      if (executor.finished) executor.reset();
+      // ✅ ถ้า finished แล้ว → ส่ง done: true พร้อม output ว่าง
+      if (executor.finished) {
+        return res.json({
+          ok: true,
+          node: null,
+          nextNodeId: null,
+          context: { variables: [], output: [] },
+          newOutput: [],
+          paused: false,
+          done: true
+        });
+      }
+      // ✅ จำ output length ก่อน step
+      const outputLengthBefore = executor.context.output.length;
 
       const result = executor.step({ forceAdvanceBP });
 
-      // snapshot node internal states
+      // ✅ คำนวณเฉพาะ output ใหม่ที่เพิ่มมาใน step นี้
+      const newOutput = executor.context.output.slice(outputLengthBefore);
+
+      // ✅ ดัก error จาก handler
+      if (result?.error) {
+        trial.executor = null;
+        return res.status(400).json({
+          ok: false,
+          error: String(result.error.message ?? result.error),
+          node: result.node ? { id: result.node.id, type: result.node.type } : null,
+          context: { variables: executor.context.variables, output: executor.context.output },
+          newOutput: [],
+          done: true
+        });
+      }
+
+      // snapshot node internals
       const flowchartNodeInternal = {};
       for (const [nid, node] of Object.entries(executor.flowchart.nodes)) {
         flowchartNodeInternal[nid] = {
@@ -525,29 +501,37 @@ router.post("/:trialId/execute", async (req, res) => {
         };
       }
 
-      // save executor state
+      // snapshot context
+      let contextSnapshot;
+      try {
+        contextSnapshot = typeof executor.context.serialize === "function"
+          ? executor.context.serialize()
+          : {
+              variables: executor.context.variables,
+              output: executor.context.output,
+              scopeStack: executor.context._scopeStack
+                ? JSON.parse(JSON.stringify(executor.context._scopeStack))
+                : [{}]
+            };
+      } catch (e) {
+        contextSnapshot = { variables: executor.context.variables, output: executor.context.output };
+      }
+
       trial.executor = {
         currentNodeId: executor.currentNodeId,
         finished: executor.finished,
         paused: executor.paused,
         stepCount: executor.stepCount,
-        context: {
-          variables: executor.context.variables,
-          output: executor.context.output
-        },
+        context: contextSnapshot,
         flowchartNodeInternal
       };
 
       return res.json({
         ok: true,
-        node: result.node
-          ? { id: result.node.id, type: result.node.type }
-          : null,
+        node: result.node ? { id: result.node.id, type: result.node.type } : null,
         nextNodeId: executor.currentNodeId,
-        context: {
-          variables: executor.context.variables,
-          output: executor.context.output
-        },
+        context: { variables: executor.context.variables, output: executor.context.output },
+        newOutput,  // ✅ หน้าบ้านใช้ตัวนี้ append console แทน context.output
         paused: executor.paused,
         done: executor.finished
       });
@@ -561,28 +545,18 @@ router.post("/:trialId/execute", async (req, res) => {
   }
 });
 
-
-
-/**
- * POST /trial/:trialId/testcases/run  */
 router.post("/:trialId/testcases/run", async (req, res) => {
   try {
-    const trialId = req.params.trialId;
-    const state = trialFlowcharts.get(trialId);
-    if (!state) return res.status(404).json({ ok: false, error: "trial not found" });
+    const state = trialFlowcharts.get(req.params.trialId);
+    if (!state) return res.status(404).json({ ok: false, error: "Trial session not found or expired. Please start a new trial." });
+    state.lastUsed = Date.now();
 
-    // get testcases from state.labRow (fetched at start), otherwise fetch DB
     const labRow = state.labRow || (await prisma.lab.findUnique({ where: { labId: state.labId }, include: { testcases: true } }));
-    const testcases = (labRow && labRow.testcases) ? labRow.testcases : [];
+    const testcases = labRow?.testcases ?? [];
+    if (!testcases.length) return res.status(400).json({ ok: false, error: "No testcases available for this lab" });
 
-    if (!Array.isArray(testcases) || testcases.length === 0) {
-      return res.status(400).json({ ok: false, error: "No testcases available for this lab" });
-    }
-
-    // optional options from client
     const body = req.body || {};
     const ignoreBreakpoints = Boolean(body.ignoreBreakpoints);
-
     const serialized = state.flowchart;
     const results = [];
     let totalScore = 0;
@@ -593,124 +567,55 @@ router.post("/:trialId/testcases/run", async (req, res) => {
       const score = Number(tc.score || 0);
       maxScore += score;
 
-      // parse stored inputVal/outputVal (labService stored them as JSON string for arrays/objects)
       function safeParse(val) {
         if (val === undefined || val === null) return null;
-        if (typeof val === "string") {
-          // try parse JSON, but if not JSON, return as string
-          try {
-            return JSON.parse(val);
-          } catch (e) {
-            return val;
-          }
-        }
+        if (typeof val === "string") { try { return JSON.parse(val); } catch { return val; } }
         return val;
       }
       const inputVal = safeParse(tc.inputVal);
       const expectedVal = safeParse(tc.outputVal);
 
       try {
-        // hydrate a fresh flowchart for each testcase to be isolated
         const fc = hydrateFlowchart(serialized);
-        const executor = new Executor(fc, {}); // no special options here
+        const executor = new Executor(fc, {});
 
-        // set input variables into executor.context
-        if (Array.isArray(inputVal)) {
-          executor.context.set("input", inputVal);
-          inputVal.forEach((v, idx) => executor.context.set(`arg${idx}`, v));
-        } else if (inputVal && typeof inputVal === "object") {
-          // treat as named inputs
-          for (const k of Object.keys(inputVal)) executor.context.set(k, inputVal[k]);
-          executor.context.set("input", inputVal);
-        } else {
-          // primitive
-          executor.context.set("input0", inputVal);
-          executor.context.set("input", inputVal);
-        }
+        // inject testcase input ผ่าน inputProvider แทน context.set โดยตรง
+        // เพราะตัวแปรต้อง declare ก่อนผ่าน DC node
+        let inputQueue = [];
+        if (Array.isArray(inputVal)) inputQueue = inputVal.map(String);
+        else if (inputVal !== null) inputQueue = [String(inputVal)];
 
-        // run all (ignore breakpoints if requested)
+        executor.setInputProvider(() => inputQueue.shift() ?? "");
+
         const finalContext = executor.runAll({ ignoreBreakpoints });
-
-        // actual output candidate:
-        // prefer executor output list if available, otherwise variables snapshot
-        const actualOutput = finalContext.output ?? finalContext.variables ?? null;
-
-        // compare expectedVal and actualOutput
+        const actualOutput = finalContext.output ?? [];
         const passed = JSON.stringify(actualOutput) === JSON.stringify(expectedVal);
         const awarded = passed ? score : 0;
         totalScore += awarded;
 
-        results.push({
-          testcaseId: tcId,
-          inputVal,
-          expectedVal,
-          actualVal: actualOutput,
-          passed,
-          score: score,
-          scoreAwarded: awarded
-        });
+        results.push({ testcaseId: tcId, inputVal, expectedVal, actualVal: actualOutput, passed, score, scoreAwarded: awarded });
       } catch (err) {
-        results.push({
-          testcaseId: tcId,
-          inputVal,
-          expectedVal,
-          actualVal: null,
-          passed: false,
-          score: score,
-          scoreAwarded: 0,
-          error: String(err.message ?? err)
-        });
+        results.push({ testcaseId: tcId, inputVal, expectedVal, actualVal: null, passed: false, score, scoreAwarded: 0, error: String(err.message ?? err) });
       }
     }
 
-    return res.json({
-      ok: true,
-      trialId,
-      results,
-      totalScore,
-      maxScore
-    });
+    return res.json({ ok: true, trialId: req.params.trialId, results, totalScore, maxScore });
   } catch (err) {
     console.error("trial run testcases error:", err);
     return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
-/**
- 
-GET /trial/:trialId/shapes/remaining
--> return remaining shape limits for this trial*/
 router.get("/:trialId/shapes/remaining", async (req, res) => {
   try {
-    const { trialId } = req.params;
-
-    const state = trialFlowcharts.get(trialId);
-    if (!state) {
-      return res.status(404).json({
-        ok: false,
-        error: "trial not found"
-      });
-    }
-
-    const shapeRemaining = computeUsageAndRemaining(
-      state.flowchart,
-      state.labRow
-    );
-
-    return res.json({
-      ok: true,
-      trialId,
-      shapeRemaining
-    });
-
+    const state = trialFlowcharts.get(req.params.trialId);
+    if (!state) return res.status(404).json({ ok: false, error: "Trial session not found or expired. Please start a new trial." });
+    state.lastUsed = Date.now();
+    return res.json({ ok: true, trialId: req.params.trialId, shapeRemaining: computeUsageAndRemaining(state.flowchart, state.labRow) });
   } catch (err) {
     console.error("get shape remaining error:", err);
-    return res.status(500).json({
-      ok: false,
-      error: String(err.message ?? err)
-    });
+    return res.status(500).json({ ok: false, error: String(err.message ?? err) });
   }
 });
 
-/* Expose router */
 export default router;
