@@ -89,6 +89,9 @@ export default function TopBarControls({
   // ref to mirror expectingInput state so loops/closures see latest value
   const expectingInputRef = useRef<boolean>(expectingInput);
 
+  // NEW: pending error storage so we can show it AFTER user input
+  const pendingErrorRef = useRef<string | null>(null);
+
   // --- State สำหรับเก็บข้อมูล Lab ---
   const [labInfo, setLabInfo] = useState<{ name?: string; detail?: string } | null>(null);
 
@@ -127,8 +130,8 @@ export default function TopBarControls({
         
         // --- Logic การดึงข้อมูล Lab ---
         if (mounted) {
-            // พยายามหา labId จาก response ถ้าไม่มีให้ Default เป็น 5 ตามโจทย์
-            const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 5; 
+            // พยายามหา labId จาก response ถ้าไม่มีให้ Default เป็น 19 ตามโจทย์
+            const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 19; 
             
             if (foundLabId) {
                 apiGetLab(foundLabId).then((labResp) => {
@@ -348,10 +351,15 @@ export default function TopBarControls({
       try {
         resp = (await apiExecuteTrial(effectiveId as any, payload)) as ExecuteResponse;
       } catch (err: any) {
-        const msg = err?.response?.data?.message ?? err?.message ?? String(err);
+        const msg =
+          err?.response?.data?.message ??
+          err?.response?.data?.error ??
+          err?.message ??
+          String(err);
         console.warn("apiExecuteTrial error (step):", msg);
 
-        if (/input missing/i.test(msg) || /no input provider/i.test(msg)) {
+        // แก้ไข Regex ให้คลอบคลุมคำว่า input provider
+        if (/input missing/i.test(msg) || /input provider/i.test(msg)) {
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
           setInputVarName(varName);
@@ -359,7 +367,23 @@ export default function TopBarControls({
           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
           return;
         }
-        throw err;
+
+        // NEW: ถ้า error ระบุว่า "not declared" ให้เก็บไว้แสดงทีหลัง (หลังกรอก input)
+        if (/not declare/i.test(msg) || /not declared/i.test(msg) || /not declared before input/i.test(msg)) {
+          pendingErrorRef.current = msg;
+          // try to extract varname to prompt user (if present)
+          const m = String(msg).match(/'([^']+)'/);
+          const varName = m ? m[1] : null;
+          setInputVarName(varName);
+          setExpecting(true);
+          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
+          return;
+        }
+
+        // --- แสดง error ให้ผู้ใช้ทันทีใน Console (อื่น ๆ) ---
+        setErrorMsg(msg);
+        setChatMessages((m) => [...m, { sender: "system", text: `Error: ${msg}` }]);
+        return;
       }
 
       if (!resp) return;
@@ -452,6 +476,7 @@ export default function TopBarControls({
       console.error("execute step error", err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
+      setChatMessages((m) => [...m, { sender: "system", text: `Error: ${message}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -479,8 +504,26 @@ export default function TopBarControls({
       try {
         resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: firstCallVars, forceAdvanceBP })) as ExecuteResponse;
       } catch (err: any) {
-        const msg = err?.response?.data?.message ?? err?.message ?? String(err);
-        if (/input missing/i.test(msg) || /no input provider/i.test(msg)) {
+        const msg =
+          err?.response?.data?.message ??
+          err?.response?.data?.error ??
+          err?.message ??
+          String(err);
+
+        // แก้ไข Regex ให้คลอบคลุมคำว่า input provider
+        if (/input missing/i.test(msg) || /input provider/i.test(msg)) {
+          const m = String(msg).match(/'([^']+)'/);
+          const varName = m ? m[1] : null;
+          setInputVarName(varName);
+          setExpecting(true);
+          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
+
+          await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+          runAllWaitingForInputRef.current = null;
+          resp = lastResponse ?? null;
+        } else if (/not declare/i.test(msg) || /not declared/i.test(msg) || /not declared before input/i.test(msg)) {
+          // NEW: ถ้าเป็นกรณี not declared ให้เก็บไว้แสดงทีหลัง (หลังกรอก input)
+          pendingErrorRef.current = msg;
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
           setInputVarName(varName);
@@ -491,7 +534,12 @@ export default function TopBarControls({
           runAllWaitingForInputRef.current = null;
           resp = lastResponse ?? null;
         } else {
-          throw err;
+          // --- แสดง error ให้ผู้ใช้ทันที (และยกเลิก runAll) ---
+          setErrorMsg(msg);
+          setChatMessages((m) => [...m, { sender: "system", text: `Error: ${msg}` }]);
+          runAllActiveRef.current = false;
+          setIsLoading(false);
+          return;
         }
       }
 
@@ -601,8 +649,25 @@ export default function TopBarControls({
         try {
           resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: [], forceAdvanceBP })) as ExecuteResponse;
         } catch (err: any) {
-          const msg = err?.response?.data?.message ?? err?.message ?? String(err);
-          if (/input missing/i.test(msg) || /no input provider/i.test(msg)) {
+          const msg =
+            err?.response?.data?.message ??
+            err?.response?.data?.error ??
+            err?.message ??
+            String(err);
+          // แก้ไข Regex ให้คลอบคลุมคำว่า input provider
+          if (/input missing/i.test(msg) || /input provider/i.test(msg)) {
+            const m = String(msg).match(/'([^']+)'/);
+            const varName = m ? m[1] : null;
+            setInputVarName(varName);
+            setExpecting(true);
+            setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${varName ?? "input"}` }]);
+            await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+            runAllWaitingForInputRef.current = null;
+            resp = lastResponse ?? null;
+            if (!resp) continue;
+          } else if (/not declare/i.test(msg) || /not declared/i.test(msg) || /not declared before input/i.test(msg)) {
+            // NEW: store pending error and prompt user for input (then resume)
+            pendingErrorRef.current = msg;
             const m = String(msg).match(/'([^']+)'/);
             const varName = m ? m[1] : null;
             setInputVarName(varName);
@@ -613,7 +678,11 @@ export default function TopBarControls({
             resp = lastResponse ?? null;
             if (!resp) continue;
           } else {
-            throw err;
+            // --- แสดง error และหยุด loop / ยกเลิก runAll ---
+            setErrorMsg(msg);
+            setChatMessages((m) => [...m, { sender: "system", text: `Error: ${msg}` }]);
+            runAllActiveRef.current = false;
+            break;
           }
         }
 
@@ -716,6 +785,7 @@ export default function TopBarControls({
       console.error("runAll error", err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
+      setChatMessages((m) => [...m, { sender: "system", text: `Error: ${message}` }]);
     } finally {
       setIsLoading(false);
       runAllActiveRef.current = false;
@@ -757,6 +827,19 @@ export default function TopBarControls({
 
       // send to backend
       const resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: singleVarPayload, forceAdvanceBP })) as ExecuteResponse;
+
+      // เพิ่มการแจ้งเตือน Error จาก Response (หาก API คืนค่า ok เป็น false แต่ไม่เข้า catch)
+      if (resp && resp.ok === false) {
+        const errMsg = resp.error || resp.message || "Execution failed";
+        setChatMessages((m) => [...m, { sender: "system", text: `Error: ${errMsg}` }]);
+      }
+
+      // FIRST: if we had a pending error stored earlier, display it now (after user input)
+      if (pendingErrorRef.current) {
+        const pendingMsg = pendingErrorRef.current;
+        setChatMessages((m) => [...m, { sender: "system", text: `Error: ${pendingMsg}` }]);
+        pendingErrorRef.current = null;
+      }
 
       // update UI
       setLastResponse(resp);
@@ -823,10 +906,23 @@ export default function TopBarControls({
         } catch { /* ignore */ }
         runAllWaitingForInputRef.current = null;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("submit input error", err);
-      const message = err instanceof Error ? err.message : String(err);
-      setErrorMsg(message);
+      // เปลี่ยนการดึงข้อความ Error แบบเจาะลึกไปที่ Response ของ Axios
+      const msg =
+        err?.response?.data?.message ??
+        err?.response?.data?.error ??
+        err?.message ??
+        String(err);
+        
+      setErrorMsg(msg);
+      setChatMessages((m) => [...m, { sender: "system", text: `Error: ${msg}` }]);
+      
+      // ให้ loop RunAll ที่รอ Input อยู่หลุดจากการรอเมื่อเจอ Error ด้วย (จะได้ไม่ค้าง)
+      if (runAllWaitingForInputRef.current) {
+        try { runAllWaitingForInputRef.current(); } catch { }
+        runAllWaitingForInputRef.current = null;
+      }
     } finally {
       setIsLoading(false);
     }
@@ -844,6 +940,9 @@ export default function TopBarControls({
   };
 
   const cancelInput = () => {
+    // clear pending error when user cancels input (avoid stale message)
+    pendingErrorRef.current = null;
+
     setExpecting(false);
     setInputNodeId(null);
     setInputVarName(null);
@@ -874,6 +973,9 @@ export default function TopBarControls({
       setExpecting(false);
       setErrorMsg(null);
 
+      // clear pending error
+      pendingErrorRef.current = null;
+
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
@@ -898,6 +1000,7 @@ export default function TopBarControls({
       console.error("reset error", err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
+      setChatMessages((m) => [...m, { sender: "system", text: `Error: ${message}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -1032,16 +1135,6 @@ export default function TopBarControls({
         if (errorMessage) {
           messages.push({ level: "error", text: String(errorMessage) });
         }
-
-        // <-- REMOVED: pushing "Actual: ..." message so Actual lines are not shown in UI
-        // if (actual !== null && typeof actual !== "undefined") {
-        //   try {
-        //     const aStr = Array.isArray(actual) ? actual.join(", ") : String(actual);
-        //     messages.push({ level: "info", text: `Actual: ${aStr}` });
-        //   } catch {
-        //     messages.push({ level: "info", text: `Actual: ${String(actual)}` });
-        //   }
-        // }
 
         newResults[tcId] = messages;
       });
@@ -1195,13 +1288,23 @@ export default function TopBarControls({
                 </div>
             </div>
           )}
-          {chatMessages.map((m, i) => (
-            <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${m.sender === "user" ? "bg-blue-600 text-white rounded-br-sm shadow-sm" : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"}`}>
-                {m.text}
+          {chatMessages.map((m, i) => {
+            const isError = /^error:/i.test((m.text ?? "").trim());
+            return (
+              <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${m.sender === "user"
+                    ? "bg-blue-600 text-white rounded-br-sm shadow-sm"
+                    : isError
+                      ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
+                      : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
+                  }`}
+                >
+                  {m.text}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="p-3 bg-white border-t border-gray-100">
