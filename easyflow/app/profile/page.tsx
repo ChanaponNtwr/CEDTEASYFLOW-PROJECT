@@ -34,6 +34,9 @@ export default function Profile() {
 
   const userId = session?.user?.userId;
 
+  // ✅ เพิ่ม Console Log ตรงนี้เพื่อเช็คค่า Session
+  console.log("Session User:", session?.user);
+
   useEffect(() => {
   if (!userId) return;
 
@@ -134,11 +137,11 @@ export default function Profile() {
   width={246}
   height={246}
   className="absolute top-[269px] left-[84px] 
-             w-[246px] h-[246px] 
-             rounded-full 
-             border-[9px] border-white 
-             bg-[#E3B8FF] 
-             object-cover"
+              w-[246px] h-[246px] 
+              rounded-full 
+              border-[9px] border-white 
+              bg-[#E3B8FF] 
+              object-cover"
 />
 
             <div className="absolute top-[550px] left-[84px] text-[42px] font-bold text-black">
