@@ -339,6 +339,13 @@ export default function TopBarControls({
       const varsToSend = variablesSent ? [] : resolvedInitialVars;
 
       const resp = (await executeStepNode(flowchartId ?? null, varsToSend, forceAdvanceBP)) as ExecuteResponse;
+      
+      // เพิ่มการแจ้งเตือน Error จาก Response (หาก API คืนค่า ok เป็น false แต่ไม่เข้า catch)
+      if (resp && resp.ok === false) {
+        const errMsg = resp.error || resp.message || "Execution failed";
+        pushSystemMessage(`Error: ${errMsg}`);
+      }
+
       setLastResponse(resp);
       setVariablesSent(true);
       setStepCount((s) => s + 1);
@@ -409,6 +416,7 @@ export default function TopBarControls({
       console.error("execute step error", err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
+      pushSystemMessage(`Error: ${message}`);
     } finally {
       setIsLoading(false);
     }
@@ -429,6 +437,12 @@ export default function TopBarControls({
       let firstCallVars = variablesSent ? [] : resolvedInitialVars;
 
       let resp = (await executeStepNode(flowchartId ?? null, firstCallVars, forceAdvanceBP)) as ExecuteResponse;
+      
+      if (resp && resp.ok === false) {
+        const errMsg = resp.error || resp.message || "Execution failed";
+        pushSystemMessage(`Error: ${errMsg}`);
+      }
+
       setLastResponse(resp);
       setVariablesSent(true);
       setStepCount((s) => s + 1);
@@ -516,6 +530,10 @@ export default function TopBarControls({
              pushedResponse = null;
         } else {
              resp = (await executeStepNode(flowchartId ?? null, [], forceAdvanceBP)) as ExecuteResponse;
+             if (resp && resp.ok === false) {
+               const errMsg = resp.error || resp.message || "Execution failed";
+               pushSystemMessage(`Error: ${errMsg}`);
+             }
         }
         
         setLastResponse(resp);
@@ -607,6 +625,7 @@ export default function TopBarControls({
       console.error("runAll error", err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
+      pushSystemMessage(`Error: ${message}`);
     } finally {
       setIsLoading(false);
       runAllActiveRef.current = false;
@@ -643,6 +662,7 @@ export default function TopBarControls({
       if (!resolvedVarName) {
         console.warn("No variable name found for input.");
         setErrorMsg("ไม่พบชื่อตัวแปรสำหรับการป้อนข้อมูล");
+        pushSystemMessage("Error: ไม่พบชื่อตัวแปรสำหรับการป้อนข้อมูล");
         setIsLoading(false);
         return;
       }
@@ -651,6 +671,11 @@ export default function TopBarControls({
 
       const singleVarPayload: Variable[] = [{ name: resolvedVarName, value: inputValue }];
       const resp = (await executeStepNode(flowchartId ?? null, singleVarPayload, forceAdvanceBP)) as ExecuteResponse;
+
+      if (resp && resp.ok === false) {
+        const errMsg = resp.error || resp.message || "Execution failed";
+        pushSystemMessage(`Error: ${errMsg}`);
+      }
 
       setLastResponse(resp);
       setStepCount((s) => s + 1);
@@ -688,6 +713,7 @@ export default function TopBarControls({
       console.error("submit input error", err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
+      pushSystemMessage(`Error: ${message}`);
     } finally {
       setIsLoading(false);
     }
@@ -748,6 +774,7 @@ export default function TopBarControls({
       console.error("reset error", err);
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
+      pushSystemMessage(`Error: ${message}`);
     } finally {
       setIsLoading(false);
     }
@@ -1366,13 +1393,25 @@ export default function TopBarControls({
             </div>
 
           ) : (
-            chatMessages.map((m, i) => (
-            <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[78%] px-3 py-2 rounded-lg whitespace-pre-wrap ${m.sender === "user" ? "bg-blue-600 text-white rounded-br-sm" : "bg-gray-200 text-gray-800 rounded-bl-sm"}`}>
-                {m.text}
-              </div>
-            </div>
-          )))}
+            chatMessages.map((m, i) => {
+              const isError = /^error:/i.test((m.text ?? "").trim());
+              return (
+                <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${
+                      m.sender === "user"
+                        ? "bg-blue-600 text-white rounded-br-sm shadow-sm"
+                        : isError
+                        ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
+                        : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
+                    }`}
+                  >
+                    {m.text}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
 
         <div className="p-3 bg-white border-t border-gray-100">

@@ -37,6 +37,7 @@ const generateDefaultFlowchart = () => {
     data: { label: "Start" },
     sourcePosition: "bottom" as any,
     targetPosition: "top" as any,
+    origin: [0.5, 0], // <--- เพิ่มตรงนี้ เพื่อให้ X:300 คือจุดกึ่งกลาง
   };
 
   const endNode: Node = {
@@ -46,6 +47,7 @@ const generateDefaultFlowchart = () => {
     data: { label: "End" },
     sourcePosition: "bottom" as any,
     targetPosition: "top" as any,
+    origin: [0.5, 0], // <--- เพิ่มตรงนี้ เพื่อให้ X:300 คือจุดกึ่งกลาง
   };
 
   const defaultEdge: Edge = {
@@ -129,6 +131,7 @@ export const convertBackendFlowchart = (payload: any) => {
       draggable: false,
       sourcePosition: "bottom" as any,
       targetPosition: "top" as any,
+      origin: [0.5, 0], // <--- เพิ่มตรงนี้ เพื่อให้ทุก Node จาก API มีจุดกึ่งกลางที่ X เดียวกัน
     };
 
     nodesMap.set(newId, frontEndNode);
@@ -422,6 +425,24 @@ export const convertBackendFlowchart = (payload: any) => {
     shiftAllBreakpointsInBranch(falseChild, 0);
   });
 
+  // --- NEW: Shift input/output nodes horizontally by configurable amounts ---
+  // ปรับค่าตัวแปรเหล่านี้ถ้าต้องการเลื่อนมาก/น้อยขึ้น
+  const INPUT_SHIFT_X = -20; // negative -> move left, positive -> move right
+  const OUTPUT_SHIFT_X = -20; // negative -> move left, positive -> move right
+  const MIN_X = 20; // clamp ไม่ให้ติดขอบซ้ายจนเกินไป
+
+  positionedNodes.forEach((node, id) => {
+    if (node && node.position) {
+      if (node.type === "input") {
+        const newX = (node.position.x || 0) + INPUT_SHIFT_X;
+        node.position.x = Math.max(MIN_X, newX);
+      } else if (node.type === "output") {
+        const newX = (node.position.x || 0) + OUTPUT_SHIFT_X;
+        node.position.x = Math.max(MIN_X, newX);
+      }
+    }
+  });
+
   // --- Section 4: Convert edges and apply handles ---
   const applyEdgeHandles = (edge: Edge, srcNode?: Node, tgtNode?: Node, conditionRaw?: string) => {
     const condition = String(conditionRaw ?? "").toLowerCase();
@@ -513,13 +534,19 @@ export const convertBackendFlowchart = (payload: any) => {
   };
 
 
-  const LARGE_COND_LABEL_STYLE = { fontSize: 16, fontWeight: 700 };
+const LARGE_COND_LABEL_STYLE = { fontSize: 16, fontWeight: 700 };
 
   const convertedEdges: Edge[] = backendEdges.map((be) => {
     const source = idMap.get(be.source) ?? be.source;
     const target = idMap.get(be.target) ?? be.target;
     const conditionRaw = be.condition ?? "";
     const condition = String(conditionRaw ?? "");
+    
+    // แปลงเป็นตัวพิมพ์เล็กเพื่อง่ายต่อการเช็คเงื่อนไข
+    const lowerCond = condition.toLowerCase(); 
+    
+    // เช็คว่า condition ตรงกับคำที่ต้องการให้ตัวใหญ่หรือไม่
+    const isLargeLabel = lowerCond === "true" || lowerCond === "false" || lowerCond === "next" || lowerCond === "done";
 
     const edge: Edge = {
       id: be.id ?? `e-${source}-${target}`,
@@ -531,8 +558,8 @@ export const convertBackendFlowchart = (payload: any) => {
       data: { condition },
       label: (condition === "auto" ? "" : condition),
       style: { strokeWidth: 2 },
-      // เพิ่ม labelStyle เฉพาะกรณี condition เป็น true/false (case-insensitive)
-      ...(String(condition).toLowerCase() === "true" || String(condition).toLowerCase() === "false" ? { labelStyle: LARGE_COND_LABEL_STYLE } : {}),
+      // ถ้าเข้าเงื่อนไข isLargeLabel ให้ใช้สไตล์ LARGE_COND_LABEL_STYLE
+      ...(isLargeLabel ? { labelStyle: LARGE_COND_LABEL_STYLE } : {}),
     } as Edge;
 
     const srcNode = nodesMap.get(source);

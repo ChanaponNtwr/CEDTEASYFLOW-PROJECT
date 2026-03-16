@@ -26,53 +26,61 @@ export const apiGetFlowchart = async (id) => {
   }
 };
 
-export const insertNode = async (flowchartId, edgeId, node) => {
-  if (!flowchartId) {
-    throw new Error("insertNode: missing flowchartId");
-  }
+// ตัวอย่าง patch — เปลี่ยน return ให้คืน newOutput (แต่มี fallback)
+export const insertNode = async (userId, flowchartId, edgeId, node) => {
+  // ... ตรวจสอบ params เหมือนเดิม ...
+
   try {
-    // ถ้า backend ของคุณรับเป็น POST /flowchart/insert-node กับ payload ที่มี flowchartId นี่ก็โอเค,
-    // แต่ผมใส่ path เป็น /flowchart/insert-node และยังส่ง payload เดิมให้เหมือนก่อนหน้า
-    const response = await axios.post(`${BASE_URL}/flowchart/insert-node`, {
-      flowchartId,
-      edgeId,
-      node,
+    const payload = { userId, flowchartId, edgeId, node };
+    const response = await axios.post(`${BASE_URL}/flowchart/insert-node`, payload, {
+      headers: { "Content-Type": "application/json" },
     });
-    return response.data;
+
+    const data = response.data;
+    // คืนเฉพาะ newOutput ถ้ามี, ถ้าไม่มีก็คืนทั้ง data
+    return data?.newOutput ?? data;
   } catch (err) {
-    console.error("insertNode error:", err);
+    // ... error handling เหมือนเดิม ...
+    throw err;
+  }
+};
+
+export const deleteNode = async (userId, flowchartId, nodeId) => {
+  // ... checks ...
+
+  try {
+    const url = `${BASE_URL}/flowchart/${encodeURIComponent(flowchartId)}/node/${encodeURIComponent(nodeId)}`;
+    const resp = await axios.delete(url, {
+      headers: { "Content-Type": "application/json" },
+      data: { userId },
+    });
+
+    const data = resp.data;
+    return data?.newOutput ?? data;
+  } catch (err) {
+    // ... logging ...
     throw err;
   }
 };
 
 
-export const deleteNode = async (flowchartId, nodeId) => {
+export const editNode = async (userId, flowchartId, nodeId, updateData) => {
+  // ... checks ...
+
   try {
-    const resp = await axios.delete(`${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`
+    const payload = { userId, ...updateData };
+    const resp = await axios.put(
+      `${BASE_URL}/flowchart/${encodeURIComponent(flowchartId)}/node/${encodeURIComponent(nodeId)}`,
+      payload,
+      { headers: { "Content-Type": "application/json" } }
     );
-    return resp.data; // { ok: true, message: "...", diffs: {...} }
-  } catch (error) {
-    console.error("Error deleting node:", error);
-    throw error;
+    const data = resp.data;
+    return data?.newOutput ?? data;
+  } catch (err) {
+    // ... logging ...
+    throw err;
   }
 };
-
-
-export const editNode = async (flowchartId, nodeId, updateData) => {
-  if (!flowchartId || !nodeId) {
-    throw new Error("editNode: missing flowchartId or nodeId");
-  }
-  try {
-    const resp = await axios.put(`${BASE_URL}/flowchart/${flowchartId}/node/${nodeId}`,
-      updateData
-    );
-    return resp.data; // { ok: true, message: "...", flowchartId: "...", diffs: {...} }
-  } catch (error) {
-    console.error("Error editing node:", error);
-    throw error;
-  }
-};
-
 
 export const executeStepNode = async (flowchartId, variables = [], forceAdvanceBP = false) => {
   if (!flowchartId) {
@@ -82,19 +90,31 @@ export const executeStepNode = async (flowchartId, variables = [], forceAdvanceB
   try {
     const payload = {
       flowchartId,
-      action: "step", // สั่งให้ execute ทีละ step
+      action: "step",
       variables,
       forceAdvanceBP,
     };
 
     const response = await axios.post(`${BASE_URL}/flowchart/execute`, payload);
-    return response.data; // คาดว่า backend จะส่งข้อมูลสถานะ flowchart กลับมา เช่น node ปัจจุบัน
+    return response.data;
   } catch (error) {
     console.error("Error executing step node:", error);
-    throw error;
+
+    // ถ้า server ส่งโครง { error: "..."} หรือ { message: "..." } ให้ใช้ข้อความนั้นเป็น user-friendly message
+    const serverMessage =
+      error?.response?.data?.error ??
+      error?.response?.data?.message ??
+      // บาง backend ใส่ข้อความไว้ใน error.response.data (string)
+      (typeof error?.response?.data === "string" ? error.response.data : undefined) ??
+      error?.message ??
+      "เกิดข้อผิดพลาดในการรัน";
+
+    const e = new Error(String(serverMessage));
+    // เก็บ HTTP status เผื่อ UI ต้องการตรวจสอบ (optional)
+    e.status = error?.response?.status ?? null;
+    throw e;
   }
 };
-
 
 export const apiResetFlowchart = async (flowchartId) => {
   if (!flowchartId) {
@@ -648,17 +668,14 @@ export const insertTrialNode = async (trialId, edgeId, node) => {
       edgeId,
       node,
     });
-    return response.data;
+    // return newOutput if backend provided it, otherwise return full data
+    return response.data?.newOutput ?? response.data;
   } catch (err) {
     console.error("insertTrialNode error:", err);
     throw err;
   }
 };
 
-// ---------------------------------------------------------
-// 2. Edit/Update Node (PUT)
-// Path: /trial/{trialId}/flowchart/node/{nodeId}
-// ---------------------------------------------------------
 export const editTrialNode = async (trialId, nodeId, updateData) => {
   if (!trialId || !nodeId) {
     throw new Error("editTrialNode: missing trialId or nodeId");
@@ -669,17 +686,13 @@ export const editTrialNode = async (trialId, nodeId, updateData) => {
       `${BASE_URL}/trial/${trialId}/flowchart/node/${nodeId}`,
       updateData
     );
-    return resp.data;
+    return resp.data?.newOutput ?? resp.data;
   } catch (error) {
     console.error("editTrialNode error:", error);
     throw error;
   }
 };
 
-// ---------------------------------------------------------
-// 3. Delete Node (DELETE)
-// Path: /trial/{trialId}/flowchart/node/{nodeId}
-// ---------------------------------------------------------
 export const deleteTrialNode = async (trialId, nodeId) => {
   if (!trialId || !nodeId) {
     throw new Error("deleteTrialNode: missing trialId or nodeId");
@@ -689,7 +702,7 @@ export const deleteTrialNode = async (trialId, nodeId) => {
     const resp = await axios.delete(
       `${BASE_URL}/trial/${trialId}/flowchart/node/${nodeId}`
     );
-    return resp.data;
+    return resp.data?.newOutput ?? resp.data;
   } catch (error) {
     console.error("deleteTrialNode error:", error);
     throw error;
@@ -729,15 +742,26 @@ export const apiRunTrialTestcases = async (trialId, body = {}) => {
 // 6. Execute Trial (Run / Step / Reset)
 // POST /trial/{trialId}/execute
 // ---------------------------------------------------------
+// api/trial.js (หรือไฟล์ที่คุณวาง apiExecuteTrial ไว้)
 export const apiExecuteTrial = async (trialId, payload) => {
-  // payload: { action: "step" | "runAll" | "reset", variables?: [], forceAdvanceBP?: boolean }
   if (!trialId) throw new Error("apiExecuteTrial: missing trialId");
 
   try {
     const resp = await axios.post(`${BASE_URL}/trial/${trialId}/execute`, payload);
-    return resp.data; 
+    return resp.data;
   } catch (err) {
     console.error("apiExecuteTrial error:", err);
+
+    // ถ้า server ส่งโครงแบบ { error: "..." }
+    const serverMessage = err?.response?.data?.error;
+    if (serverMessage) {
+      const e = new Error(serverMessage);
+      // เก็บ status เผื่อ UI อยากใช้ (optional)
+      e.status = err.response.status;
+      throw e;
+    }
+
+    // fallback
     throw err;
   }
 };
