@@ -47,7 +47,7 @@ function Navbar() {
         <div className="flex items-center">
           <Link href="/">
             <motion.img
-              src="https://img5.pic.in.th/file/secure-sv1/Esay-Flow.png"
+              src="/images/EsayFlowlogo1.png"
               alt="EasyFlow Logo"
               className="h-14 mr-6 cursor-pointer"
               whileHover={{ scale: 1.1, rotate: 5 }}
