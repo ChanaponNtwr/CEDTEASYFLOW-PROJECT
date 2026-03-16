@@ -32,7 +32,8 @@ export default function Profile() {
     setFilter(f);
   };
 
-  const userId = session?.user?.userId;
+  // ✅ แก้ไข: ให้รองรับทั้ง userId และ id จาก session
+  const userId = session?.user?.userId ?? (session?.user as any)?.id;
 
   // ✅ เพิ่ม Console Log ตรงนี้เพื่อเช็คค่า Session
   console.log("Session User:", session?.user);
@@ -104,8 +105,9 @@ export default function Profile() {
   // ---------------- USER DATA ----------------
   const user = session.user;
 
+  // ✅ แก้ไข: เพิ่ม (user as any).id เข้ามาเผื่อดึงค่าสี Banner
   const userSeed =
-  user.userId ?? user.email ?? "default-user";
+  user.userId ?? (user as any).id ?? user.email ?? "default-user";
 
   const bannerColor = getUserBannerColor(userSeed);
 
