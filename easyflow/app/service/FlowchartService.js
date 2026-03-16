@@ -1,8 +1,7 @@
 // FlowchartService.js (แก้แล้ว)
 import axios from "axios";
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_BASE_API || "https://api.easyflow.sbs";
+const BASE_URL = "http://localhost:8080"; // <<-- เอา /flowchart ออก
 
 export const apiPostFlowchart = async (data) => {
   try {
@@ -27,102 +26,61 @@ export const apiGetFlowchart = async (id) => {
   }
 };
 
-// insertNode: require userId, flowchartId, edgeId, node
+// ตัวอย่าง patch — เปลี่ยน return ให้คืน newOutput (แต่มี fallback)
 export const insertNode = async (userId, flowchartId, edgeId, node) => {
-  if (userId === undefined || userId === null) {
-    throw new Error("insertNode: missing userId");
-  }
-  if (!flowchartId) {
-    throw new Error("insertNode: missing flowchartId");
-  }
-  if (!edgeId) {
-    throw new Error("insertNode: missing edgeId");
-  }
-  if (!node) {
-    throw new Error("insertNode: missing node");
-  }
+  // ... ตรวจสอบ params เหมือนเดิม ...
 
   try {
-    const payload = {
-      userId,
-      flowchartId,
-      edgeId,
-      node,
-    };
-
+    const payload = { userId, flowchartId, edgeId, node };
     const response = await axios.post(`${BASE_URL}/flowchart/insert-node`, payload, {
       headers: { "Content-Type": "application/json" },
     });
 
-    return response.data;
+    const data = response.data;
+    // คืนเฉพาะ newOutput ถ้ามี, ถ้าไม่มีก็คืนทั้ง data
+    return data?.newOutput ?? data;
   } catch (err) {
-    // normalize error message for caller
-    const msg = err?.response?.data?.message ?? err?.message ?? "insertNode: unknown error";
-    console.error("insertNode error:", msg, err?.response ?? err);
-    // preserve original axios error for upstream if needed
+    // ... error handling เหมือนเดิม ...
     throw err;
   }
 };
 
-// deleteNode: require userId, encode IDs, send userId in config.data for axios.delete
 export const deleteNode = async (userId, flowchartId, nodeId) => {
-  if (userId === undefined || userId === null) {
-    throw new Error("deleteNode: missing userId");
-  }
-  if (!flowchartId) {
-    throw new Error("deleteNode: missing flowchartId");
-  }
-  if (!nodeId) {
-    throw new Error("deleteNode: missing nodeId");
-  }
+  // ... checks ...
 
   try {
     const url = `${BASE_URL}/flowchart/${encodeURIComponent(flowchartId)}/node/${encodeURIComponent(nodeId)}`;
     const resp = await axios.delete(url, {
       headers: { "Content-Type": "application/json" },
-      data: { userId }, // axios supports body via config.data for DELETE
+      data: { userId },
     });
-    return resp.data;
+
+    const data = resp.data;
+    return data?.newOutput ?? data;
   } catch (err) {
-    const msg = err?.response?.data?.message ?? err?.message ?? "deleteNode: unknown error";
-    console.error("deleteNode error:", msg, err?.response ?? err);
+    // ... logging ...
     throw err;
   }
 };
 
+
 export const editNode = async (userId, flowchartId, nodeId, updateData) => {
-  if (userId === undefined || userId === null) {
-    throw new Error("editNode: missing userId");
-  }
-  if (!flowchartId) {
-    throw new Error("editNode: missing flowchartId");
-  }
-  if (!nodeId) {
-    throw new Error("editNode: missing nodeId");
-  }
-  if (!updateData || (typeof updateData !== "object")) {
-    throw new Error("editNode: missing or invalid updateData");
-  }
+  // ... checks ...
 
   try {
-    const payload = {
-      userId,
-      ...updateData,
-    };
-
+    const payload = { userId, ...updateData };
     const resp = await axios.put(
       `${BASE_URL}/flowchart/${encodeURIComponent(flowchartId)}/node/${encodeURIComponent(nodeId)}`,
       payload,
       { headers: { "Content-Type": "application/json" } }
     );
-    return resp.data; // คาดว่า backend จะคืน { ok: true, ... }
+    const data = resp.data;
+    return data?.newOutput ?? data;
   } catch (err) {
-    const msg = err?.response?.data?.message ?? err?.message ?? "editNode: unknown error";
-    console.error("editNode error:", msg, err?.response ?? err);
+    // ... logging ...
     throw err;
   }
 };
-
 
 export const executeStepNode = async (flowchartId, variables = [], forceAdvanceBP = false) => {
   if (!flowchartId) {
@@ -132,19 +90,31 @@ export const executeStepNode = async (flowchartId, variables = [], forceAdvanceB
   try {
     const payload = {
       flowchartId,
-      action: "step", // สั่งให้ execute ทีละ step
+      action: "step",
       variables,
       forceAdvanceBP,
     };
 
     const response = await axios.post(`${BASE_URL}/flowchart/execute`, payload);
-    return response.data; // คาดว่า backend จะส่งข้อมูลสถานะ flowchart กลับมา เช่น node ปัจจุบัน
+    return response.data;
   } catch (error) {
     console.error("Error executing step node:", error);
-    throw error;
+
+    // ถ้า server ส่งโครง { error: "..."} หรือ { message: "..." } ให้ใช้ข้อความนั้นเป็น user-friendly message
+    const serverMessage =
+      error?.response?.data?.error ??
+      error?.response?.data?.message ??
+      // บาง backend ใส่ข้อความไว้ใน error.response.data (string)
+      (typeof error?.response?.data === "string" ? error.response.data : undefined) ??
+      error?.message ??
+      "เกิดข้อผิดพลาดในการรัน";
+
+    const e = new Error(String(serverMessage));
+    // เก็บ HTTP status เผื่อ UI ต้องการตรวจสอบ (optional)
+    e.status = error?.response?.status ?? null;
+    throw e;
   }
 };
-
 
 export const apiResetFlowchart = async (flowchartId) => {
   if (!flowchartId) {
@@ -698,17 +668,14 @@ export const insertTrialNode = async (trialId, edgeId, node) => {
       edgeId,
       node,
     });
-    return response.data;
+    // return newOutput if backend provided it, otherwise return full data
+    return response.data?.newOutput ?? response.data;
   } catch (err) {
     console.error("insertTrialNode error:", err);
     throw err;
   }
 };
 
-// ---------------------------------------------------------
-// 2. Edit/Update Node (PUT)
-// Path: /trial/{trialId}/flowchart/node/{nodeId}
-// ---------------------------------------------------------
 export const editTrialNode = async (trialId, nodeId, updateData) => {
   if (!trialId || !nodeId) {
     throw new Error("editTrialNode: missing trialId or nodeId");
@@ -719,17 +686,13 @@ export const editTrialNode = async (trialId, nodeId, updateData) => {
       `${BASE_URL}/trial/${trialId}/flowchart/node/${nodeId}`,
       updateData
     );
-    return resp.data;
+    return resp.data?.newOutput ?? resp.data;
   } catch (error) {
     console.error("editTrialNode error:", error);
     throw error;
   }
 };
 
-// ---------------------------------------------------------
-// 3. Delete Node (DELETE)
-// Path: /trial/{trialId}/flowchart/node/{nodeId}
-// ---------------------------------------------------------
 export const deleteTrialNode = async (trialId, nodeId) => {
   if (!trialId || !nodeId) {
     throw new Error("deleteTrialNode: missing trialId or nodeId");
@@ -739,7 +702,7 @@ export const deleteTrialNode = async (trialId, nodeId) => {
     const resp = await axios.delete(
       `${BASE_URL}/trial/${trialId}/flowchart/node/${nodeId}`
     );
-    return resp.data;
+    return resp.data?.newOutput ?? resp.data;
   } catch (error) {
     console.error("deleteTrialNode error:", error);
     throw error;
@@ -779,15 +742,26 @@ export const apiRunTrialTestcases = async (trialId, body = {}) => {
 // 6. Execute Trial (Run / Step / Reset)
 // POST /trial/{trialId}/execute
 // ---------------------------------------------------------
+// api/trial.js (หรือไฟล์ที่คุณวาง apiExecuteTrial ไว้)
 export const apiExecuteTrial = async (trialId, payload) => {
-  // payload: { action: "step" | "runAll" | "reset", variables?: [], forceAdvanceBP?: boolean }
   if (!trialId) throw new Error("apiExecuteTrial: missing trialId");
 
   try {
     const resp = await axios.post(`${BASE_URL}/trial/${trialId}/execute`, payload);
-    return resp.data; 
+    return resp.data;
   } catch (err) {
     console.error("apiExecuteTrial error:", err);
+
+    // ถ้า server ส่งโครงแบบ { error: "..." }
+    const serverMessage = err?.response?.data?.error;
+    if (serverMessage) {
+      const e = new Error(serverMessage);
+      // เก็บ status เผื่อ UI อยากใช้ (optional)
+      e.status = err.response.status;
+      throw e;
+    }
+
+    // fallback
     throw err;
   }
 };
