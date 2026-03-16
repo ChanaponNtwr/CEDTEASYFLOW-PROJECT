@@ -1027,7 +1027,7 @@ router.post("/execute", async (req, res) => {
 
     const flowchartIdRaw = body.flowchartId;
     if (!flowchartIdRaw && flowchartIdRaw !== 0) {
-      return res.status(400).json({ ok: false, error: "Missing 'flowchartId' in request. Must provide the saved flowchart id to execute." });
+      return res.status(400).json({ ok: false, error: "Missing 'flowchartId' in request." });
     }
 
     const fid = Number(flowchartIdRaw);
@@ -1044,8 +1044,6 @@ router.post("/execute", async (req, res) => {
       savedFlowcharts.set(isNaN(mapKey) ? String(fcFromDB.flowchartId) : mapKey, saved);
     }
 
-    // ✅ ไม่มีการตรวจ owner ที่นี่ — ทุกคนรันได้
-
     const action = body.action ?? "run";
     const variables = body.variables;
     const options = body.options || {};
@@ -1055,32 +1053,33 @@ router.post("/execute", async (req, res) => {
     const fc = hydrateFlowchart(saved);
     const executor = new Executor(fc, options);
 
+    /**
+     * ✅ ใช้สำหรับ inject input จากผู้ใช้เท่านั้น (ไม่ declare ให้อัตโนมัติ)
+     * - ถ้าตัวแปรยัง undeclared → ข้ามไป (handler จะ throw เองเมื่อถึงเวลา)
+     */
     function applyVariablesSafelyToContext(ctx, vars) {
       if (!ctx || !vars) return;
+
+      const applyOne = (name, value, varType) => {
+        if (!name) return;
+        try {
+          if (typeof ctx.isDeclared === "function" && ctx.isDeclared(name)) {
+            ctx.set(name, value, varType);
+          }
+          // ❌ ไม่ declare อัตโนมัติ — ต้องมี DC node เท่านั้น
+        } catch (e) {
+          console.warn(`applyVariablesSafelyToContext: failed to set '${name}':`, e?.message);
+        }
+      };
+
       if (Array.isArray(vars)) {
         for (const v of vars) {
           if (!v || !v.name) continue;
-          const name = v.name;
-          const value = ("value" in v) ? v.value : v;
-          const varType = v.varType;
-          try {
-            if (typeof ctx.isDeclared === "function" && ctx.isDeclared(name)) {
-              ctx.set(name, value, varType);
-            } else if (typeof ctx.declare === "function") {
-              ctx.declare(name, value, varType);
-            } else {
-              if (Array.isArray(ctx._scopeStack)) {
-                ctx._scopeStack[0] = ctx._scopeStack[0] || {};
-                ctx._scopeStack[0][name] = { value, varType: varType || Context._inferVarType?.(value) };
-                if (typeof ctx._syncVariables === "function") ctx._syncVariables();
-              }
-            }
-          } catch (e) {
-            try { if (typeof ctx.declare === "function") ctx.declare(name, value, varType); } catch (ee) {}
-          }
+          applyOne(v.name, "value" in v ? v.value : v, v.varType);
         }
         return;
       }
+
       if (vars && typeof vars === "object") {
         for (const k of Object.keys(vars)) {
           const raw = vars[k];
@@ -1090,73 +1089,99 @@ router.post("/execute", async (req, res) => {
           } else {
             value = raw; varType = undefined;
           }
-          try {
-            if (typeof ctx.isDeclared === "function" && ctx.isDeclared(k)) {
-              ctx.set(k, value, varType);
-            } else if (typeof ctx.declare === "function") {
-              ctx.declare(k, value, varType);
-            } else {
-              if (Array.isArray(ctx._scopeStack)) {
-                ctx._scopeStack[0] = ctx._scopeStack[0] || {};
-                ctx._scopeStack[0][k] = { value, varType: varType || Context._inferVarType?.(value) };
-                if (typeof ctx._syncVariables === "function") ctx._syncVariables();
-              }
-            }
-          } catch (e) {
-            try { if (typeof ctx.declare === "function") ctx.declare(k, value, varType); } catch (ee) {}
-          }
+          applyOne(k, value, varType);
         }
       }
     }
 
+    /**
+     * ✅ ใช้สำหรับ restore executor state ระหว่าง step เท่านั้น
+     * - restore scopeStack โดยตรง ไม่ผ่าน isDeclared check
+     * - เพราะ scopeStack มาจาก DC node ที่รันไปแล้ว ถูก serialize ไว้
+     */
+    function restoreExecutorState(executor, es) {
+      if (!es) return;
+
+      if (es.currentNodeId) executor.currentNodeId = es.currentNodeId;
+      if (typeof es.finished === "boolean") executor.finished = es.finished;
+      if (typeof es.paused === "boolean") executor.paused = es.paused;
+      if (typeof es.stepCount === "number") executor.stepCount = es.stepCount;
+
+      // ✅ restore context ผ่าน scopeStack โดยตรง (ไม่ต้องผ่าน isDeclared)
+      if (es.context) {
+        if (Array.isArray(es.context._scopeStack) && typeof executor.context.restore === "function") {
+          executor.context.restore({
+            scopeStack: es.context._scopeStack,
+            output: es.context.output ?? []
+          });
+        } else if (Array.isArray(es.context.variables)) {
+          // fallback: rebuild scopeStack จาก variables array
+          executor.context._scopeStack = [{}];
+          for (const v of es.context.variables) {
+            if (v && v.name) {
+              executor.context._scopeStack[0][v.name] = {
+                value: v.value,
+                varType: v.varType || null
+              };
+            }
+          }
+          if (typeof executor.context._syncVariables === "function") {
+            executor.context._syncVariables();
+          }
+          executor.context.output = Array.isArray(es.context.output)
+            ? Array.from(es.context.output)
+            : [];
+        }
+      }
+
+      // restore node internals (loop state)
+      if (es.flowchartNodeInternal && typeof es.flowchartNodeInternal === "object") {
+        for (const nid of Object.keys(es.flowchartNodeInternal)) {
+          const nodeState = es.flowchartNodeInternal[nid];
+          const node = executor.flowchart.getNode(nid);
+          if (!node || !nodeState) continue;
+          if ("_initialized" in nodeState) node._initialized = !!nodeState._initialized;
+          if ("_phase" in nodeState) node._phase = nodeState._phase;
+          if ("_loopCount" in nodeState) node._loopCount = Number(nodeState._loopCount || 0);
+          if ("_scopePushed" in nodeState) node._scopePushed = !!nodeState._scopePushed;
+          if ("_initValue" in nodeState) node._initValue = nodeState._initValue;
+        }
+      }
+    }
+
+    // ── restore จาก body.restoreState (ถ้ามี) ──
     if (restoreState && typeof restoreState === "object" && Object.keys(restoreState).length > 0) {
       try {
         if (typeof executor.restoreState === "function") {
           executor.restoreState(restoreState);
         } else {
-          if (restoreState.context && Array.isArray(restoreState.context.variables)) {
-            applyVariablesSafelyToContext(executor.context, restoreState.context.variables);
-            if (Array.isArray(restoreState.context.output)) executor.context.output = Array.from(restoreState.context.output);
-            if (Array.isArray(restoreState.context._scopeStack) && typeof executor.context.restore === "function") {
-              try { executor.context.restore({ scopeStack: restoreState.context._scopeStack, output: restoreState.context.output }); } catch (e) {}
-            }
-          }
-          if (restoreState.currentNodeId) executor.currentNodeId = restoreState.currentNodeId;
-          if (typeof restoreState.finished === "boolean") executor.finished = restoreState.finished;
-          if (typeof restoreState.paused === "boolean") executor.paused = restoreState.paused;
-          if (typeof restoreState.stepCount === "number") executor.stepCount = Number(restoreState.stepCount || 0);
-          if (restoreState.flowchartNodeInternal && typeof restoreState.flowchartNodeInternal === "object") {
-            try {
-              for (const nid of Object.keys(restoreState.flowchartNodeInternal)) {
-                const nodeState = restoreState.flowchartNodeInternal[nid];
-                const node = executor.flowchart.getNode(nid);
-                if (!node || !nodeState) continue;
-                if ('_initialized' in nodeState) node._initialized = !!nodeState._initialized;
-                if ('_phase' in nodeState) node._phase = nodeState._phase;
-                if ('_loopCount' in nodeState) node._loopCount = Number(nodeState._loopCount || 0);
-                if ('_scopePushed' in nodeState) node._scopePushed = !!nodeState._scopePushed;
-                if ('_initValue' in nodeState) node._initValue = nodeState._initValue;
-              }
-            } catch (e) {}
-          }
+          restoreExecutorState(executor, {
+            currentNodeId: restoreState.currentNodeId,
+            finished: restoreState.finished,
+            paused: restoreState.paused,
+            stepCount: restoreState.stepCount,
+            context: restoreState.context,
+            flowchartNodeInternal: restoreState.flowchartNodeInternal
+          });
         }
       } catch (e) {
-        console.warn("Failed to apply restoreState safely:", e && e.message ? e.message : e);
+        console.warn("Failed to apply restoreState:", e?.message ?? e);
       }
     }
 
+    // ── inject input variables จากผู้ใช้ (เฉพาะที่ declare แล้ว) ──
     if (Array.isArray(variables) || (variables && typeof variables === "object")) {
       try {
         applyVariablesSafelyToContext(executor.context, variables);
       } catch (e) {
-        console.warn("applyVariablesSafelyToContext failed:", e && e.message ? e.message : e);
+        console.warn("applyVariablesSafelyToContext failed:", e?.message ?? e);
       }
     }
 
+    // ── action: reset ──
     if (action === "reset") {
       executor.reset();
-      const lastStateKey = `executorState_${fid}`;
-      savedFlowcharts.delete(lastStateKey);
+      savedFlowcharts.delete(`executorState_${fid}`);
       return res.json({
         ok: true,
         message: "reset",
@@ -1167,6 +1192,8 @@ router.post("/execute", async (req, res) => {
     if (action === "runAll") {
       const ignoreBreakpoints = Boolean(options.ignoreBreakpoints || body.ignoreBreakpoints);
       const nodeStates = [];
+      let runError = null; // ✅ เพิ่ม
+
       while (!executor.finished) {
         const nodeIdBefore = executor.currentNodeId;
         const result = executor.step({ forceAdvanceBP: ignoreBreakpoints });
@@ -1175,9 +1202,26 @@ router.post("/execute", async (req, res) => {
           output: [...executor.context.output],
           variables: [...executor.context.variables]
         });
-        if (result && result.error) break;
+
+        // ✅ เพิ่ม: เก็บ error แล้ว break
+        if (result && result.error) {
+          runError = result.error;
+          break;
+        }
         if (executor.paused && !ignoreBreakpoints) break;
       }
+
+      // ✅ เพิ่ม: ถ้ามี error ส่งกลับพร้อม context ที่รันได้ถึงตรงนั้น
+      if (runError) {
+        return res.status(400).json({
+          ok: false,
+          error: String(runError.message ?? runError),
+          nodeStates,
+          context: { variables: executor.context.variables, output: executor.context.output },
+          done: true
+        });
+      }
+
       return res.json({
         ok: true,
         message: "runAll completed",
@@ -1188,30 +1232,11 @@ router.post("/execute", async (req, res) => {
     }
 
     if (action === "step") {
-      const lastStateKey = `executorState_${fid}`;
+      const lastStateKey = `executorState_${fid}`;  // ✅ ต้องอยู่บรรทัดแรก
       const lastState = savedFlowcharts.get(lastStateKey);
 
       if (lastState && lastState.executor) {
-        const es = lastState.executor;
-        if (es.currentNodeId) executor.currentNodeId = es.currentNodeId;
-        if (typeof es.finished === "boolean") executor.finished = es.finished;
-        if (typeof es.paused === "boolean") executor.paused = es.paused;
-        if (typeof es.stepCount === "number") executor.stepCount = es.stepCount;
-        if (es.context && Array.isArray(es.context.variables)) {
-          applyVariablesSafelyToContext(executor.context, es.context.variables);
-        }
-        if (es.flowchartNodeInternal && typeof es.flowchartNodeInternal === "object") {
-          for (const nid of Object.keys(es.flowchartNodeInternal)) {
-            const nodeState = es.flowchartNodeInternal[nid];
-            const node = executor.flowchart.getNode(nid);
-            if (!node) continue;
-            if ('_initialized' in nodeState) node._initialized = !!nodeState._initialized;
-            if ('_phase' in nodeState) node._phase = nodeState._phase;
-            if ('_loopCount' in nodeState) node._loopCount = Number(nodeState._loopCount || 0);
-            if ('_scopePushed' in nodeState) node._scopePushed = !!nodeState._scopePushed;
-            if ('_initValue' in nodeState) node._initValue = nodeState._initValue;
-          }
-        }
+        restoreExecutorState(executor, lastState.executor);
       }
 
       if (executor.finished || !lastState) {
@@ -1222,8 +1247,26 @@ router.post("/execute", async (req, res) => {
         applyVariablesSafelyToContext(executor.context, variables);
       }
 
+      // ✅ จำ output length ก่อน step
+      const outputLengthBefore = executor.context.output.length;
+
       const result = executor.step({ forceAdvanceBP });
 
+      // ✅ output ใหม่ที่เพิ่มมาใน step นี้เท่านั้น
+      const newOutput = executor.context.output.slice(outputLengthBefore);
+
+      if (result && result.error) {
+        return res.status(400).json({
+          ok: false,
+          error: String(result.error.message ?? result.error),
+          node: result.node ? { id: result.node.id, type: result.node.type } : null,
+          context: { variables: executor.context.variables, output: executor.context.output },
+          newOutput: [],
+          done: true
+        });
+      }
+
+      // snapshot node internals
       const flowchartNodeInternal = {};
       try {
         for (const [nid, nobj] of Object.entries(executor.flowchart.nodes || {})) {
@@ -1232,11 +1275,26 @@ router.post("/execute", async (req, res) => {
             _phase: nobj._phase || null,
             _loopCount: nobj._loopCount || 0,
             _scopePushed: !!nobj._scopePushed,
-            _initValue: typeof nobj._initValue !== 'undefined' ? nobj._initValue : null
+            _initValue: typeof nobj._initValue !== "undefined" ? nobj._initValue : null
           };
         }
       } catch (e) {
-        console.warn("Failed to snapshot flowchart node internals:", e);
+        console.warn("Failed to snapshot node internals:", e);
+      }
+
+      let contextSnapshot;
+      try {
+        contextSnapshot = typeof executor.context.serialize === "function"
+          ? executor.context.serialize()
+          : {
+              variables: executor.context.variables,
+              output: executor.context.output,
+              _scopeStack: executor.context._scopeStack
+                ? JSON.parse(JSON.stringify(executor.context._scopeStack))
+                : undefined
+            };
+      } catch (e) {
+        contextSnapshot = { variables: executor.context.variables, output: executor.context.output };
       }
 
       let nextNodeId = executor.finished ? null : executor.currentNodeId;
@@ -1252,7 +1310,7 @@ router.post("/execute", async (req, res) => {
           finished: executor.finished,
           paused: executor.paused,
           stepCount: executor.stepCount,
-          context: { variables: executor.context.variables, output: executor.context.output },
+          context: contextSnapshot,
           lastNode: {
             nodeId: result.node?.id,
             type: result.node?.type,
@@ -1271,12 +1329,14 @@ router.post("/execute", async (req, res) => {
         nextNodeId,
         nextNodeType,
         context: { variables: executor.context.variables, output: executor.context.output },
+        newOutput,
         paused: result.paused ?? false,
         done: result.done ?? false,
         reenter: result.reenter ?? false
       });
     }
 
+    // ── action: resume ──
     if (action === "resume") {
       const result = executor.resume({ forceAdvanceBP });
       return res.json({
@@ -1286,7 +1346,7 @@ router.post("/execute", async (req, res) => {
       });
     }
 
-    // default: runAll
+    // ── default: runAll ──
     const ignoreBreakpoints = Boolean(options.ignoreBreakpoints || body.ignoreBreakpoints);
     const finalContext = executor.runAll({ ignoreBreakpoints });
     return res.json({ ok: true, context: { variables: finalContext.variables, output: finalContext.output } });
