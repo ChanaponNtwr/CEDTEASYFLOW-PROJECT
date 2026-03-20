@@ -143,7 +143,7 @@ const PeopleList: React.FC<PeopleListProps> = ({
                       className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                       title={isMe ? "Leave Class" : "Remove User"}
                     >
-                      {isOwnerRow ? <FaTrash size={16} /> : <FaSignOutAlt size={16} />}
+                      {isMe ? <FaSignOutAlt size={16} /> : <FaTrash size={16} />}
                     </button>
                   )}
 
