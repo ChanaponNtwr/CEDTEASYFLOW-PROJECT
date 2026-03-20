@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { FaTrash, FaUserPlus, FaEllipsisV, FaUserTie, FaUserGraduate, FaChalkboardTeacher } from "react-icons/fa";
+import { FaSignOutAlt, FaUserPlus, FaEllipsisV, FaUserTie, FaUserGraduate, FaChalkboardTeacher } from "react-icons/fa";
 
 type Person = { 
   id: number; 
@@ -143,7 +143,7 @@ const PeopleList: React.FC<PeopleListProps> = ({
                       className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                       title={isMe ? "Leave Class" : "Remove User"}
                     >
-                      <FaTrash size={16} />
+                      <FaSignOutAlt size={16} />
                     </button>
                   )}
 
