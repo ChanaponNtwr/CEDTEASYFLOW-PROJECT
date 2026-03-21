@@ -181,7 +181,15 @@ function LabInClass() {
                 }
             }
 
-            const score = item.totalScore ?? item.submission?.score ?? 0;
+            // [FIXED]: Check if the status is CONFIRMED or PASS
+            const isConfirmedOrPass = ["PASS", "PASSED", "CONFIRMED"].includes(String(finalStatus).toUpperCase());
+
+            // [FIXED]: Force full score if confirmed
+            let score = item.totalScore ?? item.submission?.score ?? 0;
+            if (isConfirmedOrPass) {
+                score = totalScore;
+            }
+
             const submissionId = item.flowchartId ?? item.submission?.id ?? item.submissionId ?? undefined;
 
             const results: TestResult[] = tcs.map((tc) => {
@@ -189,11 +197,24 @@ function LabInClass() {
                     if (r.testcaseId !== undefined) return r.testcaseId === tc.testcaseId;
                     return false;
                 });
-                const rStatus = match?.status ?? "PENDING";
+                
+                let rStatus = match?.status ?? "PENDING";
+                // [FIXED]: Force Testcase status to CONFIRMED if main status is CONFIRMED
+                if (isConfirmedOrPass) {
+                    rStatus = "CONFIRMED";
+                }
+
                 let rScore = 0;
-                if (match?.scoreAwarded !== undefined) rScore = Number(match.scoreAwarded);
-                else if (match?.score !== undefined) rScore = Number(match.score);
-                else if (rStatus === "PASS" || rStatus === "CONFIRMED") rScore = tc.score;
+                // [FIXED]: Force full Testcase score if confirmed
+                if (isConfirmedOrPass) {
+                    rScore = tc.score;
+                } else if (match?.scoreAwarded !== undefined) {
+                    rScore = Number(match.scoreAwarded);
+                } else if (match?.score !== undefined) {
+                    rScore = Number(match.score);
+                } else if (rStatus === "PASS" || rStatus === "CONFIRMED") {
+                    rScore = tc.score;
+                }
 
                 return { 
                     status: rStatus,
