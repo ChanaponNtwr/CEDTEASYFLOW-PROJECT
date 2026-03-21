@@ -213,7 +213,7 @@ router.post("/:trialId/flowchart/node", async (req, res) => {
 
     let raw = req.body;
     if (typeof raw === "string") raw = JSON.parse(raw);
-    const { edgeId, node: nodeSpec } = raw || {};
+    const { edgeId, node: nodeSpec, force } = raw || {};
 
     if (!edgeId) return res.status(400).json({ ok: false, error: "Missing edgeId" });
     if (!nodeSpec || typeof nodeSpec !== "object") return res.status(400).json({ ok: false, error: "Missing node" });
@@ -223,15 +223,57 @@ router.post("/:trialId/flowchart/node", async (req, res) => {
 
     const shapeRemainingBefore = computeUsageAndRemaining(state.flowchart, state.labRow);
     const incomingType = normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH");
+
+    // ── shape limit check ──
     const info = shapeRemainingBefore[incomingType] || { limit: "unlimited", remaining: "unlimited" };
     if (info.limit !== "unlimited" && Number(info.remaining) <= 0) {
       return res.status(409).json({ ok: false, error: `Node limit reached for type ${incomingType}`, shapeRemaining: shapeRemainingBefore });
     }
 
+    // ── ✅ DC duplicate check (เพิ่มใหม่ เทียบเท่า flowchart.controller.js) ──
+    if (incomingType === "DC" && !Boolean(force)) {
+      const d = nodeSpec.data || {};
+      const newNames = [];
+      if (typeof d.name === "string" && d.name.trim()) newNames.push(d.name.trim().toLowerCase());
+      if (typeof d.varName === "string" && d.varName.trim()) newNames.push(d.varName.trim().toLowerCase());
+      if (Array.isArray(d.names)) {
+        for (const nm of d.names) {
+          if (typeof nm === "string" && nm.trim()) newNames.push(nm.trim().toLowerCase());
+        }
+      }
+      const uniqueNewNames = [...new Set(newNames)];
+
+      if (uniqueNewNames.length > 0) {
+        const conflicts = [];
+        for (const n of Object.values(fc.nodes || {})) {
+          if (normalizeType(n.type) !== "DC") continue;
+          const nd = n.data || {};
+          const existingNames = [
+            nd.name,
+            nd.varName,
+            ...(Array.isArray(nd.names) ? nd.names : [])
+          ].filter(Boolean).map(s => String(s).trim().toLowerCase());
+
+          for (const newName of uniqueNewNames) {
+            if (existingNames.includes(newName)) {
+              conflicts.push({ varName: newName, nodeId: n.id, foundIn: "declare" });
+            }
+          }
+        }
+        if (conflicts.length > 0) {
+          return res.status(409).json({
+            ok: false,
+            error: "Variable already declared in this flowchart.",
+            conflicts
+          });
+        }
+      }
+    }
+
     const nodeId = nodeSpec.id || fc.genId();
     const newNode = new Node(
       nodeId,
-      normalizeType(nodeSpec.type ?? nodeSpec.typeShort ?? nodeSpec.typeFull ?? "PH"),
+      incomingType,
       nodeSpec.label ?? "",
       nodeSpec.data ?? {},
       nodeSpec.position ?? { x: 0, y: 0 },
