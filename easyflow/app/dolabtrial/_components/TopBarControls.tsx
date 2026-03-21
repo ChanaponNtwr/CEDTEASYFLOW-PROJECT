@@ -132,7 +132,7 @@ export default function TopBarControls({
         // --- Logic การดึงข้อมูล Lab ---
         if (mounted) {
           // พยายามหา labId จาก response ถ้าไม่มีให้ Default เป็น 18 ตามโจทย์
-          const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 18;
+          const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 238;
 
           if (foundLabId) {
             apiGetLab(foundLabId)
