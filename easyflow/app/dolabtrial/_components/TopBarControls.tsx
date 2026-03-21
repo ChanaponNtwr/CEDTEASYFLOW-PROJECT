@@ -28,7 +28,7 @@ type NodeResult = {
 
 type ExecContext = { variables?: Variable[]; index_map?: Record<string, number>; output?: any[] };
 
-type ExecResult = { node?: NodeResult; context?: ExecContext; done?: boolean; paused?: boolean };
+type ExecResult = { node?: NodeResult; context?: ExecContext; done?: boolean; paused?: boolean; newOutput?: any[];};
 
 type ExecuteResponse = {
   ok: boolean;
@@ -39,6 +39,7 @@ type ExecuteResponse = {
   paused?: boolean;
   done?: boolean;
   reenter?: boolean;
+  newOutput?: any[] | any;
   [k: string]: any;
 };
 
@@ -127,24 +128,26 @@ export default function TopBarControls({
       try {
         setFetchingVars(true);
         const resp = await apiGetTrialFlowchart(effectiveId);
-        
+
         // --- Logic การดึงข้อมูล Lab ---
         if (mounted) {
-            // พยายามหา labId จาก response ถ้าไม่มีให้ Default เป็น 18 ตามโจทย์
-            const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 18; 
-            
-            if (foundLabId) {
-                apiGetLab(foundLabId).then((labResp) => {
-                    if (mounted) {
-                        const rawLab = labResp?.lab ?? labResp;
-                        // Map ข้อมูลเข้า State (รองรับ structure หลายแบบ)
-                        setLabInfo({
-                            name: rawLab?.labname ?? rawLab?.name ?? `Lab ${foundLabId}`,
-                            detail: rawLab?.problemSolving ?? rawLab?.problem ?? "No description available."
-                        });
-                    }
-                }).catch(err => console.warn("Fetch Lab Error:", err));
-            }
+          // พยายามหา labId จาก response ถ้าไม่มีให้ Default เป็น 18 ตามโจทย์
+          const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 18;
+
+          if (foundLabId) {
+            apiGetLab(foundLabId)
+              .then((labResp) => {
+                if (mounted) {
+                  const rawLab = labResp?.lab ?? labResp;
+                  // Map ข้อมูลเข้า State (รองรับ structure หลายแบบ)
+                  setLabInfo({
+                    name: rawLab?.labname ?? rawLab?.name ?? `Lab ${foundLabId}`,
+                    detail: rawLab?.problemSolving ?? rawLab?.problem ?? "No description available.",
+                  });
+                }
+              })
+              .catch((err) => console.warn("Fetch Lab Error:", err));
+          }
         }
         // ------------------------------------------------
 
@@ -231,9 +234,24 @@ export default function TopBarControls({
     return String(v);
   };
 
+  // NEW: use only newOutput for display, so old accumulated output won't be shown twice
+  const extractNewOutputs = (resp: ExecuteResponse | undefined | null): any[] => {
+    if (!resp) return [];
+
+    const raw =
+      resp?.newOutput ??
+      resp?.result?.newOutput ??
+      null;
+
+    if (Array.isArray(raw)) return raw;
+    if (raw !== null && typeof raw !== "undefined") return [raw];
+    return [];
+  };
+
   // NOTE: changed to async so callers can await to ensure outputs are rendered before continuing.
   const handleResponseOutputs = async (resp: ExecuteResponse | undefined | null, autoContinue = false): Promise<boolean> => {
-    const respOutputs = resp?.result?.context?.output ?? resp?.context?.output ?? [];
+    const respOutputs = extractNewOutputs(resp);
+
     if (Array.isArray(respOutputs) && respOutputs.length > 0) {
       const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
       setChatMessages((m) => [...m, ...mapped]);
@@ -452,11 +470,11 @@ export default function TopBarControls({
         try {
           await apiTrialReset(effectiveId as any);
         } catch (err) {
-            try {
-                await apiExecuteTrial(effectiveId as any, { action: "reset" });
-            } catch (e) {
-                console.warn("fallback apiExecuteTrial reset also failed", e);
-            }
+          try {
+            await apiExecuteTrial(effectiveId as any, { action: "reset" });
+          } catch (e) {
+            console.warn("fallback apiExecuteTrial reset also failed", e);
+          }
         }
 
         setLastResponse(null);
@@ -551,17 +569,17 @@ export default function TopBarControls({
 
       const currentType = (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? "").toString().toUpperCase();
       if ((currentType === "IN" || currentType === "INPUT" || resp?.paused) && !autoPlayInputs) {
-           const inputNodeIdRaw = resp?.node?.id ?? resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
-           const inputNodeIdResolved = inputNodeIdRaw !== null ? String(inputNodeIdRaw) : null;
-           const resolvedVarName = await getFirstVarNameForNode(inputNodeIdResolved);
-           
-           setInputNodeId(inputNodeIdResolved);
-           setInputVarName(resolvedVarName ?? null);
-           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
-           setExpecting(true);
-           await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
-           runAllWaitingForInputRef.current = null;
-           resp = lastResponse ?? resp;
+        const inputNodeIdRaw = resp?.node?.id ?? resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
+        const inputNodeIdResolved = inputNodeIdRaw !== null ? String(inputNodeIdRaw) : null;
+        const resolvedVarName = await getFirstVarNameForNode(inputNodeIdResolved);
+
+        setInputNodeId(inputNodeIdResolved);
+        setInputVarName(resolvedVarName ?? null);
+        setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
+        setExpecting(true);
+        await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+        runAllWaitingForInputRef.current = null;
+        resp = lastResponse ?? resp;
       }
 
       let nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
@@ -619,7 +637,9 @@ export default function TopBarControls({
         try {
           await apiTrialReset(effectiveId as any);
         } catch (err) {
-            try { await apiExecuteTrial(effectiveId as any, { action: "reset" }); } catch (e) {}
+          try {
+            await apiExecuteTrial(effectiveId as any, { action: "reset" });
+          } catch (e) {}
         }
 
         setLastResponse(null);
@@ -699,16 +719,16 @@ export default function TopBarControls({
 
         const currentTypeLoop = (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? "").toString().toUpperCase();
         if ((currentTypeLoop === "IN" || currentTypeLoop === "INPUT" || resp?.paused) && !autoPlayInputs) {
-             const inputNodeIdResolved = resp?.node?.id ? String(resp.node.id) : null;
-             const resolvedVarName = await getFirstVarNameForNode(inputNodeIdResolved);
-             
-             setInputNodeId(inputNodeIdResolved);
-             setInputVarName(resolvedVarName ?? null);
-             setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
-             setExpecting(true);
-             await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
-             runAllWaitingForInputRef.current = null;
-             resp = lastResponse ?? resp;
+          const inputNodeIdResolved = resp?.node?.id ? String(resp.node.id) : null;
+          const resolvedVarName = await getFirstVarNameForNode(inputNodeIdResolved);
+
+          setInputNodeId(inputNodeIdResolved);
+          setInputVarName(resolvedVarName ?? null);
+          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
+          setExpecting(true);
+          await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
+          runAllWaitingForInputRef.current = null;
+          resp = lastResponse ?? resp;
         }
 
         nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
@@ -724,7 +744,7 @@ export default function TopBarControls({
           const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
           safeHighlight(loopNodeId);
         }
-        
+
         nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
 
         if (nextTypeLoop === "IN" || nextTypeLoop === "INPUT") {
@@ -767,7 +787,9 @@ export default function TopBarControls({
           try {
             await apiTrialReset(effectiveId as any);
           } catch (err) {
-            try { await apiExecuteTrial(effectiveId as any, { action: "reset" }); } catch (e) {}
+            try {
+              await apiExecuteTrial(effectiveId as any, { action: "reset" });
+            } catch (e) {}
           }
 
           setLastResponse(null);
@@ -790,11 +812,15 @@ export default function TopBarControls({
       setIsLoading(false);
       runAllActiveRef.current = false;
       if (runAllWaitingForInputRef.current) {
-        try { runAllWaitingForInputRef.current(); } catch { }
+        try {
+          runAllWaitingForInputRef.current();
+        } catch {}
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
-        try { outputResumeRef.current(); } catch { }
+        try {
+          outputResumeRef.current();
+        } catch {}
         outputResumeRef.current = null;
       }
     }
@@ -862,25 +888,27 @@ export default function TopBarControls({
       const currentTypeStr = currentType ? String(currentType).toUpperCase().trim() : null;
 
       if (currentTypeStr && (currentTypeStr === "IN" || currentTypeStr === "INPUT" || resp?.paused === true)) {
-          const nextInputId = resp?.node?.id ?? resp?.nextNodeId;
-          const inputNodeIdResolved = nextInputId !== null && typeof nextInputId !== "undefined" ? String(nextInputId) : null;
-          const resolvedVarName2 = await getFirstVarNameForNode(inputNodeIdResolved);
-          
-          setInputNodeId(inputNodeIdResolved);
-          setInputVarName(resolvedVarName2 ?? null);
-          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
-          
-          setExpecting(true);
-          
-          if (inputNodeIdResolved) safeHighlight(inputNodeIdResolved);
+        const nextInputId = resp?.node?.id ?? resp?.nextNodeId;
+        const inputNodeIdResolved = nextInputId !== null && typeof nextInputId !== "undefined" ? String(nextInputId) : null;
+        const resolvedVarName2 = await getFirstVarNameForNode(inputNodeIdResolved);
 
-          // ถ้า RunAll รออยู่ ให้ไปต่อได้เลย (resume)
-          if (runAllWaitingForInputRef.current) {
-            try { runAllWaitingForInputRef.current(); } catch { }
-            runAllWaitingForInputRef.current = null;
-          }
-          setIsLoading(false);
-          return;
+        setInputNodeId(inputNodeIdResolved);
+        setInputVarName(resolvedVarName2 ?? null);
+        setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
+
+        setExpecting(true);
+
+        if (inputNodeIdResolved) safeHighlight(inputNodeIdResolved);
+
+        // ถ้า RunAll รออยู่ ให้ไปต่อได้เลย (resume)
+        if (runAllWaitingForInputRef.current) {
+          try {
+            runAllWaitingForInputRef.current();
+          } catch {}
+          runAllWaitingForInputRef.current = null;
+        }
+        setIsLoading(false);
+        return;
       }
       // --------------------------------------------------------------------------
 
@@ -903,7 +931,9 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         runAllWaitingForInputRef.current = null;
       }
     } catch (err: any) {
@@ -914,13 +944,15 @@ export default function TopBarControls({
         err?.response?.data?.error ??
         err?.message ??
         String(err);
-        
+
       setErrorMsg(msg);
       setChatMessages((m) => [...m, { sender: "system", text: `Error: ${msg}` }]);
-      
+
       // ให้ loop RunAll ที่รอ Input อยู่หลุดจากการรอเมื่อเจอ Error ด้วย (จะได้ไม่ค้าง)
       if (runAllWaitingForInputRef.current) {
-        try { runAllWaitingForInputRef.current(); } catch { }
+        try {
+          runAllWaitingForInputRef.current();
+        } catch {}
         runAllWaitingForInputRef.current = null;
       }
     } finally {
@@ -1079,8 +1111,7 @@ export default function TopBarControls({
 
         if (typeof r.passed === "boolean") {
           status = r.passed ? "PASS" : "FAIL";
-        } 
-        else {
+        } else {
           let statusRaw =
             r.status ??
             r.result?.status ??
@@ -1151,19 +1182,19 @@ export default function TopBarControls({
   // Render Badge now filters out generic FAIL/PASS text from the bottom area
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
     const base = "inline-block text-base px-2 py-1 rounded-md mb-2 mr-2 font-medium";
-    
+
     // Filter out simple status text that is already shown in the right badge
-    if (['PASS', 'FAIL', 'UNKNOWN', 'ERROR', 'SUCCESS'].includes(r.text.toUpperCase())) {
-        return null;
+    if (["PASS", "FAIL", "UNKNOWN", "ERROR", "SUCCESS"].includes(r.text.toUpperCase())) {
+      return null;
     }
 
     // Special styling for "Actual:" text to make it stand out and bigger
     if (r.text.startsWith("Actual:")) {
-         return (
-          <div key={idx} className={`block text-lg font-bold mt-1 ${r.level === 'error' || r.level === 'info' ? 'text-red-600' : 'text-gray-700'}`}>
-            {r.text}
-          </div>
-        );
+      return (
+        <div key={idx} className={`block text-lg font-bold mt-1 ${r.level === "error" || r.level === "info" ? "text-red-600" : "text-gray-700"}`}>
+          {r.text}
+        </div>
+      );
     }
 
     switch (r.level) {
@@ -1222,7 +1253,7 @@ export default function TopBarControls({
       } catch {
         if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
           const content = trimmed.slice(1, -1);
-          const items = content.split(",").map(part => {
+          const items = content.split(",").map((part) => {
             const p = part.trim();
             if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
               return p.slice(1, -1);
@@ -1241,7 +1272,7 @@ export default function TopBarControls({
   };
 
   const flattenDeep = (arr: any[]): any[] => {
-    return arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
+    return arr.reduce((acc, val) => (Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val)), []);
   };
 
   // ------- UI rendering -------
@@ -1252,7 +1283,14 @@ export default function TopBarControls({
         <button onClick={handleRunAll} title="Run" className="text-green-600 hover:text-green-700 text-lg p-2 rounded-full hover:bg-green-100 transition-colors">
           <FaPlay />
         </button>
-        <button onClick={handleStep} disabled={isLoading || done} title={done ? "Finished" : "Step"} className={`text-yellow-600 text-lg p-2 rounded-full transition-colors ${isLoading ? "opacity-50 cursor-not-allowed" : "hover:text-yellow-700 hover:bg-yellow-100"} ${done ? "opacity-40 cursor-not-allowed" : ""}`}>
+        <button
+          onClick={handleStep}
+          disabled={isLoading || done}
+          title={done ? "Finished" : "Step"}
+          className={`text-yellow-600 text-lg p-2 rounded-full transition-colors ${isLoading ? "opacity-50 cursor-not-allowed" : "hover:text-yellow-700 hover:bg-yellow-100"} ${
+            done ? "opacity-40 cursor-not-allowed" : ""
+          }`}
+        >
           <span className={`${isLoading ? "animate-pulse" : ""}`}>
             <FaStepForward />
           </span>
@@ -1260,7 +1298,10 @@ export default function TopBarControls({
         <button onClick={resetFlowchart} className="text-gray-600 hover:text-gray-700 text-lg p-2 rounded-full hover:bg-gray-100 transition-colors">
           <FaStop />
         </button>
-        <span onClick={togglePopup} className="ml-2 px-3 py-1 bg-blue-200 text-blue-800 text-sm font-semibold rounded-lg cursor-pointer hover:bg-blue-300 transition-colors select-none">
+        <span
+          onClick={togglePopup}
+          className="ml-2 px-3 py-1 bg-blue-200 text-blue-800 text-sm font-semibold rounded-lg cursor-pointer hover:bg-blue-300 transition-colors select-none"
+        >
           Problem solving
         </span>
       </div>
@@ -1275,17 +1316,17 @@ export default function TopBarControls({
         <div ref={chatRef} className="p-3 overflow-auto bg-gray-50" style={{ maxHeight: 260, minHeight: 150 }}>
           {chatMessages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 opacity-50 py-10">
-                <div className="flex items-center gap-3 text-sm">
-                  <span>Press Run</span>
-                  <FaPlay />
-                  <span className="">or</span>
-                  <span>Step</span>
-                  <FaStepForward />
-                  <span className="">or</span>
-                  <span>Stop</span>
-                  <FaStop />
-                  <span className="">to start</span>
-                </div>
+              <div className="flex items-center gap-3 text-sm">
+                <span>Press Run</span>
+                <FaPlay />
+                <span className="">or</span>
+                <span>Step</span>
+                <FaStepForward />
+                <span className="">or</span>
+                <span>Stop</span>
+                <FaStop />
+                <span className="">to start</span>
+              </div>
             </div>
           )}
           {chatMessages.map((m, i) => {
@@ -1293,9 +1334,10 @@ export default function TopBarControls({
             return (
               <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${m.sender === "user"
-                    ? "bg-blue-600 text-white rounded-br-sm shadow-sm"
-                    : isError
+                  className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${
+                    m.sender === "user"
+                      ? "bg-blue-600 text-white rounded-br-sm shadow-sm"
+                      : isError
                       ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
                       : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
                   }`}
@@ -1343,31 +1385,27 @@ export default function TopBarControls({
               </button>
             </div>
           ) : (
-             <div className="flex justify-between items-center h-[38px]">
-                <span className="text-sm text-gray-500">
-                  {chatMessages.length > 0 ? "Output log" : ""}
-                </span>
-                <div className="flex gap-2">
-                  <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
-                    Clear
-                  </button>
-                </div>
-             </div>
+            <div className="flex justify-between items-center h-[38px]">
+              <span className="text-sm text-gray-500">{chatMessages.length > 0 ? "Output log" : ""}</span>
+              <div className="flex gap-2">
+                <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
+                  Clear
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
       {showPopup && (
         <div className="absolute z-50 w-120 h-auto rounded-xl bg-white p-4 shadow-xl border border-gray-200 ml-12 mt-3 transform translate-x-[-10%] animate-fadeIn">
-         <div className="relative w-full">
+          <div className="relative w-full">
             {/* Title & description: allow long text to wrap and scroll if too tall */}
             <div className="text-gray-800 text-lg font-medium font-['Sarabun'] leading-snug mb-4 whitespace-pre-wrap break-words">
               {labInfo ? (
                 <>
                   <div className="font-bold mb-1">{labInfo.name}</div>
-                  <div className="text-gray-600 max-h-40 overflow-auto break-words whitespace-pre-wrap pr-2">
-                    {labInfo.detail}
-                  </div>
+                  <div className="text-gray-600 max-h-40 overflow-auto break-words whitespace-pre-wrap pr-2">{labInfo.detail}</div>
                 </>
               ) : (
                 "กำลังโหลดรายละเอียดโจทย์..."
@@ -1396,18 +1434,19 @@ export default function TopBarControls({
                 return (
                   <div key={displayId} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between gap-4">
-                      
                       {/* Left: Content */}
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                           <span className="text-lg font-bold text-gray-800">Test Case #{displayId}</span>
+                          <span className="text-lg font-bold text-gray-800">Test Case #{displayId}</span>
                         </div>
-                        
+
                         {/* Combined Input/Output line with larger font */}
                         <div className="text-base text-gray-600">
-                           <span className="font-semibold text-gray-800">Input:</span> <span className="mr-3 font-mono bg-gray-50 px-1 rounded">{inputDisplay}</span>
-                           <span className="text-gray-400">|</span>
-                           <span className="ml-3 font-semibold text-gray-800">Output:</span> <span className="font-mono bg-gray-50 px-1 rounded">{outputDisplay}</span>
+                          <span className="font-semibold text-gray-800">Input:</span>{" "}
+                          <span className="mr-3 font-mono bg-gray-50 px-1 rounded">{inputDisplay}</span>
+                          <span className="text-gray-400">|</span>
+                          <span className="ml-3 font-semibold text-gray-800">Output:</span>{" "}
+                          <span className="font-mono bg-gray-50 px-1 rounded">{outputDisplay}</span>
                         </div>
 
                         {Array.isArray(tc.inHiddenVal) && tc.inHiddenVal.length > 0 && (
@@ -1417,24 +1456,22 @@ export default function TopBarControls({
 
                       {/* Right: Score & Status */}
                       <div className="flex flex-col items-end gap-2 min-w-[100px]">
-                         <div className="text-sm font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                            Score: {tc.score ?? 0}
-                         </div>
-                         
-                         <div>
-                            {(testResults[displayId] ?? []).length === 0 ? (
-                              <span className="text-sm text-gray-400 font-medium">Not run</span>
-                            ) : (
-                              (() => {
-                                const items = testResults[displayId] ?? [];
-                                const statusMsg = items[0];
-                                if (statusMsg) {
-                                  return renderSummaryBadge(statusMsg.level, statusMsg.text);
-                                }
-                                return renderSummaryBadge(null);
-                              })()
-                            )}
-                         </div>
+                        <div className="text-sm font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded">Score: {tc.score ?? 0}</div>
+
+                        <div>
+                          {(testResults[displayId] ?? []).length === 0 ? (
+                            <span className="text-sm text-gray-400 font-medium">Not run</span>
+                          ) : (
+                            (() => {
+                              const items = testResults[displayId] ?? [];
+                              const statusMsg = items[0];
+                              if (statusMsg) {
+                                return renderSummaryBadge(statusMsg.level, statusMsg.text);
+                              }
+                              return renderSummaryBadge(null);
+                            })()
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1457,7 +1494,10 @@ export default function TopBarControls({
               <button
                 onClick={handleRunTests}
                 disabled={runningTests}
-                className={`text-base font-medium px-8 py-2 rounded-full transition-all shadow-sm ${runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600 hover:shadow"}`}>
+                className={`text-base font-medium px-8 py-2 rounded-full transition-all shadow-sm ${
+                  runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600 hover:shadow"
+                }`}
+              >
                 {runningTests ? "Testing..." : "Test"}
               </button>
 
