@@ -60,7 +60,7 @@ function Trial() {
   const searchParams = useSearchParams();
   
   // รับ labId จาก URL (Default 19) ตาม Logic เดิม
-  const labIdParam = searchParams?.get("labId") ?? "19";
+  const labIdParam = searchParams?.get("labId") ?? "238";
 
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [lab, setLab] = useState<RemoteLab | null>(null);
