@@ -9,7 +9,9 @@ const router = express.Router();
  */
 function getActorUserId(req) {
   // header takes precedence
-  return req.headers["x-user-id"] ?? req.body?.actorUserId ?? req.body?.currentUserId;
+  return (
+    req.headers["x-user-id"] ?? req.body?.actorUserId ?? req.body?.currentUserId
+  );
 }
 
 /* =========================================================
@@ -33,7 +35,9 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error("CREATE CLASS ERROR:", err);
     const status = err.code === "FORBIDDEN" ? 403 : 400;
-    return res.status(status).json({ ok: false, message: err.message, details: err.details || null });
+    return res
+      .status(status)
+      .json({ ok: false, message: err.message, details: err.details || null });
   }
 });
 
@@ -67,7 +71,8 @@ router.get("/:classId", async (req, res) => {
     return res.json({ ok: true, class: cls });
   } catch (err) {
     console.error("GET CLASS ERROR:", err);
-    const status = err.code === "NOT_FOUND" ? 404 : err.code === "BAD_REQUEST" ? 400 : 500;
+    const status =
+      err.code === "NOT_FOUND" ? 404 : err.code === "BAD_REQUEST" ? 400 : 500;
     return res.status(status).json({ ok: false, message: err.message });
   }
 });
@@ -106,7 +111,7 @@ router.post("/:classId/labs", async (req, res) => {
       req.params.classId,
       labId,
       actorUserId,
-      dueDate
+      dueDate,
     );
 
     return res.status(201).json({ ok: true, result: r });
@@ -114,15 +119,19 @@ router.post("/:classId/labs", async (req, res) => {
     console.error("ADD LAB TO CLASS ERROR:", err);
 
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 :
-      err.code === "CONFLICT"  ? 409 :   // ✅ แลปซ้ำในคลาส
-      err.code === "BAD_REQUEST" ? 400 :
-      400;
+      err.code === "FORBIDDEN"
+        ? 403
+        : err.code === "NOT_FOUND"
+          ? 404
+          : err.code === "CONFLICT"
+            ? 409 // ✅ แลปซ้ำในคลาส
+            : err.code === "BAD_REQUEST"
+              ? 400
+              : 400;
 
     return res.status(status).json({
       ok: false,
-      message: err.message
+      message: err.message,
     });
   }
 });
@@ -134,12 +143,12 @@ router.get("/:classId/labs", async (req, res) => {
   try {
     const classId = req.params.classId;
     const labs = await classService.listLabsInClass(classId);
-    
+
     // map ให้ frontend ใช้ง่าย: lab + dueDate
-    const result = labs.map(cl => ({
+    const result = labs.map((cl) => ({
       labId: cl.labId,
       dueDate: cl.dueDate,
-      lab: cl.lab
+      lab: cl.lab,
     }));
 
     return res.json({ ok: true, labs: result });
@@ -148,7 +157,6 @@ router.get("/:classId/labs", async (req, res) => {
     return res.status(500).json({ ok: false, message: err.message });
   }
 });
-
 
 router.get("/:classId/users/search", async (req, res) => {
   try {
@@ -160,7 +168,7 @@ router.get("/:classId/users/search", async (req, res) => {
     const users = await classService.searchUsersNotInClass(
       query,
       req.params.classId,
-      actorUserId
+      actorUserId,
     );
 
     return res.json({ ok: true, users });
@@ -185,15 +193,14 @@ router.patch("/:classId/users/:userId/role", async (req, res) => {
       req.params.userId,
       req.params.classId,
       roleId,
-      actorUserId
+      actorUserId,
     );
 
     return res.json({ ok: true, result: updated });
   } catch (err) {
     console.error("UPDATE USER ROLE ERROR:", err);
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "FORBIDDEN" ? 403 : err.code === "NOT_FOUND" ? 404 : 400;
 
     return res.status(status).json({ ok: false, message: err.message });
   }
@@ -213,15 +220,14 @@ router.post("/:classId/users", async (req, res) => {
       userId,
       req.params.classId,
       roleId,
-      actorUserId
+      actorUserId,
     );
 
     return res.status(201).json({ ok: true, result: r });
   } catch (err) {
     console.error("ADD USER ERROR:", err);
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "FORBIDDEN" ? 403 : err.code === "NOT_FOUND" ? 404 : 400;
 
     return res.status(status).json({ ok: false, message: err.message });
   }
@@ -238,20 +244,18 @@ router.delete("/:classId/users/:userId", async (req, res) => {
     await classService.removeUserFromClass(
       req.params.userId,
       req.params.classId,
-      actorUserId
+      actorUserId,
     );
 
     return res.json({ ok: true });
   } catch (err) {
     console.error("REMOVE USER ERROR:", err);
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "FORBIDDEN" ? 403 : err.code === "NOT_FOUND" ? 404 : 400;
 
     return res.status(status).json({ ok: false, message: err.message });
   }
 });
-
 
 /**
  * PATCH /classes/:classId/labs/:labId
@@ -267,15 +271,14 @@ router.patch("/:classId/labs/:labId", async (req, res) => {
       req.params.classId,
       req.params.labId,
       actorUserId,
-      dueDate
+      dueDate,
     );
 
     return res.json({ ok: true, result: updated });
   } catch (err) {
     console.error("UPDATE LAB DUE DATE ERROR:", err);
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "FORBIDDEN" ? 403 : err.code === "NOT_FOUND" ? 404 : 400;
     return res.status(status).json({ ok: false, message: err.message });
   }
 });
@@ -311,15 +314,14 @@ router.post("/:classId/packages", async (req, res) => {
       req.params.classId,
       packageId,
       { startDate, endDate },
-      actorUserId
+      actorUserId,
     );
 
     return res.status(201).json({ ok: true, result: r });
   } catch (err) {
     console.error("ADD PACKAGE ERROR:", err);
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "FORBIDDEN" ? 403 : err.code === "NOT_FOUND" ? 404 : 400;
 
     return res.status(status).json({ ok: false, message: err.message });
   }
@@ -348,15 +350,14 @@ router.post("/:classId/leave", async (req, res) => {
 
     const result = await classService.leaveClass(
       req.params.classId,
-      actorUserId
+      actorUserId,
     );
 
     return res.json({ ok: true, result });
   } catch (err) {
     console.error("LEAVE CLASS ERROR:", err);
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "FORBIDDEN" ? 403 : err.code === "NOT_FOUND" ? 404 : 400;
 
     return res.status(status).json({ ok: false, message: err.message });
   }
@@ -373,15 +374,14 @@ router.delete("/:classId/labs/:labId", async (req, res) => {
     const result = await classService.removeLabFromClass(
       req.params.classId,
       req.params.labId,
-      actorUserId
+      actorUserId,
     );
 
     return res.json({ ok: true, result });
   } catch (err) {
     console.error("REMOVE LAB ERROR:", err);
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "FORBIDDEN" ? 403 : err.code === "NOT_FOUND" ? 404 : 400;
 
     return res.status(status).json({ ok: false, message: err.message });
   }
@@ -397,15 +397,14 @@ router.delete("/:classId", async (req, res) => {
 
     const result = await classService.deleteClass(
       req.params.classId,
-      actorUserId
+      actorUserId,
     );
 
     return res.json({ ok: true, result });
   } catch (err) {
     console.error("DELETE CLASS ERROR:", err);
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "FORBIDDEN" ? 403 : err.code === "NOT_FOUND" ? 404 : 400;
 
     return res.status(status).json({ ok: false, message: err.message });
   }

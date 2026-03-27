@@ -34,7 +34,7 @@ export default function DeclareHandler(node, context) {
       }
     }
   } catch (e) {
-    console.error(`❌ Error evaluating declare value '${raw}':`, e.message);
+    console.error(`Error evaluating declare value '${raw}':`, e.message);
     value = raw;
   }
 

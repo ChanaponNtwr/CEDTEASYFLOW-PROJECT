@@ -43,7 +43,8 @@ router.post("/api/submission/submit", async (req, res) => {
     if (Number(fc.userId) !== Number(userId)) {
       return res.status(403).json({
         ok: false,
-        message: "You are not allowed to submit using someone else's flowchart.",
+        message:
+          "You are not allowed to submit using someone else's flowchart.",
       });
     }
 
@@ -90,7 +91,6 @@ router.post("/api/submission/submit", async (req, res) => {
   }
 });
 
-
 /**
  * GET /api/submission/lab/:labId
  * - list submissions grouped by user for a lab
@@ -125,9 +125,7 @@ router.get("/api/submission/lab/:labId", async (req, res) => {
       where: { labId: Number(labId) },
     });
 
-    const testcaseMap = new Map(
-      testcases.map(tc => [tc.testcaseId, tc])
-    );
+    const testcaseMap = new Map(testcases.map((tc) => [tc.testcaseId, tc]));
 
     // 3) group submissions by userId
     const map = new Map();
@@ -143,7 +141,7 @@ router.get("/api/submission/lab/:labId", async (req, res) => {
       let totalScore = 0;
       let totalMaxScore = 0;
 
-      const subsWithScore = userSubs.map(s => {
+      const subsWithScore = userSubs.map((s) => {
         const tc = testcaseMap.get(s.testcaseId);
         const maxScore = tc?.score ?? 1;
         const awarded = s.status === "PASS" ? maxScore : 0;
@@ -158,7 +156,7 @@ router.get("/api/submission/lab/:labId", async (req, res) => {
 
         return {
           userId: s.userId,
-          userName,              // ✅ ชื่อผู้ส่งในแต่ละ submission
+          userName, // ✅ ชื่อผู้ส่งในแต่ละ submission
           labId: s.labId,
           testcaseId: s.testcaseId,
           status: s.status,
@@ -172,9 +170,7 @@ router.get("/api/submission/lab/:labId", async (req, res) => {
       const u = userSubs[0]?.user;
 
       const groupUserName =
-        u?.name ||
-        [u?.fname, u?.lname].filter(Boolean).join(" ") ||
-        null;
+        u?.name || [u?.fname, u?.lname].filter(Boolean).join(" ") || null;
 
       data.push({
         userId,
@@ -194,55 +190,72 @@ router.get("/api/submission/lab/:labId", async (req, res) => {
   }
 });
 
-
 /**
  * GET /api/submission/user/:userId/lab/:labId/latest
  */
-router.get("/api/submission/user/:userId/lab/:labId/latest", async (req, res) => {
-  try {
-    const { userId, labId } = req.params;
-    if (!userId || !labId) return res.status(400).json({ ok: false, message: "userId & labId required" });
-    const rows = await SubmissionService.getLatestForUserLab({ userId: Number(userId), labId: Number(labId) });
-    return res.json({ ok: true, submissions: rows });
-  } catch (err) {
-    console.error("get latest submission error:", err);
-    return res.status(500).json({ ok: false, message: String(err.message ?? err) });
-  }
-});
+router.get(
+  "/api/submission/user/:userId/lab/:labId/latest",
+  async (req, res) => {
+    try {
+      const { userId, labId } = req.params;
+      if (!userId || !labId)
+        return res
+          .status(400)
+          .json({ ok: false, message: "userId & labId required" });
+      const rows = await SubmissionService.getLatestForUserLab({
+        userId: Number(userId),
+        labId: Number(labId),
+      });
+      return res.json({ ok: true, submissions: rows });
+    } catch (err) {
+      console.error("get latest submission error:", err);
+      return res
+        .status(500)
+        .json({ ok: false, message: String(err.message ?? err) });
+    }
+  },
+);
 
 /**
  * POST /api/submission/lab/:labId/user/:userId/confirm
  * body: { reviewerId? }
  */
-router.post("/api/submission/lab/:labId/user/:userId/confirm", async (req, res) => {
-  try {
-    const { labId, userId } = req.params;
+router.post(
+  "/api/submission/lab/:labId/user/:userId/confirm",
+  async (req, res) => {
+    try {
+      const { labId, userId } = req.params;
 
-    if (!labId || !userId) {
-      return res.status(400).json({ ok: false, message: "labId & userId required" });
-    }
+      if (!labId || !userId) {
+        return res
+          .status(400)
+          .json({ ok: false, message: "labId & userId required" });
+      }
 
-    // 1) อัปเดตสถานะ submission
-    await SubmissionService.confirmSubmissions({
-      userId: Number(userId),
-      labId: Number(labId),
-    });
+      // 1) อัปเดตสถานะ submission
+      await SubmissionService.confirmSubmissions({
+        userId: Number(userId),
+        labId: Number(labId),
+      });
 
-    // 2) โหลด user + lab
-    const [user, lab] = await Promise.all([
-      prisma.user.findUnique({ where: { id: Number(userId) } }),
-      prisma.lab.findUnique({ where: { labId: Number(labId) } }),
-    ]);
+      // 2) โหลด user + lab
+      const [user, lab] = await Promise.all([
+        prisma.user.findUnique({ where: { id: Number(userId) } }),
+        prisma.lab.findUnique({ where: { labId: Number(labId) } }),
+      ]);
 
-    if (user?.email && lab) {
-      const studentName = user.name || `${user.fname || ""} ${user.lname || ""}`.trim() || "นักศึกษา";
-      const labName = lab.labname;
-      const appUrl = `http://localhost:3000/labs/${lab.labId}`;
+      if (user?.email && lab) {
+        const studentName =
+          user.name ||
+          `${user.fname || ""} ${user.lname || ""}`.trim() ||
+          "นักศึกษา";
+        const labName = lab.labname;
+        const appUrl = `http://localhost:3000/labs/${lab.labId}`;
 
-      await sendMail({
-        to: user.email,
-        subject: `✅ ผลการตรวจงาน: ${labName}`,
-        html: `
+        await sendMail({
+          to: user.email,
+          subject: `✅ ผลการตรวจงาน: ${labName}`,
+          html: `
           <div style="font-family: Arial, sans-serif; background:#f6f8fb; padding:24px;">
             <div style="max-width:600px; margin:auto; background:#ffffff; border-radius:10px; overflow:hidden; box-shadow:0 4px 10px rgba(0,0,0,0.05);">
               
@@ -297,97 +310,111 @@ router.post("/api/submission/lab/:labId/user/:userId/confirm", async (req, res) 
             </div>
           </div>
         `,
-      });
+        });
+      }
+
+      return res.json({ ok: true, message: "Confirmed" });
+    } catch (err) {
+      console.error("confirm error:", err);
+      return res
+        .status(500)
+        .json({ ok: false, message: String(err.message ?? err) });
     }
-
-    return res.json({ ok: true, message: "Confirmed" });
-  } catch (err) {
-    console.error("confirm error:", err);
-    return res.status(500).json({ ok: false, message: String(err.message ?? err) });
-  }
-});
-
+  },
+);
 
 /**
  * POST /api/submission/lab/:labId/user/:userId/cancel
  * - นักเรียนยกเลิกการส่งงานของ lab นี้ทั้งหมด
  */
-router.post("/api/submission/lab/:labId/user/:userId/cancel", async (req, res) => {
-  try {
-    const { labId, userId } = req.params;
-    if (!labId || !userId) {
-      return res.status(400).json({ ok: false, message: "labId & userId required" });
-    }
+router.post(
+  "/api/submission/lab/:labId/user/:userId/cancel",
+  async (req, res) => {
+    try {
+      const { labId, userId } = req.params;
+      if (!labId || !userId) {
+        return res
+          .status(400)
+          .json({ ok: false, message: "labId & userId required" });
+      }
 
-    // 1) เช็คว่าเคย confirm แล้วหรือยัง
-    const alreadyConfirmed = await SubmissionService.isConfirmed({
-      userId: Number(userId),
-      labId: Number(labId),
-    });
-
-    if (alreadyConfirmed) {
-      return res.status(403).json({
-        ok: false,
-        message: "This lab has already been CONFIRMED. Cancel is not allowed.",
-      });
-    }
-
-    // 2) ลบ submissions ทั้งหมดของ user + lab นี้
-    const deleted = await prisma.submission.deleteMany({
-      where: {
+      // 1) เช็คว่าเคย confirm แล้วหรือยัง
+      const alreadyConfirmed = await SubmissionService.isConfirmed({
         userId: Number(userId),
         labId: Number(labId),
-      },
-    });
+      });
 
-    return res.json({
-      ok: true,
-      message: "Submission cancelled",
-      deletedCount: deleted.count,
-    });
-  } catch (err) {
-    console.error("cancel submission error:", err);
-    return res.status(500).json({ ok: false, message: String(err.message ?? err) });
-  }
-});
+      if (alreadyConfirmed) {
+        return res.status(403).json({
+          ok: false,
+          message:
+            "This lab has already been CONFIRMED. Cancel is not allowed.",
+        });
+      }
+
+      // 2) ลบ submissions ทั้งหมดของ user + lab นี้
+      const deleted = await prisma.submission.deleteMany({
+        where: {
+          userId: Number(userId),
+          labId: Number(labId),
+        },
+      });
+
+      return res.json({
+        ok: true,
+        message: "Submission cancelled",
+        deletedCount: deleted.count,
+      });
+    } catch (err) {
+      console.error("cancel submission error:", err);
+      return res
+        .status(500)
+        .json({ ok: false, message: String(err.message ?? err) });
+    }
+  },
+);
 
 /**
  * POST /api/submission/lab/:labId/user/:userId/reject
  * body: { reviewerId? }
  */
-router.post("/api/submission/lab/:labId/user/:userId/reject", async (req, res) => {
-  try {
-    const { labId, userId } = req.params;
+router.post(
+  "/api/submission/lab/:labId/user/:userId/reject",
+  async (req, res) => {
+    try {
+      const { labId, userId } = req.params;
 
-    if (!labId || !userId) {
-      return res.status(400).json({ ok: false, message: "labId & userId required" });
-    }
+      if (!labId || !userId) {
+        return res
+          .status(400)
+          .json({ ok: false, message: "labId & userId required" });
+      }
 
-    // 1) อัปเดตสถานะ submission → rejected + ลบ rows
-    await SubmissionService.rejectSubmissions({
-      userId: Number(userId),
-      labId: Number(labId),
-    });
+      // 1) อัปเดตสถานะ submission → rejected + ลบ rows
+      await SubmissionService.rejectSubmissions({
+        userId: Number(userId),
+        labId: Number(labId),
+      });
 
-    // 2) โหลด user + lab
-    const [user, lab] = await Promise.all([
-      prisma.user.findUnique({ where: { id: Number(userId) } }),
-      prisma.lab.findUnique({ where: { labId: Number(labId) } }),
-    ]);
+      // 2) โหลด user + lab
+      const [user, lab] = await Promise.all([
+        prisma.user.findUnique({ where: { id: Number(userId) } }),
+        prisma.lab.findUnique({ where: { labId: Number(labId) } }),
+      ]);
 
-    if (user?.email && lab) {
-      const studentName =
-        user.name ||
-        `${user.fname || ""} ${user.lname || ""}`.trim() ||
-        "นักศึกษา";
+      if (user?.email && lab) {
+        const studentName =
+          user.name ||
+          `${user.fname || ""} ${user.lname || ""}`.trim() ||
+          "นักศึกษา";
 
-      const labName = lab.labname;
-      const appUrl = `http://localhost:3000/labs/${lab.labId}`;
+        const labName = lab.labname;
+        const appUrl = `http://localhost:3000/labs/${lab.labId}`;
 
-      await sendMail({
-        to: user.email,
-        subject: `❌ งานถูกปฏิเสธ: ${labName}`,
-        html: `
+        await sendMail({
+          to: user.email,
+          subject: `❌ งานถูกปฏิเสธ: ${labName}`,
+          html: `
           <div style="font-family: Arial, sans-serif; background:#f6f8fb; padding:24px;">
             <div style="max-width:600px; margin:auto; background:#ffffff; border-radius:10px; overflow:hidden; box-shadow:0 4px 10px rgba(0,0,0,0.05);">
               
@@ -445,16 +472,21 @@ router.post("/api/submission/lab/:labId/user/:userId/reject", async (req, res) =
             </div>
           </div>
         `,
+        });
+      }
+
+      return res.json({
+        ok: true,
+        message: "Rejected and submissions removed",
       });
+    } catch (err) {
+      console.error("reject error:", err);
+      return res
+        .status(500)
+        .json({ ok: false, message: String(err.message ?? err) });
     }
-
-    return res.json({ ok: true, message: "Rejected and submissions removed" });
-  } catch (err) {
-    console.error("reject error:", err);
-    return res.status(500).json({ ok: false, message: String(err.message ?? err) });
-  }
-});
-
+  },
+);
 
 /**
  * GET /api/submission/lab/:labId/details
@@ -467,17 +499,19 @@ router.post("/api/submission/lab/:labId/user/:userId/reject", async (req, res) =
 router.get("/api/submission/lab/:labId/details", async (req, res) => {
   try {
     const { labId } = req.params;
-    if (!labId) return res.status(400).json({ ok: false, message: "labId required" });
+    if (!labId)
+      return res.status(400).json({ ok: false, message: "labId required" });
 
     const labIdNum = Number(labId);
-    if (!Number.isInteger(labIdNum)) return res.status(400).json({ ok: false, message: "invalid labId" });
+    if (!Number.isInteger(labIdNum))
+      return res.status(400).json({ ok: false, message: "invalid labId" });
 
     // 1) ดึง testcases ของแลป (เพื่อเอา maxScore / รายการ testcase)
     const testcases = await prisma.testcase.findMany({
       where: { labId: labIdNum },
-      orderBy: { testcaseId: "asc" }
+      orderBy: { testcaseId: "asc" },
     });
-    const testcaseMap = new Map(testcases.map(tc => [tc.testcaseId, tc]));
+    const testcaseMap = new Map(testcases.map((tc) => [tc.testcaseId, tc]));
 
     // 2) ดึง submissions ทั้งหมดของแลป พร้อม user info
     const submissions = await prisma.submission.findMany({
@@ -485,9 +519,15 @@ router.get("/api/submission/lab/:labId/details", async (req, res) => {
       orderBy: { createAt: "desc" },
       include: {
         user: {
-          select: { id: true, name: true, fname: true, lname: true, email: true }
-        }
-      }
+          select: {
+            id: true,
+            name: true,
+            fname: true,
+            lname: true,
+            email: true,
+          },
+        },
+      },
     });
 
     if (!submissions || submissions.length === 0) {
@@ -521,9 +561,10 @@ router.get("/api/submission/lab/:labId/details", async (req, res) => {
       // Build per-testcase array based on testcases list (so even missing ones are shown)
       let totalScore = 0;
       let totalMax = 0;
-      const testcaseResults = testcases.map(tc => {
+      const testcaseResults = testcases.map((tc) => {
         const tcid = tc.testcaseId;
-        const maxScore = typeof tc.score === "number" ? tc.score : Number(tc.score || 1);
+        const maxScore =
+          typeof tc.score === "number" ? tc.score : Number(tc.score || 1);
 
         const s = subMap.get(tcid) ?? null;
         const status = s?.status ?? "NOT_SUBMITTED";
@@ -539,7 +580,7 @@ router.get("/api/submission/lab/:labId/details", async (req, res) => {
           status,
           scoreAwarded,
           maxScore,
-          submittedAt
+          submittedAt,
         };
       });
 
@@ -547,7 +588,7 @@ router.get("/api/submission/lab/:labId/details", async (req, res) => {
       const latestFlowchart = await prisma.flowchart.findFirst({
         where: { userId: Number(userId), labId: labIdNum },
         orderBy: { createdAt: "desc" },
-        select: { flowchartId: true, createdAt: true }
+        select: { flowchartId: true, createdAt: true },
       });
 
       result.push({
@@ -558,16 +599,17 @@ router.get("/api/submission/lab/:labId/details", async (req, res) => {
         flowchartCreatedAt: latestFlowchart?.createdAt ?? null,
         testcases: testcaseResults,
         totalScore,
-        totalMaxScore: totalMax
+        totalMaxScore: totalMax,
       });
     }
 
     return res.json({ ok: true, data: result });
   } catch (err) {
     console.error("LIST SUBMISSION DETAILS BY LAB ERROR:", err);
-    return res.status(500).json({ ok: false, message: String(err.message ?? err) });
+    return res
+      .status(500)
+      .json({ ok: false, message: String(err.message ?? err) });
   }
 });
-
 
 export default router;
