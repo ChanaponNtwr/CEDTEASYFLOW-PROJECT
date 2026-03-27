@@ -201,7 +201,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
   /* --- Shape remaining helpers --- */
 
-  // convert backend remaining value into number or Infinity
   const parseRemaining = (v: any): number | typeof Infinity | null => {
     if (v === null || v === undefined) return null;
     if (typeof v === "number") return v;
@@ -213,7 +212,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     return null;
   };
 
-  // map UI symbol key to one or more backend shape codes (try multiple if backend uses FOR vs FR etc.)
   const uiKeyToShapeCodes = (uiKey: string): string[] => {
     switch (uiKey) {
       case "input": return ["IN"];
@@ -228,7 +226,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     }
   };
 
-  // get remaining (number|Infinity|null) for an uiKey from current shapeRemaining
   const getRemainingForUIKey = (uiKey: string): number | typeof Infinity | null => {
     if (!shapeRemaining) return null;
     const codes = uiKeyToShapeCodes(uiKey);
@@ -258,30 +255,21 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   };
 
   useEffect(() => {
-    // debug: log incoming userId + flowchartId
     console.log("SymbolSection userId:", userId, "flowchartId:", flowchartId);
   }, [userId, flowchartId]);
 
   useEffect(() => {
-    // initial load + when flowchartId changes
     fetchShapeRemaining();
   }, [flowchartId]);
 
-  /* --- Helper to safely extract newOutput from service response (flexible) --- */
   const extractNewOutput = (serviceResp: any): any | null => {
-    // serviceResp might be:
-    // - the newOutput array directly (e.g. service returns data.newOutput and we returned that)
-    // - an object containing newOutput (data.newOutput)
-    // - an object without newOutput (older backend)
     if (serviceResp === null || serviceResp === undefined) return null;
     if (Array.isArray(serviceResp)) return serviceResp;
     if (serviceResp?.newOutput && Array.isArray(serviceResp.newOutput)) return serviceResp.newOutput;
-    // sometimes backend returns { newOutput: [...], node: {...}, ... } or { node:..., newOutput: ... }
     if (serviceResp?.newOutput) return serviceResp.newOutput;
     return null;
   };
 
-  /* --- callUpdateOrAdd (แก้ไขให้เรียก fetchShapeRemaining หลังสำเร็จ) --- */
   const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
     setError("");
     setConflicts([]);
@@ -296,7 +284,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     try {
       setLoading(true);
       if (nodeId) {
-        // EDIT
         if (userId === undefined || userId === null) {
           setError("Missing userId (ไม่พบ userId สำหรับการแก้ไข node)");
           setLoading(false);
@@ -322,7 +309,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           onUpdateNode?.(nodeId, backendType, label);
         }
       } else {
-        // INSERT
         if (!selectedEdgeId) {
           setError("กรุณาเลือกเส้น (edge) ที่ต้องการแทรก node ก่อน");
           return;
@@ -348,21 +334,17 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           } catch (refreshErr) {
             console.warn("onRefresh failed after insert:", refreshErr);
           }
-        } else {
-          // nothing to do; parent might handle updates
         }
       }
 
-      // success -> close modal, reset and refresh shapeRemaining
       setActiveModal(null);
       onCloseModal?.();
       resetFields();
 
-      // refresh the shape counts (always try to keep UI in sync)
       try {
         await fetchShapeRemaining();
       } catch (e) {
-        // already handled in fetchShapeRemaining
+        // ignore
       }
     } catch (err: any) {
       console.error("Error in callUpdateOrAdd:", err);
@@ -387,7 +369,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     }
   };
 
-  // performDelete contains the real delete logic previously inside handleDeleteClick (without confirm)
   const performDelete = async () => {
     if (!nodeToEdit) return;
     if (!flowchartId) {
@@ -418,7 +399,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         console.info("deleteNode response:", res);
       }
 
-      // attempt to delete associated breakpoint nodes gracefully
       try {
         const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase();
         if (rawType.includes("IF")) {
@@ -456,11 +436,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       setActiveModal(null);
       onCloseModal?.();
 
-      // update shapeRemaining after delete
       try {
         await fetchShapeRemaining();
       } catch (e) {
-        // ignore, already handled
+        // ignore
       }
     } catch (err: any) {
       console.error("Failed to delete node:", err);
@@ -471,17 +450,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     }
   };
 
-  // original handler now opens confirm modal instead of window.confirm
   const handleDeleteClick = async () => {
     if (!nodeToEdit) return;
     setError("");
 
-    // prepare confirm modal
     setConfirmTitle("ลบ node");
     setConfirmMessage("ต้องการลบ node นี้ใช่หรือไม่? การลบจะลบ node นี้พร้อม edges ที่เกี่ยวข้องและ nodes ที่ไม่สามารถเข้าถึงได้จาก Start");
     setConfirmVariant("danger");
     setConfirmAction(() => async () => {
-      // run actual delete
       await performDelete();
     });
     setConfirmVisible(true);
@@ -494,10 +470,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase().trim();
     const rawLabel = String(
       nodeToEdit.label ??
-      nodeToEdit.data?.label ??
-      nodeToEdit.data?.message ??
-      nodeToEdit.data?.condition ??
-      ""
+        nodeToEdit.data?.label ??
+        nodeToEdit.data?.message ??
+        nodeToEdit.data?.condition ??
+        ""
     ).trim();
 
     const stripQuotes = (s: any) => {
@@ -578,7 +554,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       const increment = String(nodeToEdit.data?.increment ?? "");
 
       if (init || condition || increment) {
-        const initMatch = init.match(/([a-zA-Z_]\w*)\s*=\s*([-/\d]+)/);
+        const initMatch = init.match(/([a-zA-Z_]\w*)\s*=\s*(.+)/);
         if (initMatch) {
           setForVariable(String(initMatch[1] ?? ""));
           setForStart(String(initMatch[2] ?? ""));
@@ -594,16 +570,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         }
 
         const condMatch =
-          condition.match(/<\s*([-/\d]+)/) ||
-          condition.match(/<=\s*([-/\d]+)/) ||
-          condition.match(/to\s+([-/\d]+)/i);
+          condition.match(/<\s*(.+)$/) ||
+          condition.match(/<=\s*(.+)$/) ||
+          condition.match(/to\s+(.+)$/i);
         if (condMatch) {
           setForEnd(String(condMatch[1] ?? ""));
         } else if (nodeToEdit.data?.end !== undefined) {
           setForEnd(String(nodeToEdit.data.end));
         }
 
-        const stepMatch = increment.match(/(?:\+=|=\s*.+\+\s*)([-/\d]+)/);
+        const stepMatch = increment.match(/(?:\+=|=\s*.+\+\s*)(.+)/);
         if (stepMatch) setForStep(String(stepMatch[1] ?? ""));
         else if (nodeToEdit.data?.step !== undefined) setForStep(String(nodeToEdit.data.step));
       } else {
@@ -625,6 +601,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       setActiveModal("do");
       return;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeToEdit]);
 
   const closeAll = () => {
@@ -643,14 +620,20 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       fields: [{ kind: "simple", key: "variable", placeholder: "Variable name", value: inputValue, setValue: setInputValue }],
       onSubmit: (e) => {
         e.preventDefault();
-        if (!inputValue.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
+        if (!inputValue.trim()) {
+          setError("กรุณาใส่ชื่อ Variable");
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "input", `Input ${inputValue}`, {
           variable: inputValue,
           prompt: `Enter your ${inputValue}:`,
           varType: "string"
         });
       },
-      onClose: () => { setInputValue(""); closeAll(); },
+      onClose: () => {
+        setInputValue("");
+        closeAll();
+      },
     },
     {
       key: "output",
@@ -661,10 +644,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateOutput(outputValue);
-        if (validationError) { setError(validationError); return; }
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "output", `Output ${outputValue}`, { message: outputValue });
       },
-      onClose: () => { setOutputValue(""); closeAll(); },
+      onClose: () => {
+        setOutputValue("");
+        closeAll();
+      },
     },
     {
       key: "declare",
@@ -677,7 +666,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       ],
       onSubmit: (e) => {
         e.preventDefault();
-        if (!declareVariable.trim()) { setError("กรุณาใส่ชื่อ Variable"); return; }
+        if (!declareVariable.trim()) {
+          setError("กรุณาใส่ชื่อ Variable");
+          return;
+        }
         const varTypePayload = declareDataType.toLowerCase();
         const labelPrefix = declareDataType;
         callUpdateOrAdd(nodeToEdit?.id, "declare", `${labelPrefix} ${declareVariable}`, {
@@ -686,7 +678,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           varType: varTypePayload
         });
       },
-      onClose: () => { setDeclareVariable(""); setDeclareDataType("Integer"); setDeclareDataTypes({ Integer: true, Real: false, String: false, Boolean: false }); closeAll(); },
+      onClose: () => {
+        setDeclareVariable("");
+        setDeclareDataType("Integer");
+        setDeclareDataTypes({ Integer: true, Real: false, String: false, Boolean: false });
+        closeAll();
+      },
     },
     {
       key: "assign",
@@ -699,13 +696,20 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       ],
       onSubmit: (e) => {
         e.preventDefault();
-        if (!assignVariable.trim() || !assignExpression.trim()) { setError("กรุณากรอกข้อมูล Variable และ Expression"); return; }
+        if (!assignVariable.trim() || !assignExpression.trim()) {
+          setError("กรุณากรอกข้อมูล Variable และ Expression");
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "assign", `${assignVariable} = ${assignExpression}`, {
           variable: assignVariable,
           value: assignExpression
         });
       },
-      onClose: () => { setAssignVariable(""); setAssignExpression(""); closeAll(); },
+      onClose: () => {
+        setAssignVariable("");
+        setAssignExpression("");
+        closeAll();
+      },
     },
     {
       key: "if",
@@ -716,10 +720,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(ifExpression);
-        if (validationError) { setError(validationError); return; }
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "if", ifExpression, { condition: ifExpression });
       },
-      onClose: () => { setIfExpression(""); closeAll(); },
+      onClose: () => {
+        setIfExpression("");
+        closeAll();
+      },
     },
     {
       key: "while",
@@ -730,14 +740,20 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(whileExpression);
-        if (validationError) { setError(validationError); return; }
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression, {
           condition: whileExpression,
           varName: "x",
           increment: "x = x + 1"
         });
       },
-      onClose: () => { setWhileExpression(""); closeAll(); },
+      onClose: () => {
+        setWhileExpression("");
+        closeAll();
+      },
     },
     {
       key: "for",
@@ -746,30 +762,39 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       icon: "/images/shape_while.png",
       fields: [
         {
-          kind: "group", key: "group", fields: [
+          kind: "group",
+          key: "group",
+          fields: [
             { kind: "simple", key: "variable", placeholder: "variable", value: forVariable, setValue: setForVariable },
             { kind: "simple", key: "step", placeholder: "step", value: forStep, setValue: setForStep },
             { kind: "simple", key: "start", placeholder: "start", value: forStart, setValue: setForStart },
             { kind: "simple", key: "end", placeholder: "end", value: forEnd, setValue: setForEnd },
-          ]
+          ],
         },
       ],
       onSubmit: (e) => {
         e.preventDefault();
         if (!forVariable.trim() || !forStart.trim() || !forEnd.trim() || !forStep.trim()) {
-          setError("กรุณากรอกข้อมูลให้ครบทุกช่อง"); return;
+          setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
+          return;
         }
-        if (isNaN(Number(forStart)) || isNaN(Number(forEnd)) || isNaN(Number(forStep))) {
-          setError("ค่า Start, End, Step ต้องเป็นตัวเลข"); return;
-        }
+
+        // แก้ตรงนี้: ไม่บังคับว่า Start, End, Step ต้องเป็นตัวเลข
+        // และไม่ใส่ int หน้าตัวแปร เพื่อให้รองรับ string ได้
         callUpdateOrAdd(nodeToEdit?.id, "for", `${forVariable} = ${forStart} to ${forEnd}`, {
-          init: `int ${forVariable} = ${forStart}`,
+          init: `${forVariable} = ${forStart}`,
           condition: `${forVariable} < ${forEnd}`,
           increment: `${forVariable} += ${forStep}`,
           varName: forVariable
         });
       },
-      onClose: () => { setForVariable(""); setForStart(""); setForEnd(""); setForStep(""); closeAll(); },
+      onClose: () => {
+        setForVariable("");
+        setForStart("");
+        setForEnd("");
+        setForStep("");
+        closeAll();
+      },
     },
     {
       key: "do",
@@ -780,10 +805,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       onSubmit: (e) => {
         e.preventDefault();
         const validationError = validateConditionalExpression(doExpression);
-        if (validationError) { setError(validationError); return; }
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         callUpdateOrAdd(nodeToEdit?.id, "do", doExpression, { condition: doExpression });
       },
-      onClose: () => { setDoExpression(""); closeAll(); },
+      onClose: () => {
+        setDoExpression("");
+        closeAll();
+      },
     },
   ];
 
@@ -823,7 +854,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       >
         <div className="relative">
           <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
-          {/* badge */}
           <div className="absolute -top-2 -right-2 bg-white border rounded-full px-2 py-0.5 text-xs shadow-sm">
             {srLoading ? "..." : isUnlimited ? "∞" : (remaining === null ? "-" : String(remaining))}
           </div>
@@ -833,7 +863,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     );
   };
 
-  /* --- Render active modal if any --- */
   if (activeModal) {
     const cfg = modalConfigs.find((m) => m.key === activeModal);
     if (!cfg) return null;
@@ -845,7 +874,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-lg font-semibold text-gray-800">{cfg.title}</div>
-                {/* <div className="text-sm text-gray-500 mt-1">{cfg.description}</div> */}
               </div>
 
               <div className="flex items-center gap-2">
@@ -862,7 +890,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             </div>
 
             <div className="mt-5">
-              {/* Render fields dynamically (removed ml offsets so fields align to full width) */}
               {cfg.fields.map((f) => {
                 if (f.kind === "group") {
                   return (
@@ -902,7 +929,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                   );
                 }
 
-                // simple field (default) — full width
                 return (
                   <input
                     key={f.key}
@@ -918,7 +944,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
             {error && <div className="text-red-500 text-sm mb-3">{error}</div>}
 
-            {/* conflicts */}
             {conflicts.length > 0 && (
               <div className="mb-3">
                 <div className="text-sm text-gray-700 mb-2 font-medium">พบตัวแปรซ้ำใน node ต่อไปนี้:</div>
@@ -980,7 +1005,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           </div>
         </div>
 
-        {/* Confirmation modal (AnimatePresence) */}
         <AnimatePresence>
           {confirmVisible && (
             <motion.div
@@ -1075,7 +1099,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     );
   }
 
-  /* --- Palette --- */
   return (
     <div className="w-full bg-white p-4 flex flex-col gap-4 rounded-lg shadow-lg border-1">
       <div className="flex items-center justify-between">
