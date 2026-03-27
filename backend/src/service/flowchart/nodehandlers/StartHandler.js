@@ -1,4 +1,4 @@
-export default function StartHandler(node, context /*, flowchart optional */) {
+export default function StartHandler(node, context) {
     console.log("Start Node");
     return { nextCondition: "auto" };
 }

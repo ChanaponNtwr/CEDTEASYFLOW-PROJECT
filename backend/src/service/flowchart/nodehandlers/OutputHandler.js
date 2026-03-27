@@ -1,4 +1,4 @@
-export default function OutputHandler(node, context /*, flowchart optional */) {
+export default function OutputHandler(node, context) {
   if (!Array.isArray(context.output)) context.output = [];
 
   let message =
@@ -9,7 +9,7 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
   // helper: build env map
   const buildEnv = () => {
     const env = {};
-    (context.variables || []).forEach(v => {
+    (context.variables || []).forEach((v) => {
       env[v.name] = v.value;
     });
     return env;
@@ -37,7 +37,7 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
 
     // If it's already an array, push each element
     if (Array.isArray(val)) {
-      val.forEach(x => context.output.push(x));
+      val.forEach((x) => context.output.push(x));
       return;
     }
 
@@ -48,7 +48,7 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
         try {
           const parsed = JSON.parse(trimmed);
           if (Array.isArray(parsed)) {
-            parsed.forEach(x => context.output.push(x));
+            parsed.forEach((x) => context.output.push(x));
             return;
           }
         } catch (e) {
@@ -68,9 +68,11 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
      * 1) Exact variable name → output variable value (expand arrays)
      * ============================================================ */
     if (/^[A-Za-z_]\w*$/.test(trimmed)) {
-      const variable = (context.variables || []).find(v => v.name === trimmed);
+      const variable = (context.variables || []).find(
+        (v) => v.name === trimmed,
+      );
       if (variable) {
-        console.log(`📤 Output: ${variable.name} = ${variable.value}`);
+        console.log(`Output: ${variable.name} = ${variable.value}`);
         pushValues(variable.value);
         return { nextCondition: "auto" };
       }
@@ -86,14 +88,16 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
 
       const env = buildEnv();
       const names = Object.keys(env);
-      const vals = names.map(n => env[n]);
+      const vals = names.map((n) => env[n]);
 
       let value;
       try {
         const fn = new Function(...names, `return (${expr});`);
         value = fn(...vals);
       } catch (e) {
-        console.error(`❌ Error evaluating output-assignment '${message}': ${e.message}`);
+        console.error(
+          `Error evaluating output-assignment '${message}': ${e.message}`,
+        );
         value = undefined;
       }
 
@@ -101,11 +105,18 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
         if (typeof context.set === "function") {
           context.set(varName, value);
         } else {
-          const existing = (context.variables || []).find(v => v.name === varName);
+          const existing = (context.variables || []).find(
+            (v) => v.name === varName,
+          );
           if (existing) existing.value = value;
-          else context.variables.push({ name: varName, value, varType: typeof value });
+          else
+            context.variables.push({
+              name: varName,
+              value,
+              varType: typeof value,
+            });
         }
-        console.log(`📤 Output (assign): ${varName} = ${value}`);
+        console.log(`Output (assign): ${varName} = ${value}`);
       } catch (e) {
         console.warn("Failed to set variable from output-assignment:", e);
       }
@@ -118,18 +129,20 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
     if (trimmed.startsWith("`") && trimmed.endsWith("`")) {
       const env = buildEnv();
       const names = Object.keys(env);
-      const vals = names.map(n => env[n]);
+      const vals = names.map((n) => env[n]);
 
       let evaluated;
       try {
         const fn = new Function(...names, `return ${message};`);
         evaluated = fn(...vals);
       } catch (e) {
-        console.error(`❌ Error evaluating template literal '${message}': ${e.message}`);
+        console.error(
+          `Error evaluating template literal '${message}': ${e.message}`,
+        );
         evaluated = message;
       }
 
-      console.log(`📤 Output: ${evaluated}`);
+      console.log(`Output: ${evaluated}`);
       pushValues(evaluated);
       return { nextCondition: "auto" };
     }
@@ -140,7 +153,7 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
     if (/[+\-*/]/.test(trimmed)) {
       const env = buildEnv();
       const names = Object.keys(env);
-      const vals = names.map(n => env[n]);
+      const vals = names.map((n) => env[n]);
 
       try {
         const fn = new Function(...names, `return (${message});`);
@@ -149,7 +162,7 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
         // normalize string literal result
         evaluated = stripQuotes(evaluated);
 
-        console.log(`📤 Output (expr): ${evaluated}`);
+        console.log(`Output (expr): ${evaluated}`);
         pushValues(evaluated);
         return { nextCondition: "auto" };
       } catch (e) {
@@ -171,7 +184,7 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
         return "";
       });
 
-      console.log(`📤 Output (placeholder): ${replaced}`);
+      console.log(`Output (placeholder): ${replaced}`);
       pushValues(replaced);
       return { nextCondition: "auto" };
     }
@@ -180,12 +193,11 @@ export default function OutputHandler(node, context /*, flowchart optional */) {
      * 6) Plain literal → strip quotes if needed, then expand arrays
      * ============================================================ */
     const finalMessage = stripQuotes(message);
-    console.log(`📤 Output: ${finalMessage}`);
+    console.log(`Output: ${finalMessage}`);
     pushValues(finalMessage);
     return { nextCondition: "auto" };
-
   } catch (e) {
-    console.error(`❌ Error evaluating output '${message}': ${e.message}`);
+    console.error(`Error evaluating output '${message}': ${e.message}`);
     return { nextCondition: "auto" };
   }
 }

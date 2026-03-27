@@ -9,8 +9,8 @@ import WHHandler from "./whhandler.js";
 import FRHandler from "./frhandler.js";
 import DeclareHandler from "./declarehandler.js";
 import BPHandler from "./bphandler.js";
-// ✅ DEBUG: confirm handlers are loaded
-console.log("✅ nodeHandlers/index.js loaded");
+// DEBUG: confirm handlers are loaded
+console.log("nodeHandlers/index.js loaded");
 
 // mapping short codes -> handler functions
 const handlers = {
@@ -29,7 +29,7 @@ const handlers = {
 export function getHandler(type) {
   if (!type) return null;
 
-  // ✅ normalize type (CRITICAL)
+  // normalize type (CRITICAL)
   const key = String(type).trim().toUpperCase();
   const handler = handlers[key];
 
@@ -41,5 +41,5 @@ export function getHandler(type) {
   return handler;
 }
 
-// ❌ REMOVE default export (important)
+// REMOVE default export (important)
 // export default getHandler;
