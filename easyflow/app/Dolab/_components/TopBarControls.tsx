@@ -110,20 +110,6 @@ export default function TopBarControls({
     return ["EN", "END", "ED", "TERMINATE", "ENDNODE", "EXIT"].includes(s);
   };
 
-  const hasPendingEmptyInput = () => {
-    return expectingInput && String(inputValue ?? "").trim() === "";
-  };
-
-  const requireInputBeforeRun = () => {
-    if (!expectingInput) return false;
-    if (!hasPendingEmptyInput()) return false;
-
-    const msg = `กรุณากรอกค่า ${inputVarName ?? "input"} ก่อนรันต่อ`;
-    setErrorMsg(msg);
-    pushSystemMessage(`Error: ${msg}`);
-    return true;
-  };
-
   // --- Fetch variables declared in flowchart ---
   useEffect(() => {
     let mounted = true;
@@ -248,6 +234,7 @@ export default function TopBarControls({
       setChatMessages((m) => [...m, ...mapped]);
 
       if (!autoContinue) {
+        // keep expected behavior: caller can set pendingHighlightAfterOutput to the next node
         return true;
       }
     }
@@ -344,9 +331,6 @@ export default function TopBarControls({
   // --- Step ---
   const handleStep = async () => {
     if (isLoading) return;
-
-    if (requireInputBeforeRun()) return;
-
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -377,7 +361,9 @@ export default function TopBarControls({
       // outputs
       const hadOutputs = handleResponseOutputs(resp);
       if (hadOutputs) {
+        // Just highlight the next node, no pause logic for step unless we want to emphasize
         safeHighlight(nextId);
+        // Note: we removed button pause logic, so we just proceed conceptually
       } else {
         const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
         const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
@@ -439,9 +425,6 @@ export default function TopBarControls({
   // --- Run All ---
   const handleRunAll = async () => {
     if (isLoading) return;
-
-    if (requireInputBeforeRun()) return;
-
     setIsLoading(true);
     setErrorMsg(null);
     runAllActiveRef.current = true;
@@ -649,13 +632,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
     }
@@ -664,14 +647,6 @@ export default function TopBarControls({
   // --- Input submit ---
   const handleSubmitInput = async () => {
     if (!expectingInput) return;
-
-    if (hasPendingEmptyInput()) {
-      const msg = `กรุณากรอกค่า ${inputVarName ?? "input"} ก่อนกดส่ง`;
-      setErrorMsg(msg);
-      pushSystemMessage(`Error: ${msg}`);
-      return;
-    }
-
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -717,6 +692,8 @@ export default function TopBarControls({
       safeHighlight(currentNodeId);
 
       const hadOutputs = handleResponseOutputs(resp);
+      // Even if outputs, we don't pause anymore for manual step logic in submitInput unless explicitly desired.
+      // But we will respect the auto-detect "next is input" logic.
 
       if (nextType === "IN" || nextType === "INPUT") {
         const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
@@ -729,7 +706,7 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current(resp);
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
     } catch (err) {
@@ -750,7 +727,7 @@ export default function TopBarControls({
     if (runAllWaitingForInputRef.current) {
       try {
         runAllWaitingForInputRef.current();
-      } catch {}
+      } catch { }
       runAllWaitingForInputRef.current = null;
     }
   };
@@ -776,13 +753,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
       runAllActiveRef.current = false;
@@ -855,7 +832,7 @@ export default function TopBarControls({
   };
 
   // ------------------------------------------------------------------
-  //  IMPROVED DATA LOADING LOGIC
+  //  IMPROVED DATA LOADING LOGIC 
   //  (Added fallback: call apiRunTestcaseFromFlowchart if flowchart didn't contain lab/testcases)
   // ------------------------------------------------------------------
   useEffect(() => {
@@ -915,7 +892,7 @@ export default function TopBarControls({
               labResp;
 
             title =
-              labObj?.labname ??
+              labObj?.labname ??   // supports 'labname'
               labObj?.title ??
               labObj?.name ??
               labObj?.assignment?.title ??
@@ -923,7 +900,7 @@ export default function TopBarControls({
               null;
 
             desc =
-              labObj?.problemSolving ??
+              labObj?.problemSolving ??  // supports 'problemSolving'
               labObj?.description ??
               labObj?.detail ??
               labObj?.assignment?.description ??
@@ -1025,10 +1002,11 @@ export default function TopBarControls({
         if (mounted) {
           setProblemDetail({
             title: title ?? "โจทย์ Lab",
-            description: desc ?? "",
+            description: desc ?? ""
           });
           setLabTestcases(tcs);
         }
+
       } catch (err) {
         console.error("Error loading lab data:", err);
         if (mounted) {
@@ -1044,9 +1022,7 @@ export default function TopBarControls({
     };
 
     loadData();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [flowchartId, labId, detectedLabId]);
 
   const handleRunTests = async () => {
@@ -1123,6 +1099,9 @@ export default function TopBarControls({
           (Array.isArray(r.errors) ? r.errors.join("; ") : undefined) ??
           null;
 
+        // We intentionally ignore "actual" values entirely (do not add them to messages)
+        // const actual = ... (not used)
+
         let level: TestLevel = "info";
         if (["PASS", "PASSED", "OK", "SUCCESS"].includes(status)) level = "success";
         else if (["FAIL", "FAILED", "ERROR", "INPUT_MISSING", "TIMEOUT", "WRONG"].includes(status)) level = "error";
@@ -1197,6 +1176,8 @@ export default function TopBarControls({
 
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
     const base = "inline-block text-xs px-2 py-1 rounded-md mb-2";
+
+    // No more 'Actual:' branch — actual values are not shown.
 
     switch (r.level) {
       case "error":
@@ -1288,15 +1269,16 @@ export default function TopBarControls({
           const parsed = JSON.parse(raw);
           const id = parsed?.id ?? parsed?.userId ?? parsed?.user_id ?? parsed?.sub ?? parsed?.user?.id ?? null;
           if (id) return Number(id);
-        } catch {}
+        } catch { }
       }
-    } catch {}
+    } catch { }
     return null;
   };
 
   const handleSubmit = async () => {
     // Safety guard: ถ้า disableSubmit ถูกเปิด ให้หยุดและไม่ส่งงาน (ป้องกันกรณีเรียกจากที่อื่น)
     if (disableSubmit) {
+      // ไม่แจ้ง alert รุนแรง — แค่ log เงียบ ๆ หรือแสดง toast ตามต้องการ
       console.warn("Submission blocked because disableSubmit=true");
       alert("ส่งงานถูกปิดใช้งานสำหรับหน้าจอนี้");
       return;
@@ -1351,6 +1333,7 @@ export default function TopBarControls({
         console.warn("ไม่พบ Lab ID หรือ Class ID สำหรับ Redirect");
         alert("ส่งงานสำเร็จ! (แต่ไม่สามารถกลับไปหน้ารายวิชาได้เนื่องจากไม่พบ ID กรุณากดปุ่ม Back ของ Browser)");
       }
+
     } catch (err) {
       console.error("❌ Submit Failed:", err);
       const message = err instanceof Error ? err.message : String(err);
@@ -1408,19 +1391,19 @@ export default function TopBarControls({
                 <span className="">to start</span>
               </div>
             </div>
+
           ) : (
             chatMessages.map((m, i) => {
               const isError = /^error:/i.test((m.text ?? "").trim());
               return (
                 <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${
-                      m.sender === "user"
+                    className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${m.sender === "user"
                         ? "bg-blue-600 text-white rounded-br-sm shadow-sm"
                         : isError
-                        ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
-                        : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
-                    }`}
+                          ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
+                          : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
+                      }`}
                   >
                     {m.text}
                   </div>
@@ -1466,7 +1449,9 @@ export default function TopBarControls({
             </div>
           ) : (
             <div className="flex justify-between items-center gap-2">
-              <div className="text-sm text-gray-500">{chatMessages.length > 0 ? "Output log" : ""}</div>
+              <div className="text-sm text-gray-500">
+                {chatMessages.length > 0 ? "Output log" : ""}
+              </div>
               <div className="flex gap-2">
                 <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
                   Clear
@@ -1532,6 +1517,7 @@ export default function TopBarControls({
                 }
 
                 const statusItems = matchedKey ? testResults[matchedKey] : [];
+                // Determine summary status for the badge
                 const summaryStatusMsg = statusItems.length > 0 ? statusItems[0] : null;
 
                 return (
@@ -1540,6 +1526,7 @@ export default function TopBarControls({
                       <div className="flex-1">
                         <div className="text-xs font-semibold text-gray-500 mb-1">No {index + 1}</div>
 
+                        {/* Improved Input/Output Line */}
                         <div className="flex items-center flex-wrap gap-2 text-base text-gray-800 font-medium">
                           <span>Input: {inputDisplay}</span>
                           <span className="text-gray-300 mx-1">|</span>
@@ -1566,9 +1553,11 @@ export default function TopBarControls({
                       </div>
                     </div>
 
+                    {/* expanded messages under card */}
                     <div className="mt-3 border-t border-gray-200 pt-3">
                       <div className="flex flex-col">
                         {(statusItems ?? []).map((r, idx) => {
+                          // Filter out redundant status text (e.g., "PASS", "FAIL") because the badge shows it
                           if (summaryStatusMsg && r.text === summaryStatusMsg.text) {
                             return null;
                           }
@@ -1589,11 +1578,11 @@ export default function TopBarControls({
               <button
                 onClick={handleRunTests}
                 disabled={runningTests || !flowchartId}
-                className={`text-sm px-6 py-2 rounded-full ${runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600"}`}
-              >
+                className={`text-sm px-6 py-2 rounded-full ${runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600"}`}>
                 {runningTests ? "Testing..." : "Test"}
               </button>
 
+              {/* หาก disableSubmit === true จะซ่อนปุ่ม Submit ทั้งหมดตามคำขอ */}
               {!disableSubmit ? (
                 <button
                   onClick={handleSubmit}
@@ -1603,7 +1592,10 @@ export default function TopBarControls({
                   {submitting ? "Submitting..." : "Submit"}
                 </button>
               ) : (
-                <div className=""></div>
+                // ถ้าต้องการให้แสดงข้อความเล็ก ๆ ว่า submit ถูกปิด ให้คงข้อความนี้ไว้
+                <div className="">
+
+                </div>
               )}
             </div>
           </div>
