@@ -10,8 +10,8 @@
     "resolveJsonModule": true,
     "allowJs": true,
     "types": ["node"],
-    "outDir": "dist",       // <--- เพิ่มบรรทัดนี้
-    "rootDir": "src"        // <--- แนะนำให้ตั้งเพื่อให้โครงสร้างเหมือนเดิม
+    "outDir": "dist",
+    "rootDir": "src"
   },
   "include": ["src"]
 }
