@@ -720,43 +720,7 @@ router.delete("/:id/node/:nodeId", async (req, res) => {
       }
     }
 
-    // คำนวณ shapeRemaining หลังลบ (นับ nodes ที่เหลือจริง รวม cascade-delete)
-    let shapeRemaining = {};
-    try {
-      const lab = await prisma.lab.findUnique({ where: { labId: fcFromDB.labId } });
-      if (lab) {
-        const shapeLimit = computeShapeLimitFromLab(lab);
-        const fcAfter = hydrateFlowchart(afterSerialized);
-        const fcNodesAfter = Object.values(fcAfter.nodes || {});
-
-        const usedCount = {};
-        for (const key of Object.keys(shapeLimit)) usedCount[key] = 0;
-        for (const n of fcNodesAfter) {
-          const t = normalizeType(n.type ?? n.typeShort ?? n.typeFull ?? "PH");
-          if (usedCount[t] !== undefined) usedCount[t]++;
-        }
-
-        for (const key of Object.keys(shapeLimit)) {
-          const limit = shapeLimit[key];
-          const used = usedCount[key] ?? 0;
-          shapeRemaining[key] = {
-            limit: limit === Infinity ? "unlimited" : limit,
-            used,
-            remaining: limit === Infinity ? "unlimited" : Math.max(limit - used, 0),
-          };
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to compute shapeRemaining after delete:", e);
-    }
-
-    return res.json({
-      ok: true,
-      message: `Node ${nodeId} removed`,
-      flowchartId: fcFromDB.flowchartId,
-      diffs,
-      shapeRemaining,
-    });
+    return res.json({ ok: true, message: `Node ${nodeId} removed`, flowchartId: fcFromDB.flowchartId, diffs });
 
   } catch (err) {
     console.error("delete node error:", err);
