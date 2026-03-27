@@ -99,7 +99,7 @@ const IfNodeComponent: React.FC<Props> = ({ data }) => {
                 strokeWidth={2}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                style={{ filter: "url(#if-glow)"}}
+                style={{ filter: "url(#if-glow)" }}
               />
               <polygon
                 points={points}

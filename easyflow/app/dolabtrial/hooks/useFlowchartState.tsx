@@ -11,7 +11,7 @@ const initialEdges: Edge[] = [];
 export const useFlowchartState = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  
+
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [modalPosition, setModalPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -22,7 +22,7 @@ export const useFlowchartState = () => {
     setSelectedEdge(null);
     setModalPosition(null);
   };
-  
+
   const closeNodeModal = () => {
     setSelectedNode(null);
     setNodeModalPosition(null);

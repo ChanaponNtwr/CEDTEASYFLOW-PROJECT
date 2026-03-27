@@ -76,33 +76,33 @@ const EndNodeComponent: React.FC<EndNodeProps> = ({ data }) => {
       >
         {data.label}
       </span>
-      
+
       {/* --- Handle สำหรับการเชื่อมต่อ --- */}
       {/* Handle ด้านบนสำหรับเป็น Target (จุดสิ้นสุด) เท่านั้น */}
       <Handle
-              type="target"
-              id="top"
-              position={Position.Top}
-              style={{
-                ...hiddenHandleStyle,
-                top: -8, // เลื่อน Handle ขึ้นไปด้านบน 8px
-                left: "50%",
-                transform: "translateX(-50%)", // จัดให้อยู่กึ่งกลางแนวนอน
-              }}
-            />
-            
-            {/* Handle ด้านล่างสำหรับเป็น Source (ต้นทาง) */}
-            <Handle
-              type="source"
-              id="bottom"
-              position={Position.Bottom}
-              style={{
-                ...hiddenHandleStyle,
-                bottom: -8, // เลื่อน Handle ลงไปด้านล่าง 8px
-                left: "50%",
-                transform: "translateX(-50%)", // จัดให้อยู่กึ่งกลางแนวนอน
-              }}
-            />
+        type="target"
+        id="top"
+        position={Position.Top}
+        style={{
+          ...hiddenHandleStyle,
+          top: -8, // เลื่อน Handle ขึ้นไปด้านบน 8px
+          left: "50%",
+          transform: "translateX(-50%)", // จัดให้อยู่กึ่งกลางแนวนอน
+        }}
+      />
+
+      {/* Handle ด้านล่างสำหรับเป็น Source (ต้นทาง) */}
+      <Handle
+        type="source"
+        id="bottom"
+        position={Position.Bottom}
+        style={{
+          ...hiddenHandleStyle,
+          bottom: -8, // เลื่อน Handle ลงไปด้านล่าง 8px
+          left: "50%",
+          transform: "translateX(-50%)", // จัดให้อยู่กึ่งกลางแนวนอน
+        }}
+      />
     </div>
   );
 };
