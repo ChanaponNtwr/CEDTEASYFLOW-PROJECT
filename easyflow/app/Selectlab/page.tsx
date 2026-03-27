@@ -28,7 +28,7 @@ type LocalLab = {
   createdAt?: string;
   author?: string;
   teacher?: string;
-  authorEmail?: string; 
+  authorEmail?: string;
 };
 
 /* =======================
@@ -77,7 +77,7 @@ export default function Selectlab() {
   ======================== */
   useEffect(() => {
     if (status === "loading") return;
-    
+
     const currentUserEmail = session?.user?.email;
     if (!currentUserEmail) {
       setLabs([]);
@@ -88,7 +88,7 @@ export default function Selectlab() {
     try {
       const stored = localStorage.getItem("labs");
       allLabs = stored ? JSON.parse(stored) : [];
-      
+
       const myLabs = allLabs.filter(l => l.authorEmail === currentUserEmail);
       setLabs(myLabs);
 
@@ -111,7 +111,7 @@ export default function Selectlab() {
 
     const myLabs = allLabs.filter(l => l.authorEmail === currentUserEmail);
     const remoteLabs = myLabs.filter((l) => l.labId !== undefined && l.labId !== null);
-    
+
     if (remoteLabs.length === 0) return;
 
     let mounted = true;
@@ -141,7 +141,7 @@ export default function Selectlab() {
           const matchResult = results.find(
             r => r.ok && String(r.labId) === String(existingLab.labId)
           );
-            
+
           if (matchResult && matchResult.remoteLab && existingLab.authorEmail === currentUserEmail) {
             anyUpdated = true;
             return {
@@ -157,7 +157,7 @@ export default function Selectlab() {
           setLabs(updatedMyLabs);
           try {
             localStorage.setItem("labs", JSON.stringify(updatedAllLabs));
-          } catch {}
+          } catch { }
         }
       } catch {
         setError("Failed to fetch remote labs");
@@ -194,10 +194,10 @@ export default function Selectlab() {
   const handleSelectAll = () => {
     // Toggle Select All / Deselect All logic
     if (selectedLabIds.length === displayLabs.length && displayLabs.length > 0) {
-        setSelectedLabIds([]);
+      setSelectedLabIds([]);
     } else {
-        const allIds = displayLabs.map((l, idx) => String(l.labId ?? l.id ?? idx));
-        setSelectedLabIds(allIds);
+      const allIds = displayLabs.map((l, idx) => String(l.labId ?? l.id ?? idx));
+      setSelectedLabIds(allIds);
     }
   };
 
@@ -209,7 +209,7 @@ export default function Selectlab() {
       Create Lab
   ======================== */
   const handleCreateLab = () => {
-  router.push("/createlab?from=selectlab");
+    router.push("/createlab?from=selectlab");
   };
 
   /* =======================
@@ -233,11 +233,11 @@ export default function Selectlab() {
 
       try {
         sessionStorage.setItem("selectedImportedLabs", JSON.stringify(payload));
-      } catch {}
+      } catch { }
 
       try {
         sessionStorage.removeItem("importMode");
-      } catch {}
+      } catch { }
 
       if (importReturn) {
         const separator = importReturn.includes("?") ? "&" : "?";
@@ -269,80 +269,80 @@ export default function Selectlab() {
         <div className="flex h-screen">
           <Sidebar />
           <div className="flex-1 flex flex-col p-8 lg:p-20"> {/* ปรับ padding ให้สมดุล */}
-            
+
             {/* Header Title Area */}
             <div className="flex items-center gap-3 mb-6">
-                 <div className="bg-indigo-100 p-3 rounded-xl text-indigo-600">
-                     <FaLayerGroup size={28} />
-                 </div>
-                 <div>
-                     <h1 className="text-3xl font-bold text-gray-800">Select Labs</h1>
-                     <p className="text-gray-500 text-sm">Choose labs from your collection to import</p>
-                 </div>
-             </div>
+              <div className="bg-indigo-100 p-3 rounded-xl text-indigo-600">
+                <FaLayerGroup size={28} />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800">Select Labs</h1>
+                <p className="text-gray-500 text-sm">Choose labs from your collection to import</p>
+              </div>
+            </div>
 
             {/* ✅ NEW TOOLBAR: Control Bar Design */}
             <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-gray-200 mb-8 flex flex-col sm:flex-row justify-between items-center gap-4 transition-all">
-                
-                {/* Left: Selection Controls */}
-                <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <button
-                        onClick={handleSelectAll}
-                        className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl border transition-all active:scale-95
-                        ${selectedLabIds.length === displayLabs.length && displayLabs.length > 0
-                            ? "bg-blue-50 border-blue-200 text-blue-700" 
-                            : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"}`}
-                    >
-                        <FaCheckDouble className={selectedLabIds.length === displayLabs.length && displayLabs.length > 0 ? "text-blue-600" : "text-gray-400"} />
-                        {selectedLabIds.length === displayLabs.length && displayLabs.length > 0 ? "Deselect All" : "Select All"}
-                    </button>
 
-                    {/* Show Clear button only when items selected */}
-                    {selectedLabIds.length > 0 && (
-                        <button
-                            onClick={handleClearSelection}
-                            className=""
-                        >
-                          
-                        </button>
-                    )}
+              {/* Left: Selection Controls */}
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <button
+                  onClick={handleSelectAll}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl border transition-all active:scale-95
+                        ${selectedLabIds.length === displayLabs.length && displayLabs.length > 0
+                      ? "bg-blue-50 border-blue-200 text-blue-700"
+                      : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                >
+                  <FaCheckDouble className={selectedLabIds.length === displayLabs.length && displayLabs.length > 0 ? "text-blue-600" : "text-gray-400"} />
+                  {selectedLabIds.length === displayLabs.length && displayLabs.length > 0 ? "Deselect All" : "Select All"}
+                </button>
+
+                {/* Show Clear button only when items selected */}
+                {selectedLabIds.length > 0 && (
+                  <button
+                    onClick={handleClearSelection}
+                    className=""
+                  >
+
+                  </button>
+                )}
+              </div>
+
+              {/* Center/Right: Actions & Counter */}
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+
+                {/* Selected Counter */}
+                <div className="hidden md:flex items-center gap-2 mr-2">
+                  <span className="text-sm text-gray-500">Selected:</span>
+                  <span className="bg-gray-100 text-gray-800 px-3 py-1 rounded-full font-bold text-sm">
+                    {selectedLabIds.length}
+                  </span>
                 </div>
 
-                {/* Center/Right: Actions & Counter */}
-                <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                    
-                    {/* Selected Counter */}
-                    <div className="hidden md:flex items-center gap-2 mr-2">
-                        <span className="text-sm text-gray-500">Selected:</span>
-                        <span className="bg-gray-100 text-gray-800 px-3 py-1 rounded-full font-bold text-sm">
-                            {selectedLabIds.length}
-                        </span>
-                    </div>
-
-                    {/* Import/Confirm Button (Primary) */}
-                    <button
-                        onClick={handleConfirmSelect}
-                        disabled={selectedLabIds.length === 0}
-                        className={`
+                {/* Import/Confirm Button (Primary) */}
+                <button
+                  onClick={handleConfirmSelect}
+                  disabled={selectedLabIds.length === 0}
+                  className={`
                             flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white rounded-xl shadow-md transition-all
                             ${selectedLabIds.length > 0
-                                ? "bg-blue-600 hover:bg-blue-700 hover:shadow-lg hover:-translate-y-0.5 active:scale-95 shadow-blue-200"
-                                : "bg-gray-300 cursor-not-allowed shadow-none"}
+                      ? "bg-blue-600 hover:bg-blue-700 hover:shadow-lg hover:-translate-y-0.5 active:scale-95 shadow-blue-200"
+                      : "bg-gray-300 cursor-not-allowed shadow-none"}
                         `}
-                    >
-                        <FaFileImport />
-                        Import {selectedLabIds.length > 0 ? `(${selectedLabIds.length})` : ""}
-                    </button>
+                >
+                  <FaFileImport />
+                  Import {selectedLabIds.length > 0 ? `(${selectedLabIds.length})` : ""}
+                </button>
 
-                    {/* Create Lab Button (Secondary) */}
-                    <button
-                        onClick={handleCreateLab}
-                        className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-gray-800 rounded-xl hover:bg-gray-900 shadow-md transition-all active:scale-95"
-                    >
-                        <FaPlus size={12} />
-                        Create Lab
-                    </button>
-                </div>
+                {/* Create Lab Button (Secondary) */}
+                <button
+                  onClick={handleCreateLab}
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-gray-800 rounded-xl hover:bg-gray-900 shadow-md transition-all active:scale-95"
+                >
+                  <FaPlus size={12} />
+                  Create Lab
+                </button>
+              </div>
             </div>
 
             {loading && (
@@ -363,10 +363,10 @@ export default function Selectlab() {
                 <p className="text-lg font-medium">No Labs Found</p>
                 <p className="text-sm mb-6">Create a new lab to get started.</p>
                 <button
-                    onClick={handleCreateLab}
-                    className="px-6 py-2 bg-blue-50 text-blue-600 rounded-full font-semibold hover:bg-blue-100 transition-colors"
+                  onClick={handleCreateLab}
+                  className="px-6 py-2 bg-blue-50 text-blue-600 rounded-full font-semibold hover:bg-blue-100 transition-colors"
                 >
-                    Create your first Lab
+                  Create your first Lab
                 </button>
               </div>
             ) : (

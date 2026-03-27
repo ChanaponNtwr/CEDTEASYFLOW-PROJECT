@@ -402,15 +402,15 @@ function Mylab() {
                   <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${isErrorModal() ? "bg-red-600" : "bg-red-600"} shadow-md`}>
                     {isErrorModal() ? (
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     ) : (
                       // trash icon for delete-confirm modal
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M3 6h18" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M10 11v6M14 11v6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M3 6h18" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M10 11v6M14 11v6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
                   </div>
@@ -427,9 +427,8 @@ function Mylab() {
                 <div className="px-6 pb-6 pt-4">
                   <p
                     id="modal-desc"
-                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${
-                      successModal ? "text-center text-lg font-semibold" : ""
-                    }`}
+                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${successModal ? "text-center text-lg font-semibold" : ""
+                      }`}
                   >
                     {modalMessage}
                   </p>
@@ -476,7 +475,7 @@ function Mylab() {
                   className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
               </div>

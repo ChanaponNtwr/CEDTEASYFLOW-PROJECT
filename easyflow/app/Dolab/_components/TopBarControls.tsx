@@ -89,7 +89,7 @@ export default function TopBarControls({
   const [inputVarName, setInputVarName] = useState<string | null>(null);
 
   // outputResumeRef no longer used for pause, but kept for cleanup compatibility
-  const outputResumeRef = useRef<(() => void) | null>(null); 
+  const outputResumeRef = useRef<(() => void) | null>(null);
   const [pendingHighlightAfterOutput, setPendingHighlightAfterOutput] = useState<string | number | null>(null);
 
   const runAllActiveRef = useRef(false);
@@ -126,7 +126,7 @@ export default function TopBarControls({
       try {
         setFetchingVars(true);
         const resp = await apiGetFlowchart(flowchartId);
-        
+
         const nodes: any[] = resp?.flowchart?.nodes ?? resp?.nodes ?? [];
 
         const varNodes = nodes.filter((n) => {
@@ -339,7 +339,7 @@ export default function TopBarControls({
       const varsToSend = variablesSent ? [] : resolvedInitialVars;
 
       const resp = (await executeStepNode(flowchartId ?? null, varsToSend, forceAdvanceBP)) as ExecuteResponse;
-      
+
       // เพิ่มการแจ้งเตือน Error จาก Response (หาก API คืนค่า ok เป็น false แต่ไม่เข้า catch)
       if (resp && resp.ok === false) {
         const errMsg = resp.error || resp.message || "Execution failed";
@@ -437,7 +437,7 @@ export default function TopBarControls({
       let firstCallVars = variablesSent ? [] : resolvedInitialVars;
 
       let resp = (await executeStepNode(flowchartId ?? null, firstCallVars, forceAdvanceBP)) as ExecuteResponse;
-      
+
       if (resp && resp.ok === false) {
         const errMsg = resp.error || resp.message || "Execution failed";
         pushSystemMessage(`Error: ${errMsg}`);
@@ -455,7 +455,7 @@ export default function TopBarControls({
 
       // Handle outputs (Stream mode: No pause)
       handleResponseOutputs(resp, true);
-      
+
       // Always highlight next
       if (nextId) safeHighlight(nextId);
 
@@ -484,12 +484,12 @@ export default function TopBarControls({
           // รอ Input และรับค่า Response กลับมา
           const resumedRes = await new Promise<any>((resolve) => (runAllWaitingForInputRef.current = resolve));
           runAllWaitingForInputRef.current = null;
-          
+
           if (resumedRes) {
-             pushedResponse = resumedRes;
-             resp = resumedRes;
+            pushedResponse = resumedRes;
+            resp = resumedRes;
           } else {
-             resp = lastResponse ?? resp;
+            resp = lastResponse ?? resp;
           }
 
           nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
@@ -507,7 +507,7 @@ export default function TopBarControls({
         try {
           if (flowchartId) await apiResetFlowchart(flowchartId);
         } catch (err) {
-            console.warn("reset error", err);
+          console.warn("reset error", err);
         }
         setLastResponse(null);
         setStepCount(0);
@@ -526,16 +526,16 @@ export default function TopBarControls({
         await new Promise((r) => setTimeout(r, 180));
 
         if (pushedResponse) {
-             resp = pushedResponse;
-             pushedResponse = null;
+          resp = pushedResponse;
+          pushedResponse = null;
         } else {
-             resp = (await executeStepNode(flowchartId ?? null, [], forceAdvanceBP)) as ExecuteResponse;
-             if (resp && resp.ok === false) {
-               const errMsg = resp.error || resp.message || "Execution failed";
-               pushSystemMessage(`Error: ${errMsg}`);
-             }
+          resp = (await executeStepNode(flowchartId ?? null, [], forceAdvanceBP)) as ExecuteResponse;
+          if (resp && resp.ok === false) {
+            const errMsg = resp.error || resp.message || "Execution failed";
+            pushSystemMessage(`Error: ${errMsg}`);
+          }
         }
-        
+
         setLastResponse(resp);
         setStepCount((s) => s + 1);
         setVariablesSent(true);
@@ -550,7 +550,7 @@ export default function TopBarControls({
 
         // Stream outputs (no pause)
         handleResponseOutputs(resp, true);
-        
+
         // Highlight current/next
         if (nextIdLoop) safeHighlight(nextIdLoop);
 
@@ -573,12 +573,12 @@ export default function TopBarControls({
 
             const resumedResLoop = await new Promise<any>((resolve) => (runAllWaitingForInputRef.current = resolve));
             runAllWaitingForInputRef.current = null;
-            
+
             if (resumedResLoop) {
-                pushedResponse = resumedResLoop;
-                resp = resumedResLoop;
+              pushedResponse = resumedResLoop;
+              resp = resumedResLoop;
             } else {
-                resp = lastResponse ?? resp;
+              resp = lastResponse ?? resp;
             }
 
             nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
@@ -632,13 +632,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
     }
@@ -706,7 +706,7 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current(resp);
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
     } catch (err) {
@@ -727,7 +727,7 @@ export default function TopBarControls({
     if (runAllWaitingForInputRef.current) {
       try {
         runAllWaitingForInputRef.current();
-      } catch {}
+      } catch { }
       runAllWaitingForInputRef.current = null;
     }
   };
@@ -753,13 +753,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
       runAllActiveRef.current = false;
@@ -810,8 +810,8 @@ export default function TopBarControls({
         const val = cur[key];
         // Check key pattern
         if (/(lab|assignment).?id$/i.test(key)) {
-            if (typeof val === "number") return val;
-            if (typeof val === "string" && /^\d+$/.test(val)) return Number(val);
+          if (typeof val === "number") return val;
+          if (typeof val === "string" && /^\d+$/.test(val)) return Number(val);
         }
         // Specific checks for nested objects like lab: { id: ... }
         if (/^lab$/i.test(key) && val) {
@@ -822,9 +822,9 @@ export default function TopBarControls({
           const candidate = val.id ?? val.assignmentId ?? val.assignment_id;
           if (candidate) return typeof candidate === "string" ? Number(candidate) : candidate;
         }
-        
+
         if (typeof val === "object" && val !== null) {
-            queue.push(val);
+          queue.push(val);
         }
       }
     }
@@ -847,7 +847,7 @@ export default function TopBarControls({
     const loadData = async () => {
       setLoadingProblem(true);
       setLoadingTestcases(true);
-      
+
       try {
         let finalLabId: number | string | null = null;
 
@@ -858,20 +858,20 @@ export default function TopBarControls({
         // 2. If no Lab ID, try to fetch it from Flowchart
         let flowData: any = null;
         if (!finalLabId && flowchartId) {
-            try {
-                const resp = await apiGetFlowchart(flowchartId);
-                flowData = resp;
-                
-                // Try to find ID deeply in flowchart response
-                const found = findLabLikeId(resp) ?? findLabLikeId(resp?.flowchart);
-                if (found) {
-                    finalLabId = found;
-                    setDetectedLabId(found);
-                }
-                console.log("TopBarControls.loadLabData: flowData fetched for fallback check", { flowchartId, found });
-            } catch (e) {
-                console.warn("Could not fetch flowchart for LabID extraction", e);
+          try {
+            const resp = await apiGetFlowchart(flowchartId);
+            flowData = resp;
+
+            // Try to find ID deeply in flowchart response
+            const found = findLabLikeId(resp) ?? findLabLikeId(resp?.flowchart);
+            if (found) {
+              finalLabId = found;
+              setDetectedLabId(found);
             }
+            console.log("TopBarControls.loadLabData: flowData fetched for fallback check", { flowchartId, found });
+          } catch (e) {
+            console.warn("Could not fetch flowchart for LabID extraction", e);
+          }
         }
 
         let title: string | null = null;
@@ -880,64 +880,64 @@ export default function TopBarControls({
 
         // 3. If we have a Lab ID, try to fetch fresh Lab details
         if (finalLabId) {
-            try {
-                const normalizedId = Number(finalLabId);
-                const labResp = await apiGetLab(normalizedId);
-                
-                const labObj = 
-                    labResp?.lab ?? 
-                    labResp?.data?.lab ?? 
-                    labResp?.assignment ?? 
-                    labResp?.data ?? 
-                    labResp;
+          try {
+            const normalizedId = Number(finalLabId);
+            const labResp = await apiGetLab(normalizedId);
 
-                title = 
-                    labObj?.labname ??   // supports 'labname'
-                    labObj?.title ?? 
-                    labObj?.name ?? 
-                    labObj?.assignment?.title ?? 
-                    labResp?.title ?? 
-                    null;
+            const labObj =
+              labResp?.lab ??
+              labResp?.data?.lab ??
+              labResp?.assignment ??
+              labResp?.data ??
+              labResp;
 
-                desc = 
-                    labObj?.problemSolving ??  // supports 'problemSolving'
-                    labObj?.description ?? 
-                    labObj?.detail ?? 
-                    labObj?.assignment?.description ?? 
-                    labResp?.description ?? 
-                    null;
+            title =
+              labObj?.labname ??   // supports 'labname'
+              labObj?.title ??
+              labObj?.name ??
+              labObj?.assignment?.title ??
+              labResp?.title ??
+              null;
 
-                if (Array.isArray(labObj?.testcases)) tcs = labObj.testcases;
-                else if (Array.isArray(labObj?.testCases)) tcs = labObj.testCases;
-                else if (Array.isArray(labObj?.assignment?.testcases)) tcs = labObj.assignment.testcases;
-                else if (Array.isArray(labResp?.testcases)) tcs = labResp.testcases;
-                else if (Array.isArray(labResp)) tcs = labResp;
+            desc =
+              labObj?.problemSolving ??  // supports 'problemSolving'
+              labObj?.description ??
+              labObj?.detail ??
+              labObj?.assignment?.description ??
+              labResp?.description ??
+              null;
 
-                console.log("TopBarControls.loadLabData: got labResp", { normalizedId, titleFound: !!title, descFound: !!desc, testcaseCount: tcs.length });
-            } catch (err) {
-                console.warn("apiGetLab failed, falling back to embedded data", err);
-            }
+            if (Array.isArray(labObj?.testcases)) tcs = labObj.testcases;
+            else if (Array.isArray(labObj?.testCases)) tcs = labObj.testCases;
+            else if (Array.isArray(labObj?.assignment?.testcases)) tcs = labObj.assignment.testcases;
+            else if (Array.isArray(labResp?.testcases)) tcs = labResp.testcases;
+            else if (Array.isArray(labResp)) tcs = labResp;
+
+            console.log("TopBarControls.loadLabData: got labResp", { normalizedId, titleFound: !!title, descFound: !!desc, testcaseCount: tcs.length });
+          } catch (err) {
+            console.warn("apiGetLab failed, falling back to embedded data", err);
+          }
         }
 
         // 4. Fallback: If fields are still missing, try to use data embedded in Flowchart
         if ((!title || !desc || tcs.length === 0) && flowData) {
-            const nested = flowData?.flowchart ?? flowData;
-            
-            if (!title) {
-                title = nested?.assignment?.title ?? nested?.lab?.title ?? nested?.title ?? flowData?.title ?? null;
-            }
-            if (!desc) {
-                desc = nested?.assignment?.description ?? nested?.lab?.description ?? nested?.description ?? flowData?.description ?? null;
-            }
-            if (tcs.length === 0) {
-                tcs = nested?.testcases ?? nested?.lab?.testcases ?? nested?.assignment?.testcases ?? flowData?.testcases ?? [];
-            }
+          const nested = flowData?.flowchart ?? flowData;
 
-            console.log("TopBarControls.loadLabData: fallback from flowData", { titleFound: !!title, descFound: !!desc, testcaseCount: tcs.length });
+          if (!title) {
+            title = nested?.assignment?.title ?? nested?.lab?.title ?? nested?.title ?? flowData?.title ?? null;
+          }
+          if (!desc) {
+            desc = nested?.assignment?.description ?? nested?.lab?.description ?? nested?.description ?? flowData?.description ?? null;
+          }
+          if (tcs.length === 0) {
+            tcs = nested?.testcases ?? nested?.lab?.testcases ?? nested?.assignment?.testcases ?? flowData?.testcases ?? [];
+          }
+
+          console.log("TopBarControls.loadLabData: fallback from flowData", { titleFound: !!title, descFound: !!desc, testcaseCount: tcs.length });
         }
 
         // 5. SECONDARY FALLBACK: If still missing and we have flowchartId, call apiRunTestcaseFromFlowchart (same as pressing Test)
-        if ((!title || (!desc && desc !== "" ) || tcs.length === 0) && flowchartId) {
+        if ((!title || (!desc && desc !== "") || tcs.length === 0) && flowchartId) {
           try {
             console.log("TopBarControls.loadLabData: secondary fallback - calling apiRunTestcaseFromFlowchart", { flowchartId });
             const runResp = await apiRunTestcaseFromFlowchart(flowchartId);
@@ -1000,18 +1000,18 @@ export default function TopBarControls({
         }
 
         if (mounted) {
-            setProblemDetail({ 
-                title: title ?? "โจทย์ Lab", 
-                description: desc ?? "" 
-            });
-            setLabTestcases(tcs);
+          setProblemDetail({
+            title: title ?? "โจทย์ Lab",
+            description: desc ?? ""
+          });
+          setLabTestcases(tcs);
         }
 
       } catch (err) {
         console.error("Error loading lab data:", err);
         if (mounted) {
-             setProblemDetail({ title: "Error loading data", description: "" });
-             setLabTestcases([]);
+          setProblemDetail({ title: "Error loading data", description: "" });
+          setLabTestcases([]);
         }
       } finally {
         if (mounted) {
@@ -1036,7 +1036,7 @@ export default function TopBarControls({
 
       const runLabId = data?.labId ?? data?.lab_id ?? data?.session?.labId ?? data?.session?.lab_id;
       if (runLabId) {
-          setDetectedLabId(runLabId);
+        setDetectedLabId(runLabId);
       }
 
       const rawResults =
@@ -1176,7 +1176,7 @@ export default function TopBarControls({
 
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
     const base = "inline-block text-xs px-2 py-1 rounded-md mb-2";
-    
+
     // No more 'Actual:' branch — actual values are not shown.
 
     switch (r.level) {
@@ -1269,9 +1269,9 @@ export default function TopBarControls({
           const parsed = JSON.parse(raw);
           const id = parsed?.id ?? parsed?.userId ?? parsed?.user_id ?? parsed?.sub ?? parsed?.user?.id ?? null;
           if (id) return Number(id);
-        } catch {}
+        } catch { }
       }
-    } catch {}
+    } catch { }
     return null;
   };
 
@@ -1298,14 +1298,14 @@ export default function TopBarControls({
         uid = readUserIdFromLocalStorage();
       }
       if (!uid) {
-         const manualId = window.prompt("ไม่พบ User ID อัตโนมัติ กรุณากรอก ID ของคุณ (ตัวเลข):");
-         if (manualId && manualId.trim() !== "") {
-            uid = manualId.trim();
-         } else {
-            alert("ยกเลิกการส่งงาน: จำเป็นต้องมี User ID");
-            setSubmitting(false);
-            return;
-         }
+        const manualId = window.prompt("ไม่พบ User ID อัตโนมัติ กรุณากรอก ID ของคุณ (ตัวเลข):");
+        if (manualId && manualId.trim() !== "") {
+          uid = manualId.trim();
+        } else {
+          alert("ยกเลิกการส่งงาน: จำเป็นต้องมี User ID");
+          setSubmitting(false);
+          return;
+        }
       }
 
       const finalUserId = Number(uid);
@@ -1398,13 +1398,12 @@ export default function TopBarControls({
               return (
                 <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${
-                      m.sender === "user"
+                    className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${m.sender === "user"
                         ? "bg-blue-600 text-white rounded-br-sm shadow-sm"
                         : isError
-                        ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
-                        : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
-                    }`}
+                          ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
+                          : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
+                      }`}
                   >
                     {m.text}
                   </div>
@@ -1526,7 +1525,7 @@ export default function TopBarControls({
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
                         <div className="text-xs font-semibold text-gray-500 mb-1">No {index + 1}</div>
-                        
+
                         {/* Improved Input/Output Line */}
                         <div className="flex items-center flex-wrap gap-2 text-base text-gray-800 font-medium">
                           <span>Input: {inputDisplay}</span>
@@ -1547,7 +1546,7 @@ export default function TopBarControls({
                             {statusItems.length === 0 ? (
                               <div className="inline-block text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200">Not run</div>
                             ) : (
-                                renderSummaryBadge(summaryStatusMsg?.level, summaryStatusMsg?.text)
+                              renderSummaryBadge(summaryStatusMsg?.level, summaryStatusMsg?.text)
                             )}
                           </div>
                         </div>
@@ -1558,15 +1557,15 @@ export default function TopBarControls({
                     <div className="mt-3 border-t border-gray-200 pt-3">
                       <div className="flex flex-col">
                         {(statusItems ?? []).map((r, idx) => {
-                            // Filter out redundant status text (e.g., "PASS", "FAIL") because the badge shows it
-                            if (summaryStatusMsg && r.text === summaryStatusMsg.text) {
-                                return null;
-                            }
-                            return (
-                                <div key={idx} className="mb-2">
-                                    {renderBadge(r, idx)}
-                                </div>
-                            );
+                          // Filter out redundant status text (e.g., "PASS", "FAIL") because the badge shows it
+                          if (summaryStatusMsg && r.text === summaryStatusMsg.text) {
+                            return null;
+                          }
+                          return (
+                            <div key={idx} className="mb-2">
+                              {renderBadge(r, idx)}
+                            </div>
+                          );
                         })}
                       </div>
                     </div>
@@ -1595,7 +1594,7 @@ export default function TopBarControls({
               ) : (
                 // ถ้าต้องการให้แสดงข้อความเล็ก ๆ ว่า submit ถูกปิด ให้คงข้อความนี้ไว้
                 <div className="">
-                  
+
                 </div>
               )}
             </div>

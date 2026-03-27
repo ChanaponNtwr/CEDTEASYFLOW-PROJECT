@@ -24,7 +24,7 @@ interface SymbolItem {
 
 interface SymbolSectionProps {
   // <-- อนุญาต null ด้วย เพื่อให้สอดคล้องกับ PageLabData | null ที่ส่งมาจากพาเรนต์
-  labData?: LabData | null; 
+  labData?: LabData | null;
 }
 
 const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
@@ -62,26 +62,26 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
       <div className="flex items-center gap-5">
         {/* ปรับขนาด Container รูปตรงนี้ (w-24 h-14) ใหญ่ขึ้นชัดเจน */}
         <div className="w-24 h-14 flex items-center justify-center bg-gray-50 rounded-lg p-1 border border-gray-100 overflow-hidden relative">
-             <Image
-              src={item.imageSrc}
-              alt={item.label}
-              fill // ใช้ fill เพื่อให้รูปขยายเต็มพื้นที่ Container
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-              className="object-contain p-1 group-hover:scale-110 transition-transform duration-300"
-            />
+          <Image
+            src={item.imageSrc}
+            alt={item.label}
+            fill // ใช้ fill เพื่อให้รูปขยายเต็มพื้นที่ Container
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            className="object-contain p-1 group-hover:scale-110 transition-transform duration-300"
+          />
         </div>
         <span className="text-base font-bold text-gray-700">{item.label}</span>
       </div>
 
       <div className="">
         {item.isUnlimited ? (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
-                Unlimited
-            </span>
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+            Unlimited
+          </span>
         ) : (
-            <span className="inline-flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold bg-blue-50 text-blue-600 border border-blue-100 shadow-sm">
-                {item.count}
-            </span>
+          <span className="inline-flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold bg-blue-50 text-blue-600 border border-blue-100 shadow-sm">
+            {item.count}
+          </span>
         )}
       </div>
     </div>
@@ -90,12 +90,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
   return (
     <div className="w-full">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8"> {/* เพิ่ม Gap เป็น 8 */}
-        
+
         {/* Column 1: Input / Output */}
         <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100">
           <div className="flex items-center gap-3 mb-5">
-             <div className="w-1.5 h-5 bg-blue-500 rounded-full shadow-sm shadow-blue-200"></div>
-             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Input / Output</h3>
+            <div className="w-1.5 h-5 bg-blue-500 rounded-full shadow-sm shadow-blue-200"></div>
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Input / Output</h3>
           </div>
           <div className="space-y-4">
             <SymbolItemComponent item={symbols.input} />
@@ -105,9 +105,9 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
 
         {/* Column 2: Variables */}
         <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100">
-           <div className="flex items-center gap-3 mb-5">
-             <div className="w-1.5 h-5 bg-yellow-500 rounded-full shadow-sm shadow-yellow-200"></div>
-             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Variables</h3>
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-1.5 h-5 bg-yellow-500 rounded-full shadow-sm shadow-yellow-200"></div>
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Variables</h3>
           </div>
           <div className="space-y-4">
             <SymbolItemComponent item={symbols.declare} />
@@ -117,9 +117,9 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
 
         {/* Column 3: Control */}
         <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100">
-           <div className="flex items-center gap-3 mb-5">
-             <div className="w-1.5 h-5 bg-pink-500 rounded-full shadow-sm shadow-pink-200"></div>
-             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Control Flow</h3>
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-1.5 h-5 bg-pink-500 rounded-full shadow-sm shadow-pink-200"></div>
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Control Flow</h3>
           </div>
           <div className="space-y-4">
             <SymbolItemComponent item={symbols.if} />

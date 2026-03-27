@@ -28,7 +28,7 @@ type NodeResult = {
 
 type ExecContext = { variables?: Variable[]; index_map?: Record<string, number>; output?: any[] };
 
-type ExecResult = { node?: NodeResult; context?: ExecContext; done?: boolean; paused?: boolean; newOutput?: any[];};
+type ExecResult = { node?: NodeResult; context?: ExecContext; done?: boolean; paused?: boolean; newOutput?: any[]; };
 
 type ExecuteResponse = {
   ok: boolean;
@@ -262,7 +262,7 @@ export default function TopBarControls({
       const waitMs = autoContinue ? 120 : 600;
       try {
         await sleep(waitMs);
-      } catch {}
+      } catch { }
       return true;
     }
     return false;
@@ -408,9 +408,9 @@ export default function TopBarControls({
 
       const possibleNodeType =
         (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.nextNodeType ?? resp?.result?.node?.type ?? null) as
-          | string
-          | number
-          | null;
+        | string
+        | number
+        | null;
       const nodeTypeStr = possibleNodeType ? String(possibleNodeType).toUpperCase().trim() : null;
 
       setLastResponse(resp);
@@ -632,14 +632,14 @@ export default function TopBarControls({
         try {
           const endId = await pickEndNodeId();
           if (endId) safeHighlight(endId);
-        } catch (err) {}
+        } catch (err) { }
 
         try {
           await apiTrialReset(effectiveId as any);
         } catch (err) {
           try {
             await apiExecuteTrial(effectiveId as any, { action: "reset" });
-          } catch (e) {}
+          } catch (e) { }
         }
 
         setLastResponse(null);
@@ -782,14 +782,14 @@ export default function TopBarControls({
           try {
             const endId = await pickEndNodeId();
             if (endId) safeHighlight(endId);
-          } catch (err) {}
+          } catch (err) { }
 
           try {
             await apiTrialReset(effectiveId as any);
           } catch (err) {
             try {
               await apiExecuteTrial(effectiveId as any, { action: "reset" });
-            } catch (e) {}
+            } catch (e) { }
           }
 
           setLastResponse(null);
@@ -814,13 +814,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
     }
@@ -904,7 +904,7 @@ export default function TopBarControls({
         if (runAllWaitingForInputRef.current) {
           try {
             runAllWaitingForInputRef.current();
-          } catch {}
+          } catch { }
           runAllWaitingForInputRef.current = null;
         }
         setIsLoading(false);
@@ -952,7 +952,7 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
     } finally {
@@ -966,7 +966,7 @@ export default function TopBarControls({
     setPendingHighlightAfterOutput(null);
     try {
       if (outputResumeRef.current) outputResumeRef.current();
-    } catch (e) {}
+    } catch (e) { }
     outputResumeRef.current = null;
     setTimeout(() => safeHighlight(pending ?? null), 80);
   };
@@ -982,7 +982,7 @@ export default function TopBarControls({
     if (runAllWaitingForInputRef.current) {
       try {
         runAllWaitingForInputRef.current();
-      } catch {}
+      } catch { }
       runAllWaitingForInputRef.current = null;
     }
   };
@@ -1011,13 +1011,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
       runAllActiveRef.current = false;
@@ -1287,9 +1287,8 @@ export default function TopBarControls({
           onClick={handleStep}
           disabled={isLoading || done}
           title={done ? "Finished" : "Step"}
-          className={`text-yellow-600 text-lg p-2 rounded-full transition-colors ${isLoading ? "opacity-50 cursor-not-allowed" : "hover:text-yellow-700 hover:bg-yellow-100"} ${
-            done ? "opacity-40 cursor-not-allowed" : ""
-          }`}
+          className={`text-yellow-600 text-lg p-2 rounded-full transition-colors ${isLoading ? "opacity-50 cursor-not-allowed" : "hover:text-yellow-700 hover:bg-yellow-100"} ${done ? "opacity-40 cursor-not-allowed" : ""
+            }`}
         >
           <span className={`${isLoading ? "animate-pulse" : ""}`}>
             <FaStepForward />
@@ -1334,13 +1333,12 @@ export default function TopBarControls({
             return (
               <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${
-                    m.sender === "user"
+                  className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${m.sender === "user"
                       ? "bg-blue-600 text-white rounded-br-sm shadow-sm"
                       : isError
-                      ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
-                      : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
-                  }`}
+                        ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
+                        : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
+                    }`}
                 >
                   {m.text}
                 </div>
@@ -1494,9 +1492,8 @@ export default function TopBarControls({
               <button
                 onClick={handleRunTests}
                 disabled={runningTests}
-                className={`text-base font-medium px-8 py-2 rounded-full transition-all shadow-sm ${
-                  runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600 hover:shadow"
-                }`}
+                className={`text-base font-medium px-8 py-2 rounded-full transition-all shadow-sm ${runningTests ? "bg-gray-200 text-gray-600 cursor-not-allowed " : "bg-yellow-500 text-white hover:bg-yellow-600 hover:shadow"
+                  }`}
               >
                 {runningTests ? "Testing..." : "Test"}
               </button>

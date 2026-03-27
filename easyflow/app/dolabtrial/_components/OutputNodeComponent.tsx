@@ -93,7 +93,7 @@ const OutputNodeComponent: React.FC<Props> = ({ data }) => {
                 strokeWidth={2}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                style={{ filter: "url(#output-glow)"}}
+                style={{ filter: "url(#output-glow)" }}
               />
               <polygon
                 points={points}

@@ -150,13 +150,13 @@ function Editlab() {
             setProblemSolving(String(problemVal ?? ""));
 
             const loadedSymbols = {
-                input: labObj.inSymVal ?? 0,
-                output: labObj.outSymVal ?? 0,
-                declare: labObj.declareSymVal ?? 0,
-                assign: labObj.assignSymVal ?? 0,
-                if: labObj.ifSymVal ?? 0,
-                while: labObj.whileSymVal ?? 0,
-                for: labObj.forSymVal ?? 0,
+              input: labObj.inSymVal ?? 0,
+              output: labObj.outSymVal ?? 0,
+              declare: labObj.declareSymVal ?? 0,
+              assign: labObj.assignSymVal ?? 0,
+              if: labObj.ifSymVal ?? 0,
+              while: labObj.whileSymVal ?? 0,
+              for: labObj.forSymVal ?? 0,
             };
             setSymbols(loadedSymbols);
             setInitialSymbolData(loadedSymbols);
@@ -181,11 +181,11 @@ function Editlab() {
                 const content = trimmed.slice(1, -1);
                 // Simple CSV split logic for basic arrays
                 const items = content.split(",").map(part => {
-                   let p = part.trim();
-                   if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
-                     p = p.slice(1, -1);
-                   }
-                   return p;
+                  let p = part.trim();
+                  if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+                    p = p.slice(1, -1);
+                  }
+                  return p;
                 });
                 return parseVal(items);
               }
@@ -271,7 +271,7 @@ function Editlab() {
 
   const handleSymbolChange = (newSymbols: any) => {
     setTimeout(() => {
-        setSymbols(newSymbols);
+      setSymbols(newSymbols);
     }, 0);
   };
 
@@ -295,8 +295,8 @@ function Editlab() {
     }
 
     if (!session?.user) {
-        openModal("แก้ไข Lab ไม่สำเร็จ", "แก้ไข Lab ไม่สำเร็จ", null);
-        return;
+      openModal("แก้ไข Lab ไม่สำเร็จ", "แก้ไข Lab ไม่สำเร็จ", null);
+      return;
     }
 
     const user = session.user as any;
@@ -359,7 +359,7 @@ function Editlab() {
       };
 
       if (dateline) {
-         payload.dueDate = dateline;
+        payload.dueDate = dateline;
       }
 
       if (problemSolving) payload.problemSolving = problemSolving;
@@ -377,10 +377,10 @@ function Editlab() {
 
       const responseData = err?.response?.data;
       const errorMessage =
-          responseData?.message ||
-          responseData?.error ||
-          JSON.stringify(responseData) ||
-          err.message;
+        responseData?.message ||
+        responseData?.error ||
+        JSON.stringify(responseData) ||
+        err.message;
 
       // replace alert with modal showing error (Thai)
       openModal("แก้ไข Lab ไม่สำเร็จ", `แก้ไข Lab ไม่สำเร็จ: ${errorMessage}`, null);
@@ -445,8 +445,8 @@ function Editlab() {
                         onClick={() => requestDeleteTestcase(index)}
                         className="absolute top-2 right-2 text-red-500 hover:text-red-700"
                       >
-                         {/* SVG Icon */}
-                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        {/* SVG Icon */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                         </svg>
                       </button>
@@ -496,7 +496,7 @@ function Editlab() {
                       </div>
 
                       <div className="grid grid-cols-12 gap-4 mb-3 ml-5">
-                         <div className="col-span-6">
+                        <div className="col-span-6">
                           <label className="block text-sm text-gray-700 mb-1">Score</label>
                           <input
                             type="text"
@@ -517,9 +517,9 @@ function Editlab() {
                 </div>
               </div>
 
-              <SymbolSection 
-                onChange={handleSymbolChange} 
-                initialValues={initialSymbolData} 
+              <SymbolSection
+                onChange={handleSymbolChange}
+                initialValues={initialSymbolData}
               />
             </div>
           </div>
@@ -564,11 +564,11 @@ function Editlab() {
                   <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${isErrorModal() ? "bg-red-600" : "bg-green-600"} shadow-md`}>
                     {isErrorModal() ? (
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     ) : (
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
                   </div>
@@ -607,7 +607,7 @@ function Editlab() {
                   className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
               </div>
@@ -636,8 +636,8 @@ function Editlab() {
               aria-modal="true"
             >
               <div className="mb-6 flex flex-col items-center text-center">
-                 <h3 className="text-3xl font-medium text-gray-900">Delete Testcase</h3>
-                 <p className="text-gray-500 mt-2">Are you sure?</p>
+                <h3 className="text-3xl font-medium text-gray-900">Delete Testcase</h3>
+                <p className="text-gray-500 mt-2">Are you sure?</p>
               </div>
               <div className="flex justify-center gap-4 mt-6">
                 <button onClick={cancelDelete} className="px-8 py-2.5 bg-gray-200 text-gray-700 rounded-full">Cancel</button>

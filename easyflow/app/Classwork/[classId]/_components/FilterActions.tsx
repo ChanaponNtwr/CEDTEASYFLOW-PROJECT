@@ -13,7 +13,7 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
   const [selectedFilter, setSelectedFilter] = useState<
     "all" | "oldest" | "newest" | "todo"
   >("newest"); // Default to newest for better UX
-  
+
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const filterOptions = [
@@ -47,7 +47,7 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
       <h2 className="text-xl font-bold text-gray-800">Assignments</h2>
-      
+
       <div className="flex items-center space-x-3">
         {/* Dropdown Filter */}
         <div className="relative" ref={dropdownRef}>
@@ -57,9 +57,8 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
           >
             <span className="text-sm font-medium">{currentLabel}</span>
             <FaChevronDown
-              className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${
-                isOpen ? "rotate-180" : "rotate-0"
-              }`}
+              className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : "rotate-0"
+                }`}
             />
           </button>
 
@@ -74,11 +73,10 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
                         option.value as "all" | "oldest" | "newest" | "todo"
                       )
                     }
-                    className={`block w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                        selectedFilter === option.value 
-                        ? "bg-blue-50 text-blue-600 font-medium" 
+                    className={`block w-full text-left px-4 py-2.5 text-sm transition-colors ${selectedFilter === option.value
+                        ? "bg-blue-50 text-blue-600 font-medium"
                         : "text-gray-700 hover:bg-gray-50"
-                    }`}
+                      }`}
                   >
                     {option.label}
                   </button>

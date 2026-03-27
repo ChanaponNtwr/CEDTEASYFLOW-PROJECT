@@ -33,9 +33,9 @@ function ClassHeader({
       <div className="absolute bottom-0 left-0 w-full p-6 md:p-8 text-white z-10">
         <h1 className="text-3xl md:text-5xl font-bold tracking-tight mb-2">{code}</h1>
         <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-4 text-gray-100 text-sm md:text-lg font-medium">
-            <span>{teacher}</span>
-            <span className="hidden md:inline w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
-            <span className="opacity-90">{schedule}</span>
+          <span>{teacher}</span>
+          <span className="hidden md:inline w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+          <span className="opacity-90">{schedule}</span>
         </div>
       </div>
     </div>

@@ -93,7 +93,7 @@ const FlowchartEditor = (props: Props) => {
     } else if (userId === undefined) {
       console.warn(
         "⚠️ [FlowchartEditor] session exists but numeric user id not present in session.user. " +
-          "If you need userId as number populate it in NextAuth callbacks (callbacks.session)."
+        "If you need userId as number populate it in NextAuth callbacks (callbacks.session)."
       );
     } else {
       console.log("🔑 [FlowchartEditor] userId (number) from session:", userId);

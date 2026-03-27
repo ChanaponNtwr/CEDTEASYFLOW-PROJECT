@@ -44,7 +44,7 @@ function ClassCard({
   profileImage,
   onDeleteClick,
 }: ClassCardProps) {
-  
+
   // คำนวณสีพื้นหลังเพียงครั้งเดียวจาก code (หรือ id)
   const bgGradient = useMemo(() => getGradient(code), [code]);
 
@@ -83,42 +83,42 @@ function ClassCard({
 
       {/* Header Section with Random Gradient */}
       <div className={`h-24 bg-gradient-to-r ${bgGradient} p-5 relative`}>
-         {/* Floating Icon Container (รูปโปรไฟล์) */}
-         <div className="absolute -bottom-6 left-5 w-14 h-14 bg-white rounded-2xl shadow-md flex items-center justify-center p-1 border border-gray-50">
-            <img 
-              src={profileImage || "https://api.dicebear.com/9.x/personas/svg?seed=default"} 
-              alt="Avatar" 
-              className="w-full h-full object-cover rounded-xl" 
-            />
-         </div>
+        {/* Floating Icon Container (รูปโปรไฟล์) */}
+        <div className="absolute -bottom-6 left-5 w-14 h-14 bg-white rounded-2xl shadow-md flex items-center justify-center p-1 border border-gray-50">
+          <img
+            src={profileImage || "https://api.dicebear.com/9.x/personas/svg?seed=default"}
+            alt="Avatar"
+            className="w-full h-full object-cover rounded-xl"
+          />
+        </div>
       </div>
 
       {/* Body Section */}
       <div className="pt-9 pb-5 px-5 flex-1 flex flex-col">
         {/* Title & Section */}
         <div className="mb-2">
-            <h3 className="text-lg font-bold text-gray-800 truncate" title={title || code}>
+          <h3 className="text-lg font-bold text-gray-800 truncate" title={title || code}>
             {title || code || "Untitled Class"}
-            </h3>
-            {/* แสดง Problem หรือ Section เป็นตัวหนังสือเล็กๆ ด้านล่างชื่อวิชา */}
-            {/* <p className="text-xs font-semibold text-blue-600 bg-blue-50 inline-block px-2 py-0.5 rounded-md mt-1">
+          </h3>
+          {/* แสดง Problem หรือ Section เป็นตัวหนังสือเล็กๆ ด้านล่างชื่อวิชา */}
+          {/* <p className="text-xs font-semibold text-blue-600 bg-blue-50 inline-block px-2 py-0.5 rounded-md mt-1">
                 {problem || "General"}
             </p> */}
         </div>
 
         {/* Footer Info */}
         <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500">
-           <div className="flex items-center gap-2 overflow-hidden">
-              <FaUser className="text-gray-300 flex-shrink-0" />
-              <span className="truncate max-w-[120px] font-medium text-gray-600">
-                {teacher || "Unknown Teacher"}
-              </span>
-           </div>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <FaUser className="text-gray-300 flex-shrink-0" />
+            <span className="truncate max-w-[120px] font-medium text-gray-600">
+              {teacher || "Unknown Teacher"}
+            </span>
+          </div>
 
-           <div className="flex items-center gap-1.5">
-              <FaClock className="text-gray-300" />
-              <span>{due}</span>
-           </div>
+          <div className="flex items-center gap-1.5">
+            <FaClock className="text-gray-300" />
+            <span>{due}</span>
+          </div>
         </div>
       </div>
     </div>

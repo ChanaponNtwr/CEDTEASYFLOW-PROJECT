@@ -128,7 +128,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
           ? next[key].count + 1
           : Math.max(0, next[key].count - 1),
       };
-      
+
       // ไม่จำเป็นเรียก emitChange ที่นี่เพราะ useEffect จะจับการเปลี่ยนของ symbols
       return next;
     });
@@ -141,7 +141,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
     setSymbols((prev) => {
       const next = { ...prev };
       next[key] = { ...next[key], isUnlimited: checked };
-      
+
       // ไม่จำเป็นเรียก emitChange ที่นี่เพราะ useEffect จะจับการเปลี่ยนของ symbols
       return next;
     });
@@ -171,7 +171,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
         </button>
 
         <span className="w-10 text-center font-medium">
-            {item.isUnlimited ? "∞" : item.count}
+          {item.isUnlimited ? "∞" : item.count}
         </span>
 
         <button
@@ -191,11 +191,11 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange }) => {
           }
           className="cursor-pointer"
         />
-        <span 
-            className="text-sm text-gray-600 cursor-pointer"
-            onClick={() => handleUnlimitedChange(symbolKey, !item.isUnlimited)}
+        <span
+          className="text-sm text-gray-600 cursor-pointer"
+          onClick={() => handleUnlimitedChange(symbolKey, !item.isUnlimited)}
         >
-            Unlimited
+          Unlimited
         </span>
       </div>
     </div>

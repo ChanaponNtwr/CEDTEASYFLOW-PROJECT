@@ -17,20 +17,20 @@ export default function Ordersummary() {
     // Container หลัก: กำหนดพื้นหลังและจัดให้อยู่กึ่งกลาง
     <div className="min-h-screen bg-gray-800 bg-[url('/Images/Pricing.png')] bg-cover bg-center text-white flex flex-col items-center justify-center p-4">
       <Navbar />
-      
+
       {/* Grid Layout: สร้าง 2 คอลัมน์สำหรับจอขนาดกลางขึ้นไป */}
       <main className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-7xl p-4 md:p-8">
-        
+
         {/* === คอลัมน์ซ้าย: Order summary === */}
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 flex flex-col items-center justify-center text-center">
           <h2 className="text-3xl font-semibold mb-6">Order summary</h2>
-          
+
           {/* QR Code */}
           <div className="bg-white p-4 rounded-lg">
             {/* **สำคัญ:** ให้คุณนำไฟล์รูป QR Code ของคุณไปไว้ที่ public/images/qrcode.png 
               หรือเปลี่ยน path ตามที่คุณต้องการ
             */}
-            <Image 
+            <Image
               src="/images/qrcode.png" // <--- แก้ไข path รูป QR Code ที่นี่
               alt="QR Code for payment"
               width={200}
@@ -57,7 +57,7 @@ export default function Ordersummary() {
               <p className="mt-2 text-gray-400">Upload Image</p>
             </div>
           </div>
-          
+
           {/* Email */}
           <div>
             <p className="block text-gray-300 mb-1">email</p>

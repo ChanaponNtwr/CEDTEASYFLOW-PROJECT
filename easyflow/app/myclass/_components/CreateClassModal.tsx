@@ -63,32 +63,32 @@ function CreateClassModal({ isOpen, onClose, onCreate, formData, setFormData }: 
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5" htmlFor="section">
-                      Section
-                    </label>
-                    <input
-                      type="text"
-                      name="section"
-                      value={formData.section}
-                      onChange={handleInputChange}
-                      placeholder="e.g. 001"
-                      className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all bg-gray-50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5" htmlFor="room">
-                      Room
-                    </label>
-                    <input
-                      type="text"
-                      name="room"
-                      value={formData.room}
-                      onChange={handleInputChange}
-                      placeholder="e.g. 404"
-                      className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all bg-gray-50"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5" htmlFor="section">
+                    Section
+                  </label>
+                  <input
+                    type="text"
+                    name="section"
+                    value={formData.section}
+                    onChange={handleInputChange}
+                    placeholder="e.g. 001"
+                    className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all bg-gray-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5" htmlFor="room">
+                    Room
+                  </label>
+                  <input
+                    type="text"
+                    name="room"
+                    value={formData.room}
+                    onChange={handleInputChange}
+                    placeholder="e.g. 404"
+                    className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all bg-gray-50"
+                  />
+                </div>
               </div>
             </div>
 

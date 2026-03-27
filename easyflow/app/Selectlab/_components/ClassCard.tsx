@@ -50,7 +50,7 @@ function ClassCard({
   onCheckboxChange,
   onCardClick,
 }: ClassCardProps) {
-  
+
   // สุ่มสีพื้นหลังตาม Code หรือ Title
   const bgGradient = useMemo(() => getGradient(code || title), [code, title]);
 
@@ -78,27 +78,27 @@ function ClassCard({
     >
       {/* Header Section with Random Gradient */}
       <div className={`h-24 bg-gradient-to-r ${bgGradient} p-5 relative`}>
-        
+
         {/* Checkbox (Custom UI) */}
-        <div 
-            onClick={handleCheckboxClick}
-            className={`
+        <div
+          onClick={handleCheckboxClick}
+          className={`
                 absolute top-3 right-3 z-20 
                 w-8 h-8 rounded-full flex items-center justify-center
                 cursor-pointer transition-all duration-200 shadow-sm
-                ${isChecked 
-                    ? "bg-white text-blue-600 scale-110" 
-                    : "bg-black/20 text-transparent hover:bg-white/40 border-2 border-white/50"}
+                ${isChecked
+              ? "bg-white text-blue-600 scale-110"
+              : "bg-black/20 text-transparent hover:bg-white/40 border-2 border-white/50"}
             `}
         >
-            <FaCheck size={14} className={isChecked ? "opacity-100" : "opacity-0"} />
+          <FaCheck size={14} className={isChecked ? "opacity-100" : "opacity-0"} />
         </div>
 
         {/* Floating Icon Container */}
         <div className="absolute -bottom-6 left-5 w-12 h-12 bg-white rounded-2xl shadow-md flex items-center justify-center p-1 border border-gray-50">
-           <div className="w-full h-full bg-gray-50 rounded-xl flex items-center justify-center text-blue-500">
-             <img src="/images/lab.png" alt="lab icon" className="w-full h-full object-contain" />
-           </div>
+          <div className="w-full h-full bg-gray-50 rounded-xl flex items-center justify-center text-blue-500">
+            <img src="/images/lab.png" alt="lab icon" className="w-full h-full object-contain" />
+          </div>
         </div>
       </div>
 
@@ -106,37 +106,37 @@ function ClassCard({
       <div className="pt-9 pb-5 px-5 flex-1 flex flex-col">
         {/* Title */}
         <div className="mb-2">
-            <h3 className="text-lg font-bold text-gray-800 truncate" title={title}>
-              {title || "Untitled Lab"}
-            </h3>
-            <p className="text-xs font-semibold text-gray-400 mt-1 line-clamp-1">
-                {problem || "No description"}
-            </p>
+          <h3 className="text-lg font-bold text-gray-800 truncate" title={title}>
+            {title || "Untitled Lab"}
+          </h3>
+          <p className="text-xs font-semibold text-gray-400 mt-1 line-clamp-1">
+            {problem || "No description"}
+          </p>
         </div>
 
         {/* Footer Info */}
         <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500">
-           <div className="flex items-center gap-2 overflow-hidden">
-              <FaUser className="text-gray-300 flex-shrink-0" />
-              <span className="truncate max-w-[100px] font-medium text-gray-600">
-                {teacher || "Unknown"}
-              </span>
-           </div>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <FaUser className="text-gray-300 flex-shrink-0" />
+            <span className="truncate max-w-[100px] font-medium text-gray-600">
+              {teacher || "Unknown"}
+            </span>
+          </div>
 
-            {/* แสดงคะแนนหรือวันที่ */}
-           <div className="flex items-center gap-1.5">
-              {score !== undefined ? (
-                  <>
-                    
-                    <span>{score} pts</span>
-                  </>
-              ) : (
-                  <>
-                    <FaClock className="text-gray-300" />
-                    <span>{due}</span>
-                  </>
-              )}
-           </div>
+          {/* แสดงคะแนนหรือวันที่ */}
+          <div className="flex items-center gap-1.5">
+            {score !== undefined ? (
+              <>
+
+                <span>{score} pts</span>
+              </>
+            ) : (
+              <>
+                <FaClock className="text-gray-300" />
+                <span>{due}</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

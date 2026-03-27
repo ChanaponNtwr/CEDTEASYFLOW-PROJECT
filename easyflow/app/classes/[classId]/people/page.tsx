@@ -46,7 +46,7 @@ function Addpeople() {
       const parts = pathname?.split("/").filter(Boolean) ?? [];
       const numeric = parts.find((seg) => /^\d+$/.test(seg));
       if (numeric) return numeric;
-    } catch {}
+    } catch { }
     return null;
   };
 
@@ -82,8 +82,8 @@ function Addpeople() {
 
         const currentUid = session?.user
           ? ((
-              session.user as any
-            ).id || (session.user as any).userId)
+            session.user as any
+          ).id || (session.user as any).userId)
           : null;
         let myRole = "";
 
@@ -202,11 +202,9 @@ function Addpeople() {
     visible: { opacity: 1, scale: 1, y: 0 },
     exit: { opacity: 0, scale: 0.95, y: 20 },
   };
-  // -------------------------
-
-  // -------------------------
+ 
   // Handlers (now open confirm modal with explicit variant)
-  // -------------------------
+
   const handleRoleChange = async (
     targetUserId: number,
     newRoleStr: "Teacher" | "TA" | "Students"
@@ -308,7 +306,7 @@ function Addpeople() {
 
         {/* Main Content */}
         <main className="flex-1 lg:pl-64 w-full">
-          {/* ✅ Container: Full width with max constraint for ultra-wide screens */}
+          {/* Container: Full width with max constraint for ultra-wide screens */}
           <div className="max-w-[1920px] mx-auto w-full p-4 sm:p-20 space-y-8">
             {/* Tabs Section */}
             <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
@@ -410,14 +408,12 @@ function Addpeople() {
               <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
                 {/* header */}
                 <div
-                  className={`px-6 pt-8 pb-6 flex flex-col items-center ${
-                    isDanger ? "bg-red-50" : isAction ? "bg-blue-50" : isSuccess ? "bg-green-50" : "bg-blue-50"
-                  }`}
+                  className={`px-6 pt-8 pb-6 flex flex-col items-center ${isDanger ? "bg-red-50" : isAction ? "bg-blue-50" : isSuccess ? "bg-green-50" : "bg-blue-50"
+                    }`}
                 >
                   <div
-                    className={`flex items-center justify-center w-20 h-20 rounded-xl ${
-                      isDanger ? "bg-red-600" : isAction ? "bg-blue-600" : isSuccess ? "bg-green-600" : "bg-blue-600"
-                    } shadow-md`}
+                    className={`flex items-center justify-center w-20 h-20 rounded-xl ${isDanger ? "bg-red-600" : isAction ? "bg-blue-600" : isSuccess ? "bg-green-600" : "bg-blue-600"
+                      } shadow-md`}
                   >
                     {isDanger ? (
                       <FaTrash size={36} className="text-white" />
@@ -432,9 +428,8 @@ function Addpeople() {
 
                   <h3
                     id="confirm-modal-title"
-                    className={`mt-4 text-2xl font-extrabold ${
-                      isDanger ? "text-red-700" : isAction ? "text-blue-700" : isSuccess ? "text-green-700" : "text-blue-700"
-                    }`}
+                    className={`mt-4 text-2xl font-extrabold ${isDanger ? "text-red-700" : isAction ? "text-blue-700" : isSuccess ? "text-green-700" : "text-blue-700"
+                      }`}
                   >
                     {confirmTitle}
                   </h3>
@@ -444,9 +439,8 @@ function Addpeople() {
                 <div className="px-6 pb-6 pt-4">
                   <p
                     id="confirm-modal-desc"
-                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center font-semibold ${
-                      isAction || isSuccess ? "text-center text-lg font-semibold" : ""
-                    }`}
+                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center font-semibold ${isAction || isSuccess ? "text-center text-lg font-semibold" : ""
+                      }`}
                   >
                     {confirmMessage}
                   </p>
@@ -475,15 +469,14 @@ function Addpeople() {
                             closeConfirmModal();
                           }
                         }}
-                        className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${
-                          isDanger
+                        className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${isDanger
                             ? "bg-red-600 hover:bg-red-700 focus:ring-red-200"
                             : isAction
-                            ? "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
-                            : isSuccess
-                            ? "bg-green-600 hover:bg-green-700 focus:ring-green-200"
-                            : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
-                        }`}
+                              ? "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
+                              : isSuccess
+                                ? "bg-green-600 hover:bg-green-700 focus:ring-green-200"
+                                : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
+                          }`}
                       >
                         ยืนยัน
                       </button>

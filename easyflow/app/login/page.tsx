@@ -26,7 +26,7 @@ export default function Login() {
       <div className="flex justify-center items-center flex-1 relative z-10 px-4">
         <div className="bg-white/10 backdrop-blur-lg border border-white/20 
                         shadow-xl rounded-2xl p-10 w-full max-w-md">
-          
+
           <h2 className="text-4xl font-bold text-center mb-8 text-white drop-shadow-lg">
             Login
           </h2>

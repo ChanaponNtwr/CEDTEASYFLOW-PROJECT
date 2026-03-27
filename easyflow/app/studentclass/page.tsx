@@ -6,7 +6,7 @@ import Tabs from "./_components/Tabs";
 import PeopleList from "./_components/PeopleList";
 
 function Addpeople() {
-    const [activeTab, setActiveTab] = useState<string>("Classwork");
+  const [activeTab, setActiveTab] = useState<string>("Classwork");
 
   const [teachers, setTeachers] = useState([
     { name: "อ.ปริญญา", email: "parinya@kmitl.ac.th" },
@@ -41,22 +41,22 @@ function Addpeople() {
   return (
     <div className="pt-20 min-h-screen bg-gray-100">
       <div className="pl-36">
-      <Navbar />
-      <div className="flex h-screen">
-        <Sidebar />
-        <div className="flex-1 flex flex-col px-10 py-10 h-screen w-screen overflow-hidden ">
-          <div className="ml-34 mt-10">
-          <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
+        <Navbar />
+        <div className="flex h-screen">
+          <Sidebar />
+          <div className="flex-1 flex flex-col px-10 py-10 h-screen w-screen overflow-hidden ">
+            <div className="ml-34 mt-10">
+              <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
+            </div>
+            <PeopleList title="Teacher" people={teachers} onAdd={() => openModal("Teacher")} />
+            <PeopleList title="TA" people={tas} onAdd={() => openModal("TA")} />
+            <PeopleList title="Students" people={students} onAdd={() => openModal("Students")} />
+
+
           </div>
-          <PeopleList title="Teacher" people={teachers} onAdd={() => openModal("Teacher")} />
-          <PeopleList title="TA" people={tas} onAdd={() => openModal("TA")} />
-          <PeopleList title="Students" people={students} onAdd={() => openModal("Students")} />
-
-
         </div>
       </div>
     </div>
-  </div>
   );
 }
 

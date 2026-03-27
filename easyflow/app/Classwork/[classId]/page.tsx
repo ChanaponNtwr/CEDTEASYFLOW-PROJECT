@@ -15,9 +15,9 @@ import { useSession } from "next-auth/react";
 import { FaInbox } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 
-// 🎨 ZONE ตั้งค่ารูปภาพ: ใส่ Path รูปภาพที่คุณมีใน public/images/ ตรงนี้
+// ZONE ตั้งค่ารูปภาพ: ใส่ Path รูปภาพที่คุณมีใน public/images/ ตรงนี้
 // ระบบจะสุ่มเลือกจากรายการนี้ตาม Class ID
-const CLASS_COVERS = [     
+const CLASS_COVERS = [
   "/images/cover-code.jpg",     // รูปที่ 2 (ตัวอย่าง)
   "/images/cover-code1.jpg", // รูปที่ 3 (ตัวอย่าง)
   "/images/cover-code2.jpg",
@@ -34,7 +34,7 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  
+
   const routeClassId = params ? (params.classId as string) : undefined;
   const finalClassId = propClassId ?? routeClassId;
 
@@ -61,7 +61,7 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
   const [filter, setFilter] = useState<FilterType>("newest");
 
-  // ✨ NEW LOGIC: เลือกรูปภาพตาม Class ID
+  // NEW LOGIC: เลือกรูปภาพตาม Class ID
   const coverImage = useMemo(() => {
     // กรณีไม่มี Class ID ให้ใช้รูปแรก
     if (!finalClassId) return CLASS_COVERS[0];
@@ -223,8 +223,8 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
         rawDueDate: actualDueDate || "",
         dueDate: actualDueDate
           ? new Date(actualDueDate).toLocaleDateString("th-TH", {
-              year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-            })
+            year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+          })
           : "No due date",
       };
     });
@@ -262,24 +262,24 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      
-      <div className="flex pt-16"> 
+
+      <div className="flex pt-16">
         {/* Sidebar Fixed */}
         <div className="hidden lg:block w-64 fixed h-[calc(100vh-4rem)] top-16 left-0 overflow-y-auto bg-white border-r border-gray-200 z-10">
-           <Sidebar />
+          <Sidebar />
         </div>
-        
+
         {/* Main Content */}
         <main className="flex-1 lg:pl-64 w-full">
           <div className="max-w-[1920px] mx-auto w-full p-4 sm:p-20 space-y-6">
-            
+
             <Tabs
               classId={finalClassId || ""}
               activeTab={activeTab}
               onTabChange={setActiveTab}
             />
 
-            {/* ✅ ส่งรูปที่เลือกแบบสุ่ม(แต่คงที่) ไปยัง ClassHeader */}
+            {/* ส่งรูปที่เลือกแบบสุ่ม(แต่คงที่) ไปยัง ClassHeader */}
             <ClassHeader
               code={classDetail?.classname ?? "—"}
               teacher={
@@ -292,7 +292,7 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
                   ? `Created ${new Date(classDetail.createAt).toLocaleDateString()}`
                   : "—"
               }
-              backgroundImage={coverImage} 
+              backgroundImage={coverImage}
             />
 
             <FilterActions
@@ -304,8 +304,8 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
             <div className="min-h-[300px]">
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
-                   Loading class details...
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
+                  Loading class details...
                 </div>
               ) : error ? (
                 <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-center">
@@ -410,14 +410,14 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
                   <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${isErrorModal(confirmTitle) ? "bg-red-600" : "bg-red-600"} shadow-md`}>
                     {isErrorModal(confirmTitle) ? (
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     ) : (
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M3 6h18" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M10 11v6M14 11v6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M3 6h18" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M10 11v6M14 11v6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
                   </div>
@@ -434,9 +434,8 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
                 <div className="px-6 pb-6 pt-4">
                   <p
                     id="confirm-modal-desc"
-                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${
-                      !isErrorModal(confirmTitle) ? "text-center text-lg font-semibold" : ""
-                    }`}
+                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${!isErrorModal(confirmTitle) ? "text-center text-lg font-semibold" : ""
+                      }`}
                   >
                     {confirmMessage}
                   </p>
@@ -480,7 +479,7 @@ function Classwork({ classId: propClassId }: { classId?: string }) {
                   className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
               </div>

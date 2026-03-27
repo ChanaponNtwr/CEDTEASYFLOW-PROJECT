@@ -91,9 +91,8 @@ function Navbar() {
                   />
                   <span>{firstName}</span>
                   <svg
-                    className={`w-4 h-4 ml-1 transition-transform duration-300 ease-in-out ${
-                      isDropdownOpen ? "rotate-180" : "rotate-0"
-                    }`}
+                    className={`w-4 h-4 ml-1 transition-transform duration-300 ease-in-out ${isDropdownOpen ? "rotate-180" : "rotate-0"
+                      }`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -214,7 +213,7 @@ function Navbar() {
                   className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
               </div>

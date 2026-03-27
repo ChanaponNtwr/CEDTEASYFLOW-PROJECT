@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 
-import { 
-  apiAddLabToClass, 
+import {
+  apiAddLabToClass,
   apiUpdateLabDueDate,
   apiGetLab,
   apiCreateLab,
@@ -77,7 +77,7 @@ function ImportLabModal({
           console.error("Error parsing edit date", e);
         }
         setSelectedLabel(null);
-      } 
+      }
       // Import Mode Logic
       else if (!isEditMode) {
         try {
@@ -112,7 +112,7 @@ function ImportLabModal({
       sessionStorage.setItem("importForm", JSON.stringify(formData));
       sessionStorage.setItem("importMode", "1");
       sessionStorage.setItem("importReturn", window.location.pathname || "/");
-    } catch {}
+    } catch { }
     router.push("/Selectlab");
   };
 
@@ -131,9 +131,9 @@ function ImportLabModal({
     try {
       if (isEditMode) {
         if (!editData?.labId) throw new Error("Missing Lab ID for edit");
-        
+
         await apiUpdateLabDueDate(classId, editData.labId, userId, dueDateTimeIso);
-        
+
         try {
           const labResp = await apiGetLab(editData.labId);
           const currentLab = labResp?.lab ?? labResp;
@@ -143,9 +143,9 @@ function ImportLabModal({
           }
         } catch (innerErr) { console.error("Failed to update lab entity date:", innerErr); }
 
-        onAddClick?.(); 
+        onAddClick?.();
         onClose();
-        return; 
+        return;
       }
 
       // Import Mode
@@ -193,7 +193,7 @@ function ImportLabModal({
         sessionStorage.removeItem("importForm");
         sessionStorage.removeItem("importMode");
         sessionStorage.removeItem("importReturn");
-      } catch {}
+      } catch { }
 
       onAddClick?.();
       onClose();

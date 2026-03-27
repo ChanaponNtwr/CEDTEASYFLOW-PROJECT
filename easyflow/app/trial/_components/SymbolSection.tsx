@@ -79,7 +79,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ labData }) => {
   return (
     <div className="w-full mt-6">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         {/* Column 1: Input / Output */}
         <div className="bg-gray-50/50 rounded-2xl p-5 border border-gray-100 h-full">
           <div className="flex items-center gap-2 mb-4">

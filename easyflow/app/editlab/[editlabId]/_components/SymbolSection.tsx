@@ -153,8 +153,8 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange, initialValues }
           ? next[key].count + 1
           : Math.max(0, next[key].count - 1),
       };
-      
-      emitChange(next); 
+
+      emitChange(next);
       return next;
     });
   };
@@ -166,7 +166,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange, initialValues }
     setSymbols((prev) => {
       const next = { ...prev };
       next[key] = { ...next[key], isUnlimited: checked };
-      emitChange(next); 
+      emitChange(next);
       return next;
     });
   };
@@ -186,7 +186,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange, initialValues }
 
       <div className="flex items-center gap-4">
         <button
-          type="button" 
+          type="button"
           className={`w-8 h-8 rounded ${item.isUnlimited ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-gray-200"}`}
           onClick={() => handleCountChange(symbolKey, false)}
           disabled={item.isUnlimited}
@@ -195,11 +195,11 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange, initialValues }
         </button>
 
         <span className="w-10 text-center font-medium">
-            {item.isUnlimited ? "∞" : item.count}
+          {item.isUnlimited ? "∞" : item.count}
         </span>
 
         <button
-          type="button" 
+          type="button"
           className={`w-8 h-8 rounded ${item.isUnlimited ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-gray-200"}`}
           onClick={() => handleCountChange(symbolKey, true)}
           disabled={item.isUnlimited}
@@ -215,11 +215,11 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({ onChange, initialValues }
           }
           className="cursor-pointer"
         />
-        <span 
-            className="text-sm text-gray-600 cursor-pointer"
-            onClick={() => handleUnlimitedChange(symbolKey, !item.isUnlimited)}
+        <span
+          className="text-sm text-gray-600 cursor-pointer"
+          onClick={() => handleUnlimitedChange(symbolKey, !item.isUnlimited)}
         >
-            Unlimited
+          Unlimited
         </span>
       </div>
     </div>

@@ -5,7 +5,7 @@ interface PageProps {
 }
 
 export default async function Page({ params }: PageProps) {
-  const { classId } = await params; // ✅ ต้อง await
+  const { classId } = await params;
 
   return <Classwork classId={classId} />;
 }

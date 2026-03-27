@@ -534,17 +534,17 @@ export const convertBackendFlowchart = (payload: any) => {
   };
 
 
-const LARGE_COND_LABEL_STYLE = { fontSize: 16, fontWeight: 700 };
+  const LARGE_COND_LABEL_STYLE = { fontSize: 16, fontWeight: 700 };
 
   const convertedEdges: Edge[] = backendEdges.map((be) => {
     const source = idMap.get(be.source) ?? be.source;
     const target = idMap.get(be.target) ?? be.target;
     const conditionRaw = be.condition ?? "";
     const condition = String(conditionRaw ?? "");
-    
+
     // แปลงเป็นตัวพิมพ์เล็กเพื่อง่ายต่อการเช็คเงื่อนไข
-    const lowerCond = condition.toLowerCase(); 
-    
+    const lowerCond = condition.toLowerCase();
+
     // เช็คว่า condition ตรงกับคำที่ต้องการให้ตัวใหญ่หรือไม่
     const isLargeLabel = lowerCond === "true" || lowerCond === "false" || lowerCond === "next" || lowerCond === "done";
 

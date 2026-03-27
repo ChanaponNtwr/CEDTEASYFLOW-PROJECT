@@ -2,10 +2,10 @@
 import React, { useState, useEffect } from "react";
 import { FaTrash, FaSignOutAlt, FaUserPlus, FaEllipsisV, FaUserTie, FaUserGraduate, FaChalkboardTeacher } from "react-icons/fa";
 
-type Person = { 
-  id: number; 
-  name: string; 
-  email: string; 
+type Person = {
+  id: number;
+  name: string;
+  email: string;
   position?: string;
 };
 
@@ -19,14 +19,14 @@ interface PeopleListProps {
   currentUserId?: number;
 }
 
-const PeopleList: React.FC<PeopleListProps> = ({ 
-  title, 
-  people, 
-  onAdd, 
-  onRoleChange, 
-  onRemove, 
-  canManage, 
-  currentUserId 
+const PeopleList: React.FC<PeopleListProps> = ({
+  title,
+  people,
+  onAdd,
+  onRoleChange,
+  onRemove,
+  canManage,
+  currentUserId
 }) => {
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
 
@@ -73,16 +73,16 @@ const PeopleList: React.FC<PeopleListProps> = ({
       <div className="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
         <div className="flex items-center gap-3">
           <h2 className={`text-2xl font-bold ${TitleColor} flex items-center gap-2`}>
-             <TitleIcon className="text-xl opacity-80" />
-             {title}
+            <TitleIcon className="text-xl opacity-80" />
+            {title}
           </h2>
           <span className="bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded-full text-xs font-semibold">
             {people.length}
           </span>
         </div>
-        
+
         {onAdd && (
-          <button 
+          <button
             onClick={onAdd}
             className="flex items-center gap-2 text-sm font-semibold text-blue-600 bg-blue-50 px-4 py-2 rounded-full hover:bg-blue-100 transition-colors"
           >
@@ -105,15 +105,15 @@ const PeopleList: React.FC<PeopleListProps> = ({
           people.map((person, idx) => {
             const isMe = person.id === currentUserId;
             const isOwnerRow = title === "Teacher" && idx === 0; // Assume first teacher is owner if logic applies
-            
+
             // Logic to show Trash: Owner remove anyone, Self leave class
             const showTrash = (canManage && !isOwnerRow) || (isMe && !isOwnerRow);
             // Logic to show Role Edit: Manage others who are not owner
             const showEditRole = canManage && !isOwnerRow && !isMe;
 
             return (
-              <div 
-                key={person.id} 
+              <div
+                key={person.id}
                 className="group relative flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-200"
               >
                 {/* Left: Avatar & Info */}
@@ -123,7 +123,7 @@ const PeopleList: React.FC<PeopleListProps> = ({
                   `}>
                     {person.name.charAt(0).toUpperCase()}
                   </div>
-                  
+
                   <div className="flex flex-col truncate">
                     <span className="font-semibold text-gray-800 flex items-center gap-2 truncate">
                       {person.name}
@@ -150,7 +150,7 @@ const PeopleList: React.FC<PeopleListProps> = ({
                   {/* Edit Role Dropdown */}
                   {showEditRole && onRoleChange && (
                     <div className="relative">
-                      <button 
+                      <button
                         onClick={() => toggleMenu(person.id)}
                         className="p-2 text-gray-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       >
@@ -160,23 +160,23 @@ const PeopleList: React.FC<PeopleListProps> = ({
                       {openMenuId === person.id && (
                         // เพิ่ม class 'peoplelist-menu' เพื่อให้การตรวจจับการคลิกภายนอกทำงานถูกต้อง
                         <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 peoplelist-menu">
-                           <div className="py-1">
-                              {title !== "Teacher" && (
-                                <button onClick={() => handleSelectRole(person.id, "Teacher")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2">
-                                    <FaChalkboardTeacher /> Teacher
-                                </button>
-                              )}
-                              {title !== "TA" && (
-                                <button onClick={() => handleSelectRole(person.id, "TA")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-600 flex items-center gap-2">
-                                    <FaUserTie /> TA
-                                </button>
-                              )}
-                              {title !== "Students" && (
-                                <button onClick={() => handleSelectRole(person.id, "Students")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-600 flex items-center gap-2">
-                                    <FaUserGraduate /> Student
-                                </button>
-                              )}
-                           </div>
+                          <div className="py-1">
+                            {title !== "Teacher" && (
+                              <button onClick={() => handleSelectRole(person.id, "Teacher")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2">
+                                <FaChalkboardTeacher /> Teacher
+                              </button>
+                            )}
+                            {title !== "TA" && (
+                              <button onClick={() => handleSelectRole(person.id, "TA")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-600 flex items-center gap-2">
+                                <FaUserTie /> TA
+                              </button>
+                            )}
+                            {title !== "Students" && (
+                              <button onClick={() => handleSelectRole(person.id, "Students")} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-600 flex items-center gap-2">
+                                <FaUserGraduate /> Student
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

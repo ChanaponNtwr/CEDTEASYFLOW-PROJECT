@@ -7,7 +7,7 @@ import Link from "next/link";
 
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
-import SymbolSection from "./_components/SymbolSection"; 
+import SymbolSection from "./_components/SymbolSection";
 
 // Icons
 import {
@@ -23,10 +23,10 @@ import {
 } from "react-icons/fa";
 import { IoHardwareChipOutline } from "react-icons/io5";
 
-import { 
-  apiGetTestcases, 
-  apiGetLab, 
-  apiPostFlowchart, 
+import {
+  apiGetTestcases,
+  apiGetLab,
+  apiPostFlowchart,
   apiGetSubmissionsByLab,
   apiSubmitFlowchart,
   apiCancelSubmission
@@ -78,7 +78,7 @@ interface SubmissionResult {
 type ModalVariant = "danger" | "success" | "info";
 
 // --- Helpers ---
-function formatDueDate(d?: string | null) { 
+function formatDueDate(d?: string | null) {
   if (!d) return "No due date";
   try {
     const dt = new Date(d);
@@ -195,7 +195,7 @@ export default function StudentLabPage() {
   // --- Fetch Data ---
   useEffect(() => {
     if (!labIdResolved) return;
-    if (session === undefined) return; 
+    if (session === undefined) return;
 
     let mounted = true;
     const fetchData = async () => {
@@ -289,9 +289,9 @@ export default function StudentLabPage() {
   // --- Handlers ---
   const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    if (!session?.user) { 
+    if (!session?.user) {
       openModal("กรุณาเข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อนดำเนินการ", null, "info");
-      return; 
+      return;
     }
 
     setIsStarting(true);
@@ -299,8 +299,8 @@ export default function StudentLabPage() {
       const user = session.user as any;
       const userId = user.id || user.userId || user.sub;
 
-      const payload = { 
-        userId: Number(userId), 
+      const payload = {
+        userId: Number(userId),
         labId: Number(labIdResolved),
         clientRequestId: `${userId}-${Date.now()}`
       };
@@ -335,8 +335,8 @@ export default function StudentLabPage() {
 
     setIsSubmitting(true);
     try {
-      const payload = { 
-        userId: Number(userId), 
+      const payload = {
+        userId: Number(userId),
         labId: Number(labIdResolved),
         clientRequestId: `${userId}-${Date.now()}`
       };
@@ -469,7 +469,7 @@ export default function StudentLabPage() {
   const renderStatusBadge = (status: string | undefined) => {
     if (!status) return <span className="text-gray-300 font-mono">-</span>;
     const s = String(status).toUpperCase();
-    
+
     let styles = "bg-gray-100 text-gray-500 border-gray-200";
     let icon = null;
 
@@ -497,208 +497,208 @@ export default function StudentLabPage() {
       <div className="pt-20 pl-0 md:pl-64 transition-all duration-300">
         <Navbar />
         <Sidebar />
-        
+
         <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
-            
-            {/* 1. Header Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                <div className="flex items-center gap-5">
-                    <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-white rounded-2xl flex items-center justify-center flex-shrink-0 border border-blue-100 shadow-sm">
-                        <img src="/images/lab.png" className="w-8 h-auto object-contain" alt="Lab Icon" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900 leading-tight">{labTitle}</h1>
-                        <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500">
-                             <div className="flex items-center gap-1.5">
-                                <span className="w-2 h-2 rounded-full bg-blue-500 "></span>
-                                <span className="font-medium text-gray-700">{totalPoints} Points</span>
-                             </div>
-                             <div className="hidden md:block w-[1px] h-4 bg-gray-300"></div>
-                             <div className="flex items-center gap-1.5">
-                                <FaCalendarAlt className="text-gray-400" />
-                                <span>Due: {formatDueDate(dueText)}</span>
-                             </div>
-                             {isSubmitted && (
-                                <>
-                                  <div className="hidden md:block w-[1px] h-4 bg-gray-300"></div>
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-xs font-bold border border-blue-100">
-                                    Submitted
-                                  </span>
-                                </>
-                             )}
-                        </div>
-                    </div>
-                </div>
 
-                {/* Buttons Group */}
-                <div className="flex items-center gap-3 w-full md:w-auto self-end md:self-center">
-                    <button
-                      onClick={handleClick}
-                      disabled={loading || isStarting || isSubmitted}
-                      className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all
-                        ${loading || isStarting || isSubmitted 
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200' 
-                            : 'bg-white border border-indigo-200 text-blue-600  hover:bg-indigo-50 hover:border-indigo-300'
-                        }`}
-                    >
-                       {isStarting ? <FaSpinner className="animate-spin" /> : <FaPlay size={12} />} 
-                       {isStarting ? "Creating..." : "Do Lab"}
-                    </button>
-
-                    {isSubmitted ? (
-                        <button
-                          onClick={handleUnsubmit}
-                          disabled={isCancelling}
-                          className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-all disabled:opacity-70"
-                        >
-                            {isCancelling ? <FaSpinner className="animate-spin" /> : <FaTimes />}
-                            {isCancelling ? "Cancelling..." : "Unsubmit"}
-                        </button>
-                    ) : (
-                        <button
-                          onClick={handleSubmit}
-                          disabled={isSubmitting || loading}
-                          className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm text-white transition-all hover:shadow-md hover:-translate-y-0.5
-                            ${isSubmitting || loading 
-                                ? 'bg-gray-400 cursor-not-allowed' 
-                                : 'bg-gradient-to-r from-green-600 to-green-600 hover:from-green-700 hover:to-green-700 '
-                            }`}
-                        >
-                          {isSubmitting ? <FaSpinner className="animate-spin" /> : <FaPaperPlane size={12} />}
-                          {isSubmitting ? "Sending..." : "Submit"}
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            {/* 2. Problem Description */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <div className="flex items-center gap-2 mb-4 border-b border-gray-50 pb-3">
-                    <div className="w-1 h-5 bg-orange-400 rounded-full"></div>
-                    <h3 className="text-lg font-bold text-gray-800">Problem Description</h3>
-                </div>
-                <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap leading-relaxed">
-                    {labProblem || <span className="text-gray-400 italic">No description available for this lab.</span>}
-                </div>
-            </div>
-
-            {/* 3. Test Cases */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                    <div className="flex items-center gap-2">
-                        <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
-                        <h3 className="text-lg font-bold text-gray-800">Test Cases</h3>
-                    </div>
-
-                    {/* NEW: Total score display on the right (does not alter existing UI other than adding this small element) */}
-                    <div className="text-sm text-gray-600">
-                      <span className="text-xs text-gray-500 mr-2 hidden md:inline">Total:</span>
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-50 border border-gray-100">
-                        {isSubmitted ? (
-                          <><span className="text-gray-800">{obtainedTotal}</span><span className="text-gray-400 ml-1">/</span><span className="text-gray-500 ml-1">{totalPoints}</span></>
-                        ) : (
-                          <><span className="text-gray-700">{totalPoints}</span><span className="text-gray-400 ml-1">pts</span></>
-                        )}
-                      </span>
-                    </div>
-                </div>
-                
-                {loading && <div className="p-8 text-center text-gray-400 animate-pulse">Loading data...</div>}
-                {error && <div className="p-6 text-center text-red-500 bg-red-50 m-4 rounded-xl border border-red-100">Error: {error}</div>}
-
-                {!loading && !error && (
-                  <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-100">
-                        <thead className="bg-gray-50/50">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-16">No.</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Input</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Output</th>
-                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Score</th>
-                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-100 text-sm">
-                          {testCases.length > 0 ? (
-                            testCases.map((tc, index) => {
-                                // Determine testcase id key for lookup
-                                const raw = tc.raw ?? {};
-                                const tcIdCandidate =
-                                  raw.testcaseId ??
-                                  raw.testcase_id ??
-                                  raw.id ??
-                                  raw.tcId ??
-                                  raw.testcase?.id ??
-                                  raw.testcase?.testcaseId ??
-                                  tc.no ??
-                                  (index + 1);
-                                const tcKey = String(tcIdCandidate);
-
-                                // Lookup result from map
-                                const result = tcResults[tcKey];
-                                const status = result?.status ?? "";
-                                const obtainedScore = Number(result?.scoreAwarded ?? result?.score ?? 0);
-                                const maxScore = tc.score ?? Number(result?.maxScore ?? 0);
-
-                                return (
-                                  <tr key={tc.no} className="hover:bg-gray-50/80 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-gray-500">{tc.no}</td>
-                                    <td className="px-6 py-4">
-                                      <code className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-mono border border-gray-200">
-                                        {tc.input}
-                                      </code>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      <code className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono border border-blue-100">
-                                        {tc.output}
-                                      </code>
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                      {isSubmitted ? (
-                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-sm border
-                                          ${obtainedScore === maxScore 
-                                            ? "bg-green-50 text-green-700 border-green-200" 
-                                            : obtainedScore > 0 
-                                              ? "bg-amber-50 text-amber-700 border-amber-200"
-                                              : "bg-red-50 text-red-600 border-red-200"
-                                          }
-                                        `}>
-                                          {obtainedScore} / {maxScore}
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
-                                          {maxScore} pts
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                        {renderStatusBadge(status)}
-                                    </td>
-                                  </tr>
-                                );
-                            })
-                          ) : (
-                            <tr>
-                              <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">No test cases found.</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+          {/* 1. Header Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-center gap-5">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-white rounded-2xl flex items-center justify-center flex-shrink-0 border border-blue-100 shadow-sm">
+                <img src="/images/lab.png" className="w-8 h-auto object-contain" alt="Lab Icon" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 leading-tight">{labTitle}</h1>
+                <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 "></span>
+                    <span className="font-medium text-gray-700">{totalPoints} Points</span>
                   </div>
-                )}
+                  <div className="hidden md:block w-[1px] h-4 bg-gray-300"></div>
+                  <div className="flex items-center gap-1.5">
+                    <FaCalendarAlt className="text-gray-400" />
+                    <span>Due: {formatDueDate(dueText)}</span>
+                  </div>
+                  {isSubmitted && (
+                    <>
+                      <div className="hidden md:block w-[1px] h-4 bg-gray-300"></div>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-xs font-bold border border-blue-100">
+                        Submitted
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* 4. Configuration Section */}
+            {/* Buttons Group */}
+            <div className="flex items-center gap-3 w-full md:w-auto self-end md:self-center">
+              <button
+                onClick={handleClick}
+                disabled={loading || isStarting || isSubmitted}
+                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all
+                        ${loading || isStarting || isSubmitted
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                    : 'bg-white border border-indigo-200 text-blue-600  hover:bg-indigo-50 hover:border-indigo-300'
+                  }`}
+              >
+                {isStarting ? <FaSpinner className="animate-spin" /> : <FaPlay size={12} />}
+                {isStarting ? "Creating..." : "Do Lab"}
+              </button>
+
+              {isSubmitted ? (
+                <button
+                  onClick={handleUnsubmit}
+                  disabled={isCancelling}
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-all disabled:opacity-70"
+                >
+                  {isCancelling ? <FaSpinner className="animate-spin" /> : <FaTimes />}
+                  {isCancelling ? "Cancelling..." : "Unsubmit"}
+                </button>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  disabled={isSubmitting || loading}
+                  className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold shadow-sm text-white transition-all hover:shadow-md hover:-translate-y-0.5
+                            ${isSubmitting || loading
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-green-600 to-green-600 hover:from-green-700 hover:to-green-700 '
+                    }`}
+                >
+                  {isSubmitting ? <FaSpinner className="animate-spin" /> : <FaPaperPlane size={12} />}
+                  {isSubmitting ? "Sending..." : "Submit"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Problem Description */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center gap-2 mb-4 border-b border-gray-50 pb-3">
+              <div className="w-1 h-5 bg-orange-400 rounded-full"></div>
+              <h3 className="text-lg font-bold text-gray-800">Problem Description</h3>
+            </div>
+            <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap leading-relaxed">
+              {labProblem || <span className="text-gray-400 italic">No description available for this lab.</span>}
+            </div>
+          </div>
+
+          {/* 3. Test Cases */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <div className="flex items-center gap-2">
+                <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
+                <h3 className="text-lg font-bold text-gray-800">Test Cases</h3>
+              </div>
+
+              {/* NEW: Total score display on the right (does not alter existing UI other than adding this small element) */}
+              <div className="text-sm text-gray-600">
+                <span className="text-xs text-gray-500 mr-2 hidden md:inline">Total:</span>
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-50 border border-gray-100">
+                  {isSubmitted ? (
+                    <><span className="text-gray-800">{obtainedTotal}</span><span className="text-gray-400 ml-1">/</span><span className="text-gray-500 ml-1">{totalPoints}</span></>
+                  ) : (
+                    <><span className="text-gray-700">{totalPoints}</span><span className="text-gray-400 ml-1">pts</span></>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {loading && <div className="p-8 text-center text-gray-400 animate-pulse">Loading data...</div>}
+            {error && <div className="p-6 text-center text-red-500 bg-red-50 m-4 rounded-xl border border-red-100">Error: {error}</div>}
+
             {!loading && !error && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                    <div className="flex items-center gap-2 mb-6 border-b border-gray-50 pb-3">
-                        <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
-                        <h2 className="text-lg font-bold text-gray-800">Configuration</h2>
-                    </div>
-                    <SymbolSection labData={symbolLabData} />
-                </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-100">
+                  <thead className="bg-gray-50/50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-16">No.</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Input</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Output</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Score</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100 text-sm">
+                    {testCases.length > 0 ? (
+                      testCases.map((tc, index) => {
+                        // Determine testcase id key for lookup
+                        const raw = tc.raw ?? {};
+                        const tcIdCandidate =
+                          raw.testcaseId ??
+                          raw.testcase_id ??
+                          raw.id ??
+                          raw.tcId ??
+                          raw.testcase?.id ??
+                          raw.testcase?.testcaseId ??
+                          tc.no ??
+                          (index + 1);
+                        const tcKey = String(tcIdCandidate);
+
+                        // Lookup result from map
+                        const result = tcResults[tcKey];
+                        const status = result?.status ?? "";
+                        const obtainedScore = Number(result?.scoreAwarded ?? result?.score ?? 0);
+                        const maxScore = tc.score ?? Number(result?.maxScore ?? 0);
+
+                        return (
+                          <tr key={tc.no} className="hover:bg-gray-50/80 transition-colors">
+                            <td className="px-6 py-4 font-medium text-gray-500">{tc.no}</td>
+                            <td className="px-6 py-4">
+                              <code className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-mono border border-gray-200">
+                                {tc.input}
+                              </code>
+                            </td>
+                            <td className="px-6 py-4">
+                              <code className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono border border-blue-100">
+                                {tc.output}
+                              </code>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              {isSubmitted ? (
+                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-sm border
+                                          ${obtainedScore === maxScore
+                                    ? "bg-green-50 text-green-700 border-green-200"
+                                    : obtainedScore > 0
+                                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                                      : "bg-red-50 text-red-600 border-red-200"
+                                  }
+                                        `}>
+                                  {obtainedScore} / {maxScore}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                                  {maxScore} pts
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              {renderStatusBadge(status)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">No test cases found.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             )}
-            
+          </div>
+
+          {/* 4. Configuration Section */}
+          {!loading && !error && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center gap-2 mb-6 border-b border-gray-50 pb-3">
+                <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
+                <h2 className="text-lg font-bold text-gray-800">Configuration</h2>
+              </div>
+              <SymbolSection labData={symbolLabData} />
+            </div>
+          )}
+
         </div>
       </div>
 
@@ -785,7 +785,7 @@ export default function StudentLabPage() {
                   className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
               </div>

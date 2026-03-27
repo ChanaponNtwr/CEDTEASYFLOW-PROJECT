@@ -5,7 +5,7 @@ import { FaUser, FaBook } from "react-icons/fa";
 import { motion, Variants, Transition } from "framer-motion";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { apiGetClasses } from "@/app/service/FlowchartService"; 
+import { apiGetClasses } from "@/app/service/FlowchartService";
 
 // --- Animation Variants ---
 const itemSpring: Transition = { type: "spring", stiffness: 250 };
@@ -44,14 +44,14 @@ function Sidebar() {
 
     const fetchData = async () => {
       if (!session?.user) return;
-      
+
       try {
         setLoading(true);
         const user = session.user as any;
         const currentUserId = user.id || user.userId || user.sub;
 
         const data = await apiGetClasses();
-        
+
         const teach: any[] = [];
         const enroll: any[] = [];
 
@@ -61,8 +61,8 @@ function Sidebar() {
             if (!validId) return;
 
             const myRelation = cls.userClasses?.find(
-              (uc: any) => 
-                String(uc.userId) === String(currentUserId) || 
+              (uc: any) =>
+                String(uc.userId) === String(currentUserId) ||
                 String(uc.user?.id) === String(currentUserId)
             );
 
@@ -88,9 +88,9 @@ function Sidebar() {
     };
 
     if (status === "authenticated") {
-        fetchData();
+      fetchData();
     } else if (status === "unauthenticated") {
-        setLoading(false);
+      setLoading(false);
     }
   }, [session, status]);
 
@@ -100,7 +100,7 @@ function Sidebar() {
 
   return (
     <div className="w-64 h-screen bg-white shadow-md p-4 fixed left-0 top-20 overflow-y-auto pb-20 z-40">
-      
+
       {/* ---------------- MY COURSES Section (Formerly TEACHING) ---------------- */}
       <div className="mb-6">
         <div className="flex items-center mb-2 bg-blue-600 px-2 py-3 rounded shadow-sm">
@@ -109,12 +109,12 @@ function Sidebar() {
           </div>
           <h3 className="text-white font-semibold tracking-wide uppercase">MY COURSES</h3>
         </div>
-        
+
         <ul>
           {loading ? (
-             <li className="text-gray-400 text-sm px-2 animate-pulse">Loading...</li>
+            <li className="text-gray-400 text-sm px-2 animate-pulse">Loading...</li>
           ) : teachingClasses.length === 0 ? (
-             <li className="text-gray-400 text-sm px-2">No active courses</li>
+            <li className="text-gray-400 text-sm px-2">No active courses</li>
           ) : (
             teachingClasses.map((cls) => {
               const cId = getClassId(cls);
@@ -128,7 +128,7 @@ function Sidebar() {
                   variants={itemVariants}
                 >
                   <Link href={`/Classwork/${cId}`} className="w-full flex items-center">
-                    <motion.span 
+                    <motion.span
                       className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center mr-3 text-white text-xs font-bold shrink-0 shadow-sm"
                       variants={iconVariants}
                     >
@@ -153,10 +153,10 @@ function Sidebar() {
         </div>
 
         <ul>
-        {loading ? (
-             <li className="text-gray-400 text-sm px-2 animate-pulse">Loading...</li>
+          {loading ? (
+            <li className="text-gray-400 text-sm px-2 animate-pulse">Loading...</li>
           ) : enrolledClasses.length === 0 ? (
-             <li className="text-gray-400 text-sm px-2">No enrolled courses</li>
+            <li className="text-gray-400 text-sm px-2">No enrolled courses</li>
           ) : (
             enrolledClasses.map((cls) => {
               const cId = getClassId(cls);
@@ -170,7 +170,7 @@ function Sidebar() {
                   variants={itemVariants}
                 >
                   <Link href={`/Classwork/${cId}`} className="w-full flex items-center">
-                    <motion.span 
+                    <motion.span
                       className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center mr-3 text-white text-xs font-bold shrink-0 shadow-sm"
                       variants={iconVariants}
                     >

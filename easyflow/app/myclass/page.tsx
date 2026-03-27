@@ -34,7 +34,7 @@ const getAvatarUrl = (name: string) => {
 function Myclass() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null); // ✅ เพิ่ม State Error
+  const [error, setError] = useState<string | null>(null); // เพิ่ม State Error
 
   const [myClasses, setMyClasses] = useState<ClassItem[]>([]);
   const [joinedClasses, setJoinedClasses] = useState<ClassItem[]>([]);
@@ -136,10 +136,10 @@ function Myclass() {
 
           const createdDate = c.createAt
             ? new Date(c.createAt).toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })
             : "";
 
           const myRole = myUserClassEntry.role?.roleName?.toLowerCase();
@@ -170,7 +170,7 @@ function Myclass() {
       }
     } catch (err: any) {
       console.error("Failed to fetch classes:", err);
-      setError(err?.message || "Failed to load classes."); // ✅ Set Error message
+      setError(err?.message || "Failed to load classes."); // Set Error message
     } finally {
       setLoading(false);
     }
@@ -246,7 +246,7 @@ function Myclass() {
         <Sidebar />
 
         <div className="p-8 max-w-7xl mx-auto min-h-screen flex flex-col space-y-12">
-          
+
           {/* ================= My Courses Section ================= */}
           <div>
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
@@ -329,14 +329,14 @@ function Myclass() {
             {/* ✅ ใช้ Logic Loading แบบเดียวกัน หรือแยกตามต้องการ (ที่นี่ใช้ตัวแปร loading ตัวเดียวกัน) */}
             <div className="min-h-[300px]">
               {loading ? (
-                 <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
-                   Loading enrolled courses...
-                 </div>
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
+                  Loading enrolled courses...
+                </div>
               ) : error ? (
-                 <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-center">
-                   Error: {error}
-                 </div>
+                <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-center">
+                  Error: {error}
+                </div>
               ) : (
                 <>
                   {joinedClasses.length === 0 ? (
@@ -421,15 +421,15 @@ function Myclass() {
                   <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${isErrorModal(confirmTitle) ? "bg-red-600" : "bg-red-600"} shadow-md`}>
                     {isErrorModal(confirmTitle) ? (
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M6 6L18 18M6 18L18 6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     ) : (
                       // trash icon for delete-confirm modal
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M3 6h18" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M10 11v6M14 11v6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M3 6h18" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M10 11v6M14 11v6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
                   </div>
@@ -446,9 +446,8 @@ function Myclass() {
                 <div className="px-6 pb-6 pt-4">
                   <p
                     id="confirm-modal-desc"
-                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${
-                      !isErrorModal(confirmTitle) ? "text-center text-lg font-semibold" : ""
-                    }`}
+                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${!isErrorModal(confirmTitle) ? "text-center text-lg font-semibold" : ""
+                      }`}
                   >
                     {confirmMessage}
                   </p>
@@ -494,7 +493,7 @@ function Myclass() {
                   className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
               </div>

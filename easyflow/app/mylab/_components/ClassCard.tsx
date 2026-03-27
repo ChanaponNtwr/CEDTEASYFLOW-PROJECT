@@ -44,7 +44,7 @@ function ClassCard({
   onDeleteClick,
 }: ClassCardProps) {
   const headerTitle = title || (code ? `Lab ${code}` : "No Title");
-  
+
   // คำนวณสีพื้นหลังเพียงครั้งเดียว
   const bgGradient = useMemo(() => getGradient(code || Math.random()), [code]);
 
@@ -85,10 +85,10 @@ function ClassCard({
 
       {/* Header Section with Random Gradient */}
       <div className={`h-24 bg-gradient-to-r ${bgGradient} p-5 relative`}>
-         {/* Icon Container */}
-         <div className="absolute -bottom-6 left-5 w-12 h-12 bg-white rounded-xl shadow-md flex items-center justify-center p-2 border border-gray-50">
-            <img src="/images/lab.png" alt="lab icon" className="w-full h-full object-contain" />
-         </div>
+        {/* Icon Container */}
+        <div className="absolute -bottom-6 left-5 w-12 h-12 bg-white rounded-xl shadow-md flex items-center justify-center p-2 border border-gray-50">
+          <img src="/images/lab.png" alt="lab icon" className="w-full h-full object-contain" />
+        </div>
       </div>
 
       {/* Body Section */}
@@ -97,7 +97,7 @@ function ClassCard({
         <h3 className="text-lg font-bold text-gray-800 truncate mb-1" title={headerTitle}>
           {headerTitle}
         </h3>
-        
+
         {/* Problem Description (Short) */}
         <p className="text-xs text-gray-500 line-clamp-2 mb-4 h-12 leading-relaxed">
           {problem || "No description provided."}
@@ -105,19 +105,19 @@ function ClassCard({
 
         {/* Footer Info */}
         <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500">
-           <div className="flex items-center gap-1.5 overflow-hidden">
-              <FaUser className="text-gray-300 flex-shrink-0" />
-              <span className="truncate max-w-[100px] font-medium text-gray-600">
-                {teacher || "Unknown"}
-              </span>
-           </div>
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <FaUser className="text-gray-300 flex-shrink-0" />
+            <span className="truncate max-w-[100px] font-medium text-gray-600">
+              {teacher || "Unknown"}
+            </span>
+          </div>
 
-           {score !== undefined && (
-             <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-md border border-gray-100">
-                
-                <span className="font-bold text-gray-700">{score} pts</span>
-             </div>
-           )}
+          {score !== undefined && (
+            <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-md border border-gray-100">
+
+              <span className="font-bold text-gray-700">{score} pts</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-"use client"; 
+"use client";
 
 import { FaCode, FaEdit, FaTrash, FaRegCalendarAlt } from "react-icons/fa";
 
@@ -19,7 +19,7 @@ function AssignmentItem({
 }: AssignmentItemProps) {
   return (
     <div className="group relative bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-100 transition-all duration-200 cursor-pointer flex items-start sm:items-center justify-between gap-4">
-      
+
       {/* Decorative Left Strip (Optional visual indicator) */}
       <div className="absolute left-0 top-4 bottom-4 w-1 bg-blue-500 rounded-r-full opacity-0 group-hover:opacity-100 transition-opacity" />
 
@@ -47,7 +47,7 @@ function AssignmentItem({
           <div className="flex items-center mt-1.5 text-xs text-gray-400 font-medium">
             <FaRegCalendarAlt className="mr-1.5" />
             <span className={due.includes("No due") ? "text-gray-400" : "text-orange-500"}>
-               {due.includes("No due") ? due : `Due: ${due}`}
+              {due.includes("No due") ? due : `Due: ${due}`}
             </span>
           </div>
         </div>

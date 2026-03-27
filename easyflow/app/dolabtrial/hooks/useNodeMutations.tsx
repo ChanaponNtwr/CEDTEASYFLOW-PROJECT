@@ -53,7 +53,7 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
       });
     }, [setEdges]
   );
-  
+
   const handleUpdateNode = useCallback((id: string, type: string, label: string) => {
     console.log("📝 handleUpdateNode called with:", { id, type, label });
     setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, label }, type: mapTypeForNode(type, n.type) } : n)));
@@ -93,8 +93,8 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
 
     closeNodeModal();
   }, [setNodes, setEdges, closeNodeModal]);
-  
-  const createNode = useCallback((typeKey: string, label: string, x = 300, y = 0) => 
+
+  const createNode = useCallback((typeKey: string, label: string, x = 300, y = 0) =>
     ({ id: genId(), type: typeKey, data: { label }, position: { x, y }, draggable: false } as Node), []);
 
   const insertAfter = useCallback((anchorId: string, newNodes: Node[], newEdgesToAdd: Edge[], nodesOverride?: Node[], edgesOverride?: Edge[], extraEndOffset = 0) => {
@@ -121,160 +121,160 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
       return [...combined, updatedEnd];
     });
   }, [setNodes, setEdges]);
-  
+
   const addNodeOnSelectedEdge = useCallback((type: string, label: string) => {
-      if (!selectedEdge) return;
-      const { source, target, sourceHandle, targetHandle } = selectedEdge;
-      const sourceNode = nodes.find((n) => n.id === source);
-      const targetNode = nodes.find((n) => n.id === target);
-      if (!sourceNode || !targetNode) return;
+    if (!selectedEdge) return;
+    const { source, target, sourceHandle, targetHandle } = selectedEdge;
+    const sourceNode = nodes.find((n) => n.id === source);
+    const targetNode = nodes.find((n) => n.id === target);
+    if (!sourceNode || !targetNode) return;
 
-      if (source === target && (sourceNode.type === "while" || sourceNode.type === "for")) {
-        const isWhile = sourceNode.type === "while";
-        const bodyHandle = isWhile ? "true" : "loop_body";
-        const returnHandle = isWhile ? "loop_in" : "loop_return";
-        const loopLabel = "True";
-        const newX = sourceNode.position.x + 250;
-        const newY = sourceNode.position.y + 50;
-        const nodesToAdd: Node[] = [];
-        const edgesToAdd: Edge[] = [];
-
-        if (type === "if") {
-          const ifNode = createNode("if", label, newX, newY);
-          const bp = createNode("breakpoint", "", newX, newY + stepY);
-          nodesToAdd.push(ifNode, bp);
-          edgesToAdd.push(createArrowEdge(sourceNode.id, ifNode.id, { label: loopLabel, sourceHandle: bodyHandle }));
-          edgesToAdd.push(createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }));
-          edgesToAdd.push(createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }));
-          edgesToAdd.push({ ...createArrowEdge(bp.id, sourceNode.id, { targetHandle: returnHandle }), type: "smoothstep" });
-        } else {
-          const createdType = mapTypeForNode(type) as string;
-          const newNode = createNode(createdType, label, newX, newY);
-          nodesToAdd.push(newNode);
-          edgesToAdd.push(createArrowEdge(sourceNode.id, newNode.id, { label: loopLabel, sourceHandle: bodyHandle }));
-
-          // create return edge (smooth) without unknown props in literal
-          const returnEdgeBase = { ...createArrowEdge(newNode.id, sourceNode.id, { targetHandle: returnHandle }) } as any;
-          returnEdgeBase.type = "smoothstep";
-          edgesToAdd.push(returnEdgeBase as Edge);
-        }
-
-        setNodes((nds) => [...nds, ...nodesToAdd]);
-        setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge.id), ...edgesToAdd]);
-        closeModal();
-        return;
-      }
-      
-      const isBranchingFromIf = sourceNode.type === "if" && (sourceHandle === "right" || sourceHandle === "left");
-      if (isBranchingFromIf) {
-          const isTrue = sourceHandle === "right";
-          const stepX = 200;
-          const offsetX = isTrue ? sourceNode.position.x + stepX : sourceNode.position.x - stepX;
-          const baseYEdge = sourceNode.position.y + stepY;
-
-          if (type === "if") {
-            const yOffset = stepY * 2;
-            const nodesToMove = nodes.filter((n) => n.position.y > sourceNode.position.y);
-            const moved = nodesToMove.map((n) => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
-            const newIf = createNode("if", label, offsetX, baseYEdge);
-            const newBp = createNode("breakpoint", "", offsetX, baseYEdge + stepY);
-            const newEdges = [
-              createArrowEdge(sourceNode.id, newIf.id, { label: isTrue ? "True" : "False", sourceHandle: sourceHandle ?? undefined }),
-              createArrowEdge(newIf.id, newBp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
-              createArrowEdge(newIf.id, newBp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
-              createArrowEdge(newBp.id, targetNode.id, { targetHandle: targetHandle ?? undefined }),
-            ];
-
-            const remaining = nodes.filter((p) => !nodesToMove.some((n) => n.id === p.id) && p.id !== "end");
-            const combined = [...remaining, ...moved.filter((n) => n.id !== "end"), newIf, newBp];
-            const updatedEnd = { ...(nodes.find((n) => n.id === "end")!), position: { x: 300, y: computeEndY(combined) } };
-            setNodes([...combined, updatedEnd]);
-            setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge.id), ...newEdges]);
-          } else {
-            const yOffset = stepY;
-            const nodesToMove = nodes.filter((n) => n.position.y > sourceNode.position.y);
-            const moved = nodesToMove.map((n) => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
-            const createdType = mapTypeForNode(type) as string;
-            const newNode = createNode(createdType, label, offsetX, baseYEdge);
-            const newEdges = [
-              createArrowEdge(sourceNode.id, newNode.id, { label: isTrue ? "True" : "False", sourceHandle: sourceHandle ?? undefined }),
-              createArrowEdge(newNode.id, targetNode.id, { targetHandle: targetHandle ?? undefined }),
-            ];
-            const remaining = nodes.filter((p) => !nodesToMove.some((n) => n.id === p.id) && p.id !== "end");
-            const combined = [...remaining, ...moved.filter((n) => n.id !== "end"), newNode];
-            const updatedEnd = { ...(nodes.find((n) => n.id === "end")!), position: { x: 300, y: computeEndY(combined) } };
-            setNodes([...combined, updatedEnd]);
-            setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge.id), ...newEdges]);
-          }
-
-          closeModal();
-          return;
-      }
-
-      const yOffset = ["if", "while", "for"].includes(type) ? stepY * 2 : stepY;
-      const nodesToMove = nodes.filter((n) => n.position.y > sourceNode.position.y);
-      const moved = nodesToMove.map((n) => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
-
-      let newPosX = sourceNode.position.x;
-      if (sourceNode.type === "breakpoint") {
-        const incomingEdge = edges.find((e) => e.target === sourceNode.id);
-        if (incomingEdge) {
-          const parentIf = nodes.find((n) => n.id === incomingEdge.source);
-          if (parentIf) newPosX = parentIf.position.x;
-        }
-      }
-
-      const newNodesToAdd: Node[] = [];
-      const newEdgesToAdd: Edge[] = [];
+    if (source === target && (sourceNode.type === "while" || sourceNode.type === "for")) {
+      const isWhile = sourceNode.type === "while";
+      const bodyHandle = isWhile ? "true" : "loop_body";
+      const returnHandle = isWhile ? "loop_in" : "loop_return";
+      const loopLabel = "True";
+      const newX = sourceNode.position.x + 250;
+      const newY = sourceNode.position.y + 50;
+      const nodesToAdd: Node[] = [];
+      const edgesToAdd: Edge[] = [];
 
       if (type === "if") {
-        const ifNode = createNode("if", label, newPosX, sourceNode.position.y + stepY);
-        const bp = createNode("breakpoint", "", newPosX, sourceNode.position.y + stepY * 2);
-        newNodesToAdd.push(ifNode, bp);
-        newEdgesToAdd.push(
-          createArrowEdge(sourceNode.id, ifNode.id, { sourceHandle: sourceHandle ?? undefined }),
-          createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
-          createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
-          createArrowEdge(bp.id, targetNode.id, { targetHandle: targetHandle ?? undefined })
-        );
-      } else if (type === "while") {
-        const whileNode = createNode("while", label, newPosX, sourceNode.position.y + stepY + 60);
-        newNodesToAdd.push(whileNode);
-        newEdgesToAdd.push(
-          createArrowEdge(sourceNode.id, whileNode.id, { sourceHandle: sourceHandle ?? undefined, targetHandle: "top" }),
-          createArrowEdge(whileNode.id, targetNode.id, { label: "False", sourceHandle: "false", targetHandle: targetHandle ?? undefined })
-        );
-
-        // self loop edge created via helper to avoid unknown-literal props
-        const selfLoop = createSmoothLoopEdge(createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }), 60, false);
-        newEdgesToAdd.push(selfLoop);
-      } else if (type === "for") {
-        const forNode = createNode("for", label, newPosX, sourceNode.position.y + stepY + 60);
-        newNodesToAdd.push(forNode);
-        newEdgesToAdd.push(
-          createArrowEdge(sourceNode.id, forNode.id, { sourceHandle: sourceHandle ?? undefined, targetHandle: "top" }),
-          createArrowEdge(forNode.id, targetNode.id, { label: "False", sourceHandle: "next", targetHandle: targetHandle ?? undefined })
-        );
-
-        const selfLoopFor = createSmoothLoopEdge(createArrowEdge(forNode.id, forNode.id, { label: "True", sourceHandle: "loop_body", targetHandle: "loop_return" }), 60, false);
-        newEdgesToAdd.push(selfLoopFor);
+        const ifNode = createNode("if", label, newX, newY);
+        const bp = createNode("breakpoint", "", newX, newY + stepY);
+        nodesToAdd.push(ifNode, bp);
+        edgesToAdd.push(createArrowEdge(sourceNode.id, ifNode.id, { label: loopLabel, sourceHandle: bodyHandle }));
+        edgesToAdd.push(createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }));
+        edgesToAdd.push(createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }));
+        edgesToAdd.push({ ...createArrowEdge(bp.id, sourceNode.id, { targetHandle: returnHandle }), type: "smoothstep" });
       } else {
         const createdType = mapTypeForNode(type) as string;
-        const newNode = createNode(createdType, label, newPosX, sourceNode.position.y + stepY);
-        newNodesToAdd.push(newNode);
-        newEdgesToAdd.push(createArrowEdge(sourceNode.id, newNode.id, { sourceHandle: sourceHandle ?? undefined }));
-        newEdgesToAdd.push(createArrowEdge(newNodesToAdd[0].id, targetNode.id, { targetHandle: targetHandle ?? undefined }));
+        const newNode = createNode(createdType, label, newX, newY);
+        nodesToAdd.push(newNode);
+        edgesToAdd.push(createArrowEdge(sourceNode.id, newNode.id, { label: loopLabel, sourceHandle: bodyHandle }));
+
+        // create return edge (smooth) without unknown props in literal
+        const returnEdgeBase = { ...createArrowEdge(newNode.id, sourceNode.id, { targetHandle: returnHandle }) } as any;
+        returnEdgeBase.type = "smoothstep";
+        edgesToAdd.push(returnEdgeBase as Edge);
       }
 
-      const remaining = nodes.filter((p) => !nodesToMove.some((n) => n.id === p.id));
-      const combined = [...remaining.filter((n) => n.id !== "end"), ...moved.filter((n) => n.id !== "end"), ...newNodesToAdd];
-      const updatedEnd = { ...(nodes.find((n) => n.id === "end")!), position: { x: 300, y: computeEndY(combined) + (["while", "for"].includes(type) ? stepY : 0) } };
-
-      setNodes([...combined, updatedEnd]);
-      setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge?.id), ...newEdgesToAdd]);
+      setNodes((nds) => [...nds, ...nodesToAdd]);
+      setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge.id), ...edgesToAdd]);
       closeModal();
+      return;
+    }
+
+    const isBranchingFromIf = sourceNode.type === "if" && (sourceHandle === "right" || sourceHandle === "left");
+    if (isBranchingFromIf) {
+      const isTrue = sourceHandle === "right";
+      const stepX = 200;
+      const offsetX = isTrue ? sourceNode.position.x + stepX : sourceNode.position.x - stepX;
+      const baseYEdge = sourceNode.position.y + stepY;
+
+      if (type === "if") {
+        const yOffset = stepY * 2;
+        const nodesToMove = nodes.filter((n) => n.position.y > sourceNode.position.y);
+        const moved = nodesToMove.map((n) => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
+        const newIf = createNode("if", label, offsetX, baseYEdge);
+        const newBp = createNode("breakpoint", "", offsetX, baseYEdge + stepY);
+        const newEdges = [
+          createArrowEdge(sourceNode.id, newIf.id, { label: isTrue ? "True" : "False", sourceHandle: sourceHandle ?? undefined }),
+          createArrowEdge(newIf.id, newBp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
+          createArrowEdge(newIf.id, newBp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
+          createArrowEdge(newBp.id, targetNode.id, { targetHandle: targetHandle ?? undefined }),
+        ];
+
+        const remaining = nodes.filter((p) => !nodesToMove.some((n) => n.id === p.id) && p.id !== "end");
+        const combined = [...remaining, ...moved.filter((n) => n.id !== "end"), newIf, newBp];
+        const updatedEnd = { ...(nodes.find((n) => n.id === "end")!), position: { x: 300, y: computeEndY(combined) } };
+        setNodes([...combined, updatedEnd]);
+        setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge.id), ...newEdges]);
+      } else {
+        const yOffset = stepY;
+        const nodesToMove = nodes.filter((n) => n.position.y > sourceNode.position.y);
+        const moved = nodesToMove.map((n) => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
+        const createdType = mapTypeForNode(type) as string;
+        const newNode = createNode(createdType, label, offsetX, baseYEdge);
+        const newEdges = [
+          createArrowEdge(sourceNode.id, newNode.id, { label: isTrue ? "True" : "False", sourceHandle: sourceHandle ?? undefined }),
+          createArrowEdge(newNode.id, targetNode.id, { targetHandle: targetHandle ?? undefined }),
+        ];
+        const remaining = nodes.filter((p) => !nodesToMove.some((n) => n.id === p.id) && p.id !== "end");
+        const combined = [...remaining, ...moved.filter((n) => n.id !== "end"), newNode];
+        const updatedEnd = { ...(nodes.find((n) => n.id === "end")!), position: { x: 300, y: computeEndY(combined) } };
+        setNodes([...combined, updatedEnd]);
+        setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge.id), ...newEdges]);
+      }
+
+      closeModal();
+      return;
+    }
+
+    const yOffset = ["if", "while", "for"].includes(type) ? stepY * 2 : stepY;
+    const nodesToMove = nodes.filter((n) => n.position.y > sourceNode.position.y);
+    const moved = nodesToMove.map((n) => ({ ...n, position: { ...n.position, y: n.position.y + yOffset } }));
+
+    let newPosX = sourceNode.position.x;
+    if (sourceNode.type === "breakpoint") {
+      const incomingEdge = edges.find((e) => e.target === sourceNode.id);
+      if (incomingEdge) {
+        const parentIf = nodes.find((n) => n.id === incomingEdge.source);
+        if (parentIf) newPosX = parentIf.position.x;
+      }
+    }
+
+    const newNodesToAdd: Node[] = [];
+    const newEdgesToAdd: Edge[] = [];
+
+    if (type === "if") {
+      const ifNode = createNode("if", label, newPosX, sourceNode.position.y + stepY);
+      const bp = createNode("breakpoint", "", newPosX, sourceNode.position.y + stepY * 2);
+      newNodesToAdd.push(ifNode, bp);
+      newEdgesToAdd.push(
+        createArrowEdge(sourceNode.id, ifNode.id, { sourceHandle: sourceHandle ?? undefined }),
+        createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }),
+        createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }),
+        createArrowEdge(bp.id, targetNode.id, { targetHandle: targetHandle ?? undefined })
+      );
+    } else if (type === "while") {
+      const whileNode = createNode("while", label, newPosX, sourceNode.position.y + stepY + 60);
+      newNodesToAdd.push(whileNode);
+      newEdgesToAdd.push(
+        createArrowEdge(sourceNode.id, whileNode.id, { sourceHandle: sourceHandle ?? undefined, targetHandle: "top" }),
+        createArrowEdge(whileNode.id, targetNode.id, { label: "False", sourceHandle: "false", targetHandle: targetHandle ?? undefined })
+      );
+
+      // self loop edge created via helper to avoid unknown-literal props
+      const selfLoop = createSmoothLoopEdge(createArrowEdge(whileNode.id, whileNode.id, { label: "True", sourceHandle: "true", targetHandle: "loop_in" }), 60, false);
+      newEdgesToAdd.push(selfLoop);
+    } else if (type === "for") {
+      const forNode = createNode("for", label, newPosX, sourceNode.position.y + stepY + 60);
+      newNodesToAdd.push(forNode);
+      newEdgesToAdd.push(
+        createArrowEdge(sourceNode.id, forNode.id, { sourceHandle: sourceHandle ?? undefined, targetHandle: "top" }),
+        createArrowEdge(forNode.id, targetNode.id, { label: "False", sourceHandle: "next", targetHandle: targetHandle ?? undefined })
+      );
+
+      const selfLoopFor = createSmoothLoopEdge(createArrowEdge(forNode.id, forNode.id, { label: "True", sourceHandle: "loop_body", targetHandle: "loop_return" }), 60, false);
+      newEdgesToAdd.push(selfLoopFor);
+    } else {
+      const createdType = mapTypeForNode(type) as string;
+      const newNode = createNode(createdType, label, newPosX, sourceNode.position.y + stepY);
+      newNodesToAdd.push(newNode);
+      newEdgesToAdd.push(createArrowEdge(sourceNode.id, newNode.id, { sourceHandle: sourceHandle ?? undefined }));
+      newEdgesToAdd.push(createArrowEdge(newNodesToAdd[0].id, targetNode.id, { targetHandle: targetHandle ?? undefined }));
+    }
+
+    const remaining = nodes.filter((p) => !nodesToMove.some((n) => n.id === p.id));
+    const combined = [...remaining.filter((n) => n.id !== "end"), ...moved.filter((n) => n.id !== "end"), ...newNodesToAdd];
+    const updatedEnd = { ...(nodes.find((n) => n.id === "end")!), position: { x: 300, y: computeEndY(combined) + (["while", "for"].includes(type) ? stepY : 0) } };
+
+    setNodes([...combined, updatedEnd]);
+    setEdges((eds) => [...eds.filter((e) => e.id !== selectedEdge?.id), ...newEdgesToAdd]);
+    closeModal();
   }, [nodes, edges, selectedEdge, setNodes, setEdges, closeModal, createNode]);
-  
+
   const addNode = useCallback((type: string, label: string, anchorId?: string) => {
     const startNode = nodes.find((n) => n.id === "start");
     const endNode = nodes.find((n) => n.id === "end");
@@ -339,33 +339,33 @@ export const useNodeMutations = ({ nodes, setNodes, edges, setEdges, selectedEdg
       const ifNode = createNode("if", label, 300, baseY);
       const bp = createNode("breakpoint", "", 300, baseY + stepY);
       const newEdges = [createArrowEdge(previousNode.id, ifNode.id), createArrowEdge(ifNode.id, bp.id, { label: "True", sourceHandle: "right", targetHandle: "true" }), createArrowEdge(ifNode.id, bp.id, { label: "False", sourceHandle: "left", targetHandle: "false" }), createArrowEdge(bp.id, nodes.find((n) => n.id === "end")!.id)];
-      const updatedNodes = [...nodes.filter(n => n.id !== 'end'), ifNode, bp, {...(nodes.find(n => n.id === 'end')!), position: {x: 300, y: computeEndY([...nodes, ifNode, bp])}}];
+      const updatedNodes = [...nodes.filter(n => n.id !== 'end'), ifNode, bp, { ...(nodes.find(n => n.id === 'end')!), position: { x: 300, y: computeEndY([...nodes, ifNode, bp]) } }];
       setNodes(updatedNodes);
       setEdges((eds) => [...eds.filter((e) => !(e.source === previousNode.id && e.target === (nodes.find(n => n.id === 'end')!.id))), ...newEdges]);
       return;
     }
     if (type === "while" || type === "for") {
-        const loopNode = createNode(type, label, 300, baseY);
-        const newEdges: Edge[] = [
-            createArrowEdge(previousNode.id, loopNode.id, { targetHandle: "top" }),
-            createArrowEdge(loopNode.id, (nodes.find(n => n.id === 'end')!).id, { label: "False", sourceHandle: type === "while" ? "false" : "next" })
-        ];
+      const loopNode = createNode(type, label, 300, baseY);
+      const newEdges: Edge[] = [
+        createArrowEdge(previousNode.id, loopNode.id, { targetHandle: "top" }),
+        createArrowEdge(loopNode.id, (nodes.find(n => n.id === 'end')!).id, { label: "False", sourceHandle: type === "while" ? "false" : "next" })
+      ];
 
-        const selfLoopBase = createSmoothLoopEdge(createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }), 60, true);
-        newEdges.push(selfLoopBase);
+      const selfLoopBase = createSmoothLoopEdge(createArrowEdge(loopNode.id, loopNode.id, { label: "True", sourceHandle: type === "while" ? "true" : "loop_body", targetHandle: type === "while" ? "loop_in" : "loop_return" }), 60, true);
+      newEdges.push(selfLoopBase);
 
-        const updatedNodes = [...nodes.filter(n => n.id !== 'end'), loopNode, {...(nodes.find(n => n.id === 'end')!), position: {x: 300, y: computeEndY([...nodes, loopNode]) + stepY}}];
-        setNodes(updatedNodes);
-        setEdges(eds => [...eds.filter(e => !(e.source === previousNode.id && e.target === (nodes.find(n => n.id === 'end')!.id))), ...newEdges]);
-        return;
+      const updatedNodes = [...nodes.filter(n => n.id !== 'end'), loopNode, { ...(nodes.find(n => n.id === 'end')!), position: { x: 300, y: computeEndY([...nodes, loopNode]) + stepY } }];
+      setNodes(updatedNodes);
+      setEdges(eds => [...eds.filter(e => !(e.source === previousNode.id && e.target === (nodes.find(n => n.id === 'end')!.id))), ...newEdges]);
+      return;
     }
 
     const newNode = createNode(mapTypeForNode(type), label, 300, baseY);
     const newEdges = [createArrowEdge(previousNode.id, newNode.id), createArrowEdge(newNode.id, (nodes.find(n => n.id === 'end')!).id)];
-    const updatedNodes = [...nodes.filter(n => n.id !== 'end'), newNode, {...(nodes.find(n => n.id === 'end')!), position: {x: 300, y: computeEndY([...nodes, newNode])}}];
+    const updatedNodes = [...nodes.filter(n => n.id !== 'end'), newNode, { ...(nodes.find(n => n.id === 'end')!), position: { x: 300, y: computeEndY([...nodes, newNode]) } }];
     setNodes(updatedNodes);
     setEdges(eds => [...eds.filter(e => !(e.source === previousNode.id && e.target === (nodes.find(n => n.id === 'end')!.id))), ...newEdges]);
-    
+
   }, [nodes, edges, selectedEdge, addNodeOnSelectedEdge, createNode, insertAfter, setEdges, setNodes]);
 
 

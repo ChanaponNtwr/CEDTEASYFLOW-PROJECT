@@ -623,7 +623,7 @@ export default function CreateLabPage() {
             variants={backdropVariants}
             aria-modal="true"
             role="dialog"
-            onClick={() => {}}
+            onClick={() => { }}
           >
             <motion.div
               className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -647,14 +647,12 @@ export default function CreateLabPage() {
             >
               <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
                 <div
-                  className={`px-6 pt-8 pb-6 flex flex-col items-center ${
-                    isErrorModal() ? "bg-red-50" : "bg-green-50"
-                  }`}
+                  className={`px-6 pt-8 pb-6 flex flex-col items-center ${isErrorModal() ? "bg-red-50" : "bg-green-50"
+                    }`}
                 >
                   <div
-                    className={`flex items-center justify-center w-20 h-20 rounded-xl ${
-                      isErrorModal() ? "bg-red-600" : "bg-green-600"
-                    } shadow-md`}
+                    className={`flex items-center justify-center w-20 h-20 rounded-xl ${isErrorModal() ? "bg-red-600" : "bg-green-600"
+                      } shadow-md`}
                   >
                     {isErrorModal() ? (
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -681,9 +679,8 @@ export default function CreateLabPage() {
 
                   <h3
                     id="modal-title"
-                    className={`mt-4 text-2xl font-extrabold ${
-                      isErrorModal() ? "text-red-700" : "text-green-700"
-                    }`}
+                    className={`mt-4 text-2xl font-extrabold ${isErrorModal() ? "text-red-700" : "text-green-700"
+                      }`}
                   >
                     {modalTitle}
                   </h3>
@@ -692,9 +689,8 @@ export default function CreateLabPage() {
                 <div className="px-6 pb-6 pt-4">
                   <p
                     id="modal-desc"
-                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${
-                      successModal ? "text-center text-lg font-semibold" : ""
-                    }`}
+                    className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${successModal ? "text-center text-lg font-semibold" : ""
+                      }`}
                   >
                     {modalMessage}
                   </p>

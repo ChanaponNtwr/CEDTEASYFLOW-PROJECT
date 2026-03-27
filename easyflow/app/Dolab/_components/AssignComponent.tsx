@@ -103,7 +103,7 @@ const AssignComponent: React.FC<Props> = ({ data }) => {
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ filter: "url(#assign-glow)"}}
+              style={{ filter: "url(#assign-glow)" }}
             />
             {/* crisp outer stroke */}
             <rect

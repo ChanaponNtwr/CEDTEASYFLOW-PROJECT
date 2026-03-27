@@ -201,26 +201,26 @@ export const apiCreateLab = async (labPayload) => {
       {
         headers: { "Content-Type": "application/json" },
         validateStatus: (status) => status >= 200 && status < 300,
+      }
+    );
+
+
+    // Accept 200 or 201 as success
+    if (resp.status !== 200 && resp.status !== 201) {
+      console.warn(`apiCreateLab: expected 200/201 but got ${resp.status}`);
     }
-  );
 
 
-// Accept 200 or 201 as success
-  if (resp.status !== 200 && resp.status !== 201) {
-    console.warn(`apiCreateLab: expected 200/201 but got ${resp.status}`);
-  }
-
-
-// Return created lab object or whatever backend returns
-  return resp.data;
+    // Return created lab object or whatever backend returns
+    return resp.data;
   } catch (err) {
-  console.error("apiCreateLab error:", err?.response ?? err);
-  const message = err?.response?.data?.message || err?.message || "apiCreateLab failed";
-  const e = new Error(message);
-  e.response = err?.response;
-  throw e;
+    console.error("apiCreateLab error:", err?.response ?? err);
+    const message = err?.response?.data?.message || err?.message || "apiCreateLab failed";
+    const e = new Error(message);
+    e.response = err?.response;
+    throw e;
   }
-  };
+};
 
 
 // เพิ่มที่ท้ายไฟล์ FlowchartService.js
@@ -404,10 +404,10 @@ export const apiAddLabToClass = async (classId, labId, userId, dueDate) => {
 
   try {
     const url = `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs`;
-    
+
     // Body: { "labId": 3, "dueDate": "..." }
-    const payload = { 
-      labId: Number(labId) 
+    const payload = {
+      labId: Number(labId)
     };
 
     // ถ้ามี dueDate ส่งมาด้วย ให้เพิ่มเข้าไปใน body
@@ -440,9 +440,9 @@ export const apiUpdateLabDueDate = async (classId, labId, userId, newDueDate) =>
 
   try {
     const url = `${BASE_URL}/classes/${encodeURIComponent(classId)}/labs/${encodeURIComponent(labId)}`;
-    
-    const payload = { 
-      dueDate: newDueDate 
+
+    const payload = {
+      dueDate: newDueDate
     };
 
     const resp = await axios.patch(url, payload, {
@@ -532,11 +532,11 @@ export const apiSearchUsers = async (classId, query, currentUserId) => {
     const url = `${BASE_URL}/classes/${encodeURIComponent(classId)}/users/search`;
 
     const resp = await axios.get(url, {
-      params: { q: query }, 
-      headers: { 
+      params: { q: query },
+      headers: {
         "Content-Type": "application/json",
         // 2. เพิ่ม Header x-user-id ตาม Requirement
-        "x-user-id": currentUserId 
+        "x-user-id": currentUserId
       },
     });
 
@@ -559,7 +559,7 @@ export const apiAddUserToClass = async (classId, targetUserId, roleId, actorId) 
   try {
     const response = await axios.post(
       `${BASE_URL}/classes/${encodeURIComponent(classId)}/users`,
-      { 
+      {
         userId: Number(targetUserId), // แปลงเป็น int
         roleId: Number(roleId)        // แปลงเป็น int
       },
@@ -572,7 +572,7 @@ export const apiAddUserToClass = async (classId, targetUserId, roleId, actorId) 
     );
 
     // Expected Response: { ok: true, result: { userId: 8, classId: 17, roleId: 2 } }
-    return response.data; 
+    return response.data;
   } catch (error) {
     console.error("apiAddUserToClass error:", error?.response ?? error);
     throw error;
@@ -650,9 +650,9 @@ export const apiGetTrialFlowchart = async (trialId) => {
   try {
     // ยิง GET ไปที่ /trial/{trialId}/flowchart
     const response = await axios.get(`${BASE_URL}/trial/${trialId}/flowchart`);
-    
+
     // คาดหวัง return เป็น { ok: true, flowchart: { nodes: [], edges: [] }, ... }
-    return response.data; 
+    return response.data;
   } catch (err) {
     console.error("apiGetFlowchart error:", err);
     throw err;
@@ -792,7 +792,7 @@ export const apiGetTrialShapeRemaining = async (trialId) => {
 
   try {
     const resp = await axios.get(`${BASE_URL}/trial/${trialId}/shapes/remaining`);
-    
+
     // คาดหวัง response: { ok: true, trialId: "...", shapeRemaining: { ... } }
     return resp.data;
   } catch (err) {
@@ -858,9 +858,9 @@ export const apiConfirmSubmission = async (labId, studentUserId, reviewerId) => 
 
   try {
     const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}/user/${encodeURIComponent(studentUserId)}/confirm`;
-    
-    const payload = { 
-      reviewerId: Number(reviewerId) 
+
+    const payload = {
+      reviewerId: Number(reviewerId)
     };
 
     const resp = await axios.post(url, payload);
@@ -882,9 +882,9 @@ export const apiRejectSubmission = async (labId, studentUserId, reviewerId) => {
 
   try {
     const url = `${BASE_URL}/api/submission/lab/${encodeURIComponent(labId)}/user/${encodeURIComponent(studentUserId)}/reject`;
-    
-    const payload = { 
-      reviewerId: Number(reviewerId) 
+
+    const payload = {
+      reviewerId: Number(reviewerId)
     };
 
     const resp = await axios.post(url, payload);
@@ -1024,7 +1024,7 @@ export const apiCancelSubmission = async (labId, userId) => {
 
     const resp = await axios.post(url, {}); // body ว่างตาม spec
 
-    return resp.data; 
+    return resp.data;
     // expected เช่น { ok: true, message: "Submission canceled" }
   } catch (err) {
     console.error("apiCancelSubmission error:", err?.response ?? err);

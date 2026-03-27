@@ -29,8 +29,8 @@ function Tabs({ classId, activeTab = "Classwork", onTabChange }: TabsProps) {
             }}
             className={`
               relative px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200
-              ${isActive 
-                ? "bg-blue-600 text-white shadow-md shadow-blue-200" 
+              ${isActive
+                ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                 : "text-gray-500 hover:text-gray-800 hover:bg-gray-100"
               }
             `}

@@ -494,10 +494,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase().trim();
     const rawLabel = String(
       nodeToEdit.label ??
-        nodeToEdit.data?.label ??
-        nodeToEdit.data?.message ??
-        nodeToEdit.data?.condition ??
-        ""
+      nodeToEdit.data?.label ??
+      nodeToEdit.data?.message ??
+      nodeToEdit.data?.condition ??
+      ""
     ).trim();
 
     const stripQuotes = (s: any) => {
@@ -745,12 +745,14 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       description: "A For Loop increments or decrements a variable through a range of values.",
       icon: "/images/shape_while.png",
       fields: [
-        { kind: "group", key: "group", fields: [
-          { kind: "simple", key: "variable", placeholder: "variable", value: forVariable, setValue: setForVariable },
-          { kind: "simple", key: "step", placeholder: "step", value: forStep, setValue: setForStep },
-          { kind: "simple", key: "start", placeholder: "start", value: forStart, setValue: setForStart },
-          { kind: "simple", key: "end", placeholder: "end", value: forEnd, setValue: setForEnd },
-        ]},
+        {
+          kind: "group", key: "group", fields: [
+            { kind: "simple", key: "variable", placeholder: "variable", value: forVariable, setValue: setForVariable },
+            { kind: "simple", key: "step", placeholder: "step", value: forStep, setValue: setForStep },
+            { kind: "simple", key: "start", placeholder: "start", value: forStart, setValue: setForStart },
+            { kind: "simple", key: "end", placeholder: "end", value: forEnd, setValue: setForEnd },
+          ]
+        },
       ],
       onSubmit: (e) => {
         e.preventDefault();
@@ -1061,7 +1063,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                     className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                      <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </button>
                 </div>

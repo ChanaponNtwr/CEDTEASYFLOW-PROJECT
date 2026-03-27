@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiGetFlowchart } from "@/app/service/FlowchartService"; 
+import { apiGetFlowchart } from "@/app/service/FlowchartService";
 import { Node, Edge } from "@xyflow/react";
 import { convertBackendFlowchart } from "../utils/backendConverter";
 
@@ -14,7 +14,7 @@ export const useFlowchartApi = ({ flowchartId, setNodes, setEdges }: UseFlowchar
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // 🟡 DEBUG: เช็คว่า ID เข้ามาใน Hook หรือไม่
+    // DEBUG: เช็คว่า ID เข้ามาใน Hook หรือไม่
     console.log(`🪝 [useFlowchartApi] Hook triggered with ID: ${flowchartId} (type: ${typeof flowchartId})`);
 
     if (!flowchartId) {
@@ -27,31 +27,31 @@ export const useFlowchartApi = ({ flowchartId, setNodes, setEdges }: UseFlowchar
     const loadFlowchart = async () => {
       setLoading(true);
       setError(null);
-      
+
       try {
         console.log(`📡 [useFlowchartApi] Calling API for ID: ${flowchartId}`);
         const payload = await apiGetFlowchart(flowchartId);
 
         if (cancelled) return;
 
-        // 🟡 DEBUG: ดูข้อมูลดิบที่ได้จาก API
+        //  DEBUG: ดูข้อมูลดิบที่ได้จาก API
         console.log("📦 [useFlowchartApi] API Response:", payload);
-        
+
         // ส่งเข้า Converter
         const converted = convertBackendFlowchart(payload);
-        
-        // 🟡 DEBUG: ดูผลลัพธ์หลังแปลงเสร็จ
+
+        // DEBUG: ดูผลลัพธ์หลังแปลงเสร็จ
         console.log(`✅ [useFlowchartApi] Converted Nodes: ${converted.nodes.length}, Edges: ${converted.edges.length}`);
-        
+
         setNodes(converted.nodes);
         setEdges(converted.edges);
-        
+
       } catch (err: any) {
         console.error("❌ [useFlowchartApi] Error:", err);
         if (!cancelled) {
           // ถ้า Error ให้สร้าง Default Start/End
           console.log("⚠️ [useFlowchartApi] Falling back to default nodes due to error.");
-          const defaultFlow = convertBackendFlowchart(null); 
+          const defaultFlow = convertBackendFlowchart(null);
           setNodes(defaultFlow.nodes);
           setEdges(defaultFlow.edges);
           setError(err?.message ?? "Error fetching flowchart");

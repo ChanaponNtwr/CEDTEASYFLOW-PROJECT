@@ -28,8 +28,8 @@ function rand(a: number, b: number) {
 export default function ParticleCanvas3D({ enabled = true, amount = 120 }: ParticleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
-  const pointer = useRef({ x: 0, y: 0 }); 
-  const pointerTarget = useRef({ x: 0, y: 0 }); 
+  const pointer = useRef({ x: 0, y: 0 });
+  const pointerTarget = useRef({ x: 0, y: 0 });
   const particlesRef = useRef<Particle[]>([]);
   const timeRef = useRef<number>(0);
 
@@ -64,10 +64,10 @@ export default function ParticleCanvas3D({ enabled = true, amount = 120 }: Parti
     function initParticles() {
       const particles: Particle[] = new Array(amount).fill(0).map(() => {
         const baseAngle = Math.random() * Math.PI * 2;
-        const radius = rand(40, Math.max(w, h) * 0.55); 
-        const thetaSpeed = rand(0.00006, 0.00045); 
+        const radius = rand(40, Math.max(w, h) * 0.55);
+        const thetaSpeed = rand(0.00006, 0.00045);
         const phase = Math.random() * Math.PI * 2;
-        const zAmp = rand(40, 220); 
+        const zAmp = rand(40, 220);
         const zBase = rand(-200, 200);
         const size = rand(0.6, 2.2);
         const hue = Math.floor(rand(200, 60));
@@ -102,8 +102,8 @@ export default function ParticleCanvas3D({ enabled = true, amount = 120 }: Parti
 
       ctx2.clearRect(0, 0, w, h);
 
-      const tiltX = pointer.current.y * 0.45; 
-      const tiltY = pointer.current.x * -0.6; 
+      const tiltX = pointer.current.y * 0.45;
+      const tiltY = pointer.current.x * -0.6;
 
       const perspective = Math.max(400, Math.min(1400, Math.max(w, h)));
 

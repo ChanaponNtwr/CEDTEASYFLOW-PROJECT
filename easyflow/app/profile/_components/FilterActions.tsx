@@ -35,9 +35,8 @@ function FilterActions({ onCreateClick, onFilterChange }: FilterActionsProps) {
         >
           {filterOptions.find((opt) => opt.value === selectedFilter)?.label || "All"}
           <FaChevronDown
-            className={`ml-2 w-4 h-4 transition-transform duration-200 ease-in-out ${
-              isOpen ? "rotate-180" : "rotate-0"
-            }`}
+            className={`ml-2 w-4 h-4 transition-transform duration-200 ease-in-out ${isOpen ? "rotate-180" : "rotate-0"
+              }`}
           />
         </button>
         {isOpen && (

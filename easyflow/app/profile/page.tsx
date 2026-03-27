@@ -39,36 +39,36 @@ export default function Profile() {
   console.log("Session User:", session?.user);
 
   useEffect(() => {
-  if (!userId) return;
+    if (!userId) return;
 
-  const load = async () => {
-    try {
-      setLoadingFlowcharts(true);
+    const load = async () => {
+      try {
+        setLoadingFlowcharts(true);
 
-      const res = await apiGetFlowchartsByUser(userId);
+        const res = await apiGetFlowchartsByUser(userId);
 
-      const items = Array.isArray(res)
-        ? res
-        : res?.flowcharts ?? res?.data ?? [];
+        const items = Array.isArray(res)
+          ? res
+          : res?.flowcharts ?? res?.data ?? [];
 
-      const mapped = items.map((it: any) => ({
-        id: it.flowchartId ?? it.id,
-        title: it.labName ?? `Flowchart #${it.id}`,
-        image: "https://img2.pic.in.th/pic/image-113.png",
-        status: it.submissionLocked ? "done" : "todo",
-      }));
+        const mapped = items.map((it: any) => ({
+          id: it.flowchartId ?? it.id,
+          title: it.labName ?? `Flowchart #${it.id}`,
+          image: "https://img2.pic.in.th/pic/image-113.png",
+          status: it.submissionLocked ? "done" : "todo",
+        }));
 
-      setFlowcharts(mapped);
-    } catch (err) {
-      console.error(err);
-      setFlowcharts([]);
-    } finally {
-      setLoadingFlowcharts(false);
-    }
-  };
+        setFlowcharts(mapped);
+      } catch (err) {
+        console.error(err);
+        setFlowcharts([]);
+      } finally {
+        setLoadingFlowcharts(false);
+      }
+    };
 
-  load();
-}, [userId]);
+    load();
+  }, [userId]);
 
   const filteredFlowcharts = useMemo(() => {
     if (filter === "all") return flowcharts.slice();
@@ -105,9 +105,9 @@ export default function Profile() {
   // ---------------- USER DATA ----------------
   const user = session.user;
 
-  // ✅ แก้ไข: เพิ่ม (user as any).id เข้ามาเผื่อดึงค่าสี Banner
+  // แก้ไข: เพิ่ม (user as any).id เข้ามาเผื่อดึงค่าสี Banner
   const userSeed =
-  user.userId ?? (user as any).id ?? user.email ?? "default-user";
+    user.userId ?? (user as any).id ?? user.email ?? "default-user";
 
   const bannerColor = getUserBannerColor(userSeed);
 
@@ -125,7 +125,7 @@ export default function Profile() {
           className="inline-block"
         >
           <div className="relative w-[1920px] mx-auto bg-[#F5F2F0] overflow-hidden">
-            {/* ✅ RANDOM COLOR BANNER */}
+            {/* RANDOM COLOR BANNER */}
             <div
               className="absolute top-[118px] left-[15px] w-[1880px] h-[274px] rounded-t-[40px]"
               style={{ backgroundColor: bannerColor }}
@@ -134,17 +134,17 @@ export default function Profile() {
             <div className="absolute top-[392px] left-[15px] w-[1880px] h-[388px] bg-[#FBFBFB] rounded-b-[40px]" />
 
             <Image
-  src={userImage || "/default-avatar.png"}
-  alt="user"
-  width={246}
-  height={246}
-  className="absolute top-[269px] left-[84px] 
+              src={userImage || "/default-avatar.png"}
+              alt="user"
+              width={246}
+              height={246}
+              className="absolute top-[269px] left-[84px] 
               w-[246px] h-[246px] 
               rounded-full 
               border-[9px] border-white 
               bg-[#E3B8FF] 
               object-cover"
-/>
+            />
 
             <div className="absolute top-[550px] left-[84px] text-[42px] font-bold text-black">
               {user.name}

@@ -36,17 +36,17 @@ export const useFlowchartApi = ({ flowchartId, setNodes, setEdges }: UseFlowchar
 
         // --- แก้ไข: ลบเงื่อนไขที่ return ทิ้งออกให้หมด ---
         // เราจะส่ง payload ไปให้ converter จัดการต่อเสมอ แม้ว่า flowchart จะเป็น null
-        
+
         const converted = convertBackendFlowchart(payload || {});
         console.log("✅ Converted Data:", converted); // LOG 3
-        
+
         if (converted.nodes.length === 0) {
-             console.warn("⚠️ Converted nodes are empty! Check convertBackendFlowchart logic.");
+          console.warn("⚠️ Converted nodes are empty! Check convertBackendFlowchart logic.");
         }
 
         setNodes(converted.nodes);
         setEdges(converted.edges);
-        
+
       } catch (err: any) {
         console.error("❌ Error loading flowchart:", err);
         setError(err?.message ?? "Error fetching flowchart");

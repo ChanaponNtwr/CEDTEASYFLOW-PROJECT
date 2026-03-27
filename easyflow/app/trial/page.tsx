@@ -67,7 +67,7 @@ function Trial() {
   const [lab, setLab] = useState<RemoteLab | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // State สำหรับปุ่ม Do Lab (กันกดซ้ำ)
   const [isStarting, setIsStarting] = useState(false);
 
@@ -187,14 +187,14 @@ function Trial() {
 
   const symbolLabData = lab
     ? {
-        inSymVal: lab.inSymVal,
-        outSymVal: lab.outSymVal,
-        declareSymVal: lab.declareSymVal,
-        assignSymVal: lab.assignSymVal,
-        ifSymVal: lab.ifSymVal,
-        forSymVal: lab.forSymVal,
-        whileSymVal: lab.whileSymVal,
-      }
+      inSymVal: lab.inSymVal,
+      outSymVal: lab.outSymVal,
+      declareSymVal: lab.declareSymVal,
+      assignSymVal: lab.assignSymVal,
+      ifSymVal: lab.ifSymVal,
+      forSymVal: lab.forSymVal,
+      whileSymVal: lab.whileSymVal,
+    }
     : undefined;
 
   // --- Action Handler: Start Trial ---
@@ -229,149 +229,149 @@ function Trial() {
       <div className="pt-20 pl-0 md:pl-64 transition-all duration-300">
         <Navbar />
         <Sidebar />
-        
+
         <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
-            
-            {/* 1. Header Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                <div className="flex items-center gap-5">
-                    <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-white rounded-2xl flex items-center justify-center flex-shrink-0 border border-blue-100 shadow-sm">
-                        <img src="/images/lab.png" className="w-8 h-auto object-contain" alt="Lab Icon" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900 leading-tight">{labTitle}</h1>
-                        <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500">
-                             <div className="flex items-center gap-1.5">
-                                <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                                <span className="font-medium text-gray-700">{totalPoints} Points</span>
-                             </div>
-                             <div className="hidden md:block w-[1px] h-4 bg-gray-300"></div>
-                             <div className="flex items-center gap-1.5">
-                                <FaCalendarAlt className="text-gray-400" />
-                                {dueText ? `Due: ${formatDueDate(dueText)}` : "No due date"}
-                             </div>
-                        </div>
-                    </div>
-                </div>
 
-                <button
-                    onClick={handleClick}
-                    disabled={loading || isStarting}
-                    className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold shadow-sm transition-all
-                        ${loading || isStarting 
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200' 
-                            : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200 hover:shadow-blue-300'}
+          {/* 1. Header Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-center gap-5">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-white rounded-2xl flex items-center justify-center flex-shrink-0 border border-blue-100 shadow-sm">
+                <img src="/images/lab.png" className="w-8 h-auto object-contain" alt="Lab Icon" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 leading-tight">{labTitle}</h1>
+                <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                    <span className="font-medium text-gray-700">{totalPoints} Points</span>
+                  </div>
+                  <div className="hidden md:block w-[1px] h-4 bg-gray-300"></div>
+                  <div className="flex items-center gap-1.5">
+                    <FaCalendarAlt className="text-gray-400" />
+                    {dueText ? `Due: ${formatDueDate(dueText)}` : "No due date"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleClick}
+              disabled={loading || isStarting}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold shadow-sm transition-all
+                        ${loading || isStarting
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                  : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200 hover:shadow-blue-300'}
                     `}
-                >
-                    {isStarting ? (
-                         <>
-                            <FaSpinner className="animate-spin" /> Starting...
-                         </>
-                    ) : (
-                        <>
-                            <FaPlay /> Do Lab
-                        </>
-                    )}
-                </button>
+            >
+              {isStarting ? (
+                <>
+                  <FaSpinner className="animate-spin" /> Starting...
+                </>
+              ) : (
+                <>
+                  <FaPlay /> Do Lab
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* 2. Problem Description */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center gap-2 mb-4 border-b border-gray-50 pb-3">
+              <div className="w-1 h-5 bg-orange-500 rounded-full"></div>
+              <h3 className="text-lg font-bold text-gray-800">Problem Description</h3>
+            </div>
+            <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap leading-relaxed">
+              {labProblem || <span className="text-gray-400 italic">No description available.</span>}
+            </div>
+          </div>
+
+          {/* 3. Test Cases Table */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
+              <div className="flex items-center gap-2">
+                <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
+                <h3 className="text-lg font-bold text-gray-800">Test Cases</h3>
+              </div>
+              {testCases.length > 0 && (
+                <span className="bg-white border border-gray-200 text-gray-500 text-xs py-1 px-3 rounded-full font-medium shadow-sm">
+                  {testCases.length} Cases
+                </span>
+              )}
             </div>
 
-            {/* 2. Problem Description */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <div className="flex items-center gap-2 mb-4 border-b border-gray-50 pb-3">
-                    <div className="w-1 h-5 bg-orange-500 rounded-full"></div>
-                    <h3 className="text-lg font-bold text-gray-800">Problem Description</h3>
-                </div>
-                <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap leading-relaxed">
-                    {labProblem || <span className="text-gray-400 italic">No description available.</span>}
-                </div>
-            </div>
-
-            {/* 3. Test Cases Table */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
-                    <div className="flex items-center gap-2">
-                        <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
-                        <h3 className="text-lg font-bold text-gray-800">Test Cases</h3>
-                    </div>
-                    {testCases.length > 0 && (
-                        <span className="bg-white border border-gray-200 text-gray-500 text-xs py-1 px-3 rounded-full font-medium shadow-sm">
-                            {testCases.length} Cases
-                        </span>
-                    )}
-                </div>
-
-                {loading && (
-                    <div className="flex justify-center items-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                        <span className="ml-3 text-gray-500 font-medium">Loading data...</span>
-                    </div>
-                )}
-                
-                {error && <div className="p-8 text-center text-red-500 bg-red-50">Error: {error}</div>}
-
-                {!loading && !error && (
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-100">
-                            <thead className="bg-gray-50/50">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-16">No.</th>
-                                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Input</th>
-                                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Output</th>
-                                    <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-24">Score</th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-100 text-sm">
-                                {testCases.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={4} className="px-6 py-12 text-center text-gray-400 italic bg-gray-50/30">
-                                            No testcases found for this lab.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    testCases.map((testCase) => (
-                                        <tr key={testCase.no} className="hover:bg-gray-50/80 transition-colors">
-                                            <td className="px-6 py-4 font-medium text-gray-500">{testCase.no}</td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-start gap-2">
-                                                    <code className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-mono border border-gray-200 break-all max-w-xs md:max-w-md">
-                                                        {testCase.input}
-                                                    </code>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-start gap-2">
-                                                    <code className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono border border-blue-100 break-all max-w-xs md:max-w-md">
-                                                        {testCase.output}
-                                                    </code>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 text-center">
-                                                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-green-50 text-green-700 border border-green-200">
-                                                    {testCase.score}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-
-            {/* 4. Configuration Section (Symbols) */}
-            {!loading && !error && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                    <div className="flex items-center gap-2 mb-6 border-b border-gray-50 pb-3">
-                        <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
-                        <h2 className="text-lg font-bold text-gray-800">Configuration</h2>
-                    </div>
-                    <SymbolSection labData={symbolLabData} />
-                </div>
+            {loading && (
+              <div className="flex justify-center items-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <span className="ml-3 text-gray-500 font-medium">Loading data...</span>
+              </div>
             )}
 
+            {error && <div className="p-8 text-center text-red-500 bg-red-50">Error: {error}</div>}
+
+            {!loading && !error && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-100">
+                  <thead className="bg-gray-50/50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-16">No.</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Input</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Output</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-24">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100 text-sm">
+                    {testCases.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-12 text-center text-gray-400 italic bg-gray-50/30">
+                          No testcases found for this lab.
+                        </td>
+                      </tr>
+                    ) : (
+                      testCases.map((testCase) => (
+                        <tr key={testCase.no} className="hover:bg-gray-50/80 transition-colors">
+                          <td className="px-6 py-4 font-medium text-gray-500">{testCase.no}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-start gap-2">
+                              <code className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-mono border border-gray-200 break-all max-w-xs md:max-w-md">
+                                {testCase.input}
+                              </code>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-start gap-2">
+                              <code className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-mono border border-blue-100 break-all max-w-xs md:max-w-md">
+                                {testCase.output}
+                              </code>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-green-50 text-green-700 border border-green-200">
+                              {testCase.score}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* 4. Configuration Section (Symbols) */}
+          {!loading && !error && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center gap-2 mb-6 border-b border-gray-50 pb-3">
+                <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
+                <h2 className="text-lg font-bold text-gray-800">Configuration</h2>
+              </div>
+              <SymbolSection labData={symbolLabData} />
+            </div>
+          )}
+
         </div>
-      </div>  
+      </div>
     </div>
   );
 }

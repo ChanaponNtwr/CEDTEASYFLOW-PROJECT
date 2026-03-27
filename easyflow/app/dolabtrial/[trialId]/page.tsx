@@ -33,7 +33,7 @@ import { useNodeMutations } from "../hooks/useNodeMutations";
 
 // --- Services / Utils for refresh ---
 // 1. เปลี่ยนชื่อ import ตรงนี้
-import { apiGetTrialFlowchart } from "@/app/service/FlowchartService"; 
+import { apiGetTrialFlowchart } from "@/app/service/FlowchartService";
 import { convertBackendFlowchart } from "../utils/backendConverter";
 
 // --- Custom Node Types ---
@@ -96,8 +96,8 @@ export default function DoLabTrialPage({ params }: PageProps) {
     closeNodeModal,
   });
 
-  const currentTrialId = flowchartId; 
-  
+  const currentTrialId = flowchartId;
+
   const [showTutorial, setShowTutorial] = React.useState(true);
   const [step, setStep] = React.useState(0);
 
@@ -108,10 +108,10 @@ export default function DoLabTrialPage({ params }: PageProps) {
     { title: "Step 4", description: "ระบบจะแสดงผลลัพธ์ที่นี้ สามารถตอบโต้กับระบบได้ตรงนี้" },
   ];
   const tutorialPositionMap: Record<number, string> = {
-  0: "left-80 top-24",
-  1: "left-[1100px] top-[280px]",
-  2: "left-80 top-24",
-  3: "bottom-25 right-105 ",
+    0: "left-80 top-24",
+    1: "left-[1100px] top-[280px]",
+    2: "left-80 top-24",
+    3: "bottom-25 right-105 ",
   };
 
   const tutorialPosition =
@@ -121,12 +121,12 @@ export default function DoLabTrialPage({ params }: PageProps) {
     if (!currentTrialId) return;
     try {
       const payload = await apiGetTrialFlowchart(currentTrialId);
-      
+
       // logic นี้รองรับทั้งมีข้อมูลและไม่มีข้อมูล (สร้าง Start/End ให้)
       const converted = convertBackendFlowchart(payload || {});
       setNodes(converted.nodes);
       setEdges(converted.edges);
-      
+
       // Clear Highlights
       setNodes((nds) =>
         nds.map((n) => {
@@ -270,58 +270,58 @@ export default function DoLabTrialPage({ params }: PageProps) {
       )}
 
       {showTutorial && (
-      <div className="fixed inset-0 z-[999] bg-black/20">
-        <div
-          className={`absolute bg-white rounded-xl p-6 w-[420px] shadow-2xl border border-gray-200 ${tutorialPosition}`}
-        >
-          <h2 className="text-xl font-bold mb-3">
-            {tutorialSteps[step].title}
-          </h2>
+        <div className="fixed inset-0 z-[999] bg-black/20">
+          <div
+            className={`absolute bg-white rounded-xl p-6 w-[420px] shadow-2xl border border-gray-200 ${tutorialPosition}`}
+          >
+            <h2 className="text-xl font-bold mb-3">
+              {tutorialSteps[step].title}
+            </h2>
 
-          <div className="h-[1px] bg-gray-300 mb-4" />
+            <div className="h-[1px] bg-gray-300 mb-4" />
 
-          <p className="text-base text-gray-700 leading-relaxed">
-            {tutorialSteps[step].description}
-          </p>
+            <p className="text-base text-gray-700 leading-relaxed">
+              {tutorialSteps[step].description}
+            </p>
 
-          <div className="flex justify-between items-center mt-6">
-            <button
-              onClick={() => setShowTutorial(false)}
-              className="text-gray-500 hover:text-black text-sm"
-            >
-              Skip
-            </button>
+            <div className="flex justify-between items-center mt-6">
+              <button
+                onClick={() => setShowTutorial(false)}
+                className="text-gray-500 hover:text-black text-sm"
+              >
+                Skip
+              </button>
 
-            <div className="space-x-2">
-              {step > 0 && (
-                <button
-                  onClick={() => setStep((s) => s - 1)}
-                  className="px-3 py-1 bg-gray-200 rounded-md text-sm"
-                >
-                  Back
-                </button>
-              )}
+              <div className="space-x-2">
+                {step > 0 && (
+                  <button
+                    onClick={() => setStep((s) => s - 1)}
+                    className="px-3 py-1 bg-gray-200 rounded-md text-sm"
+                  >
+                    Back
+                  </button>
+                )}
 
-              {step < tutorialSteps.length - 1 ? (
-                <button
-                  onClick={() => setStep((s) => s + 1)}
-                  className="px-3 py-1 bg-black text-white rounded-md text-sm"
-                >
-                  Next
-                </button>
-              ) : (
-                <button
-                  onClick={() => setShowTutorial(false)}
-                  className="px-3 py-1 bg-green-600 text-white rounded-md text-sm"
-                >
-                  Start
-                </button>
-              )}
+                {step < tutorialSteps.length - 1 ? (
+                  <button
+                    onClick={() => setStep((s) => s + 1)}
+                    className="px-3 py-1 bg-black text-white rounded-md text-sm"
+                  >
+                    Next
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowTutorial(false)}
+                    className="px-3 py-1 bg-green-600 text-white rounded-md text-sm"
+                  >
+                    Start
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
     </div>
   );
 };
