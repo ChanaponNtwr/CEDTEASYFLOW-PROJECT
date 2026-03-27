@@ -1,12 +1,12 @@
 export default function WHHandler(node, context, flowchart) {
     const { condition, varName, increment } = node.data;
 
-    // 🔒 ตรวจ varName
+    //ตรวจ varName
     if (varName && !context.isDeclared(varName)) {
         throw new Error(`Variable '${varName}' is not declared. Please add a Declare node before the While loop.`);
     }
 
-    // 🔒 ตรวจตัวแปรทุกตัวใน condition
+    //ตรวจตัวแปรทุกตัวใน condition
     if (condition) {
         const jsGlobals = new Set(["Math","Number","String","Boolean","Array","Object","Date",
             "parseInt","parseFloat","console","undefined","null","true","false","NaN","Infinity"]);

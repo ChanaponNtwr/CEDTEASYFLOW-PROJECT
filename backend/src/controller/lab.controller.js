@@ -17,7 +17,7 @@ router.post("/", async (req, res) => {
     res.status(400).json({
       ok: false,
       message: err.message,
-      details: err.details || null
+      details: err.details || null,
     });
   }
 });
@@ -54,12 +54,18 @@ router.get("/owner/:userId", async (req, res) => {
 router.put("/:labId", async (req, res) => {
   try {
     const currentUserId = req.body?.currentUserId ?? null;
-    const lab = await labService.updateLab(req.params.labId, req.body, currentUserId);
+    const lab = await labService.updateLab(
+      req.params.labId,
+      req.body,
+      currentUserId,
+    );
     res.json({ ok: true, lab });
   } catch (err) {
     console.error("LAB UPDATE ERROR:", err);
     const status = err.code === "FORBIDDEN" ? 403 : 400;
-    res.status(status).json({ ok: false, message: err.message, details: err.details || null });
+    res
+      .status(status)
+      .json({ ok: false, message: err.message, details: err.details || null });
   }
 });
 
@@ -79,8 +85,7 @@ router.delete("/:labId", async (req, res) => {
   } catch (err) {
     console.error("LAB DELETE ERROR:", err);
     const status =
-      err.code === "FORBIDDEN" ? 403 :
-      err.code === "NOT_FOUND" ? 404 : 400;
+      err.code === "FORBIDDEN" ? 403 : err.code === "NOT_FOUND" ? 404 : 400;
 
     return res.status(status).json({ ok: false, message: err.message });
   }
@@ -104,7 +109,10 @@ router.post("/:labId/testcases", async (req, res) => {
  */
 router.post("/:labId/testcases/bulk", async (req, res) => {
   try {
-    const result = await labService.addTestcasesBulk(req.params.labId, req.body.testcases);
+    const result = await labService.addTestcasesBulk(
+      req.params.labId,
+      req.body.testcases,
+    );
     res.status(201).json({ ok: true, result });
   } catch (err) {
     console.error("ADD TESTCASES BULK ERROR:", err);

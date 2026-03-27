@@ -1,7 +1,6 @@
 console.log("🔎 InputHandler v7 loaded");
 
 export default function InputHandler(node, context, flowchart, options = {}) {
-
   const varName = node?.data?.variable || node?.data?.name;
   const varTypeRaw = node?.data?.varType;
 
@@ -10,7 +9,7 @@ export default function InputHandler(node, context, flowchart, options = {}) {
   }
 
   /* ===============================
-     ❗ REQUIRE DECLARE BEFORE INPUT
+      REQUIRE DECLARE BEFORE INPUT
      =============================== */
 
   if (!context.isDeclared(varName)) {
@@ -26,7 +25,7 @@ export default function InputHandler(node, context, flowchart, options = {}) {
 
   if (node?.data?.skipIfExists === true && existing !== undefined) {
     console.log(
-      `IN: ${varName} already set = ${JSON.stringify(existing)} (skip input by config)`
+      `IN: ${varName} already set = ${JSON.stringify(existing)} (skip input by config)`,
     );
     return { nextCondition: "auto" };
   }
@@ -39,8 +38,8 @@ export default function InputHandler(node, context, flowchart, options = {}) {
     typeof options.inputProvider === "function"
       ? options.inputProvider
       : flowchart && typeof flowchart._inputProvider === "function"
-      ? flowchart._inputProvider
-      : null;
+        ? flowchart._inputProvider
+        : null;
 
   let provided;
 
@@ -86,7 +85,8 @@ export default function InputHandler(node, context, flowchart, options = {}) {
     if (low === "0") return 0;
 
     if (/^[+-]?\d+$/.test(s)) return Number(s);
-    if (/^[+-]?\d*\.\d+$/.test(s) || /^[+-]?\d+\.\d*$/.test(s)) return Number(s);
+    if (/^[+-]?\d*\.\d+$/.test(s) || /^[+-]?\d+\.\d*$/.test(s))
+      return Number(s);
 
     return s;
   };
@@ -146,8 +146,7 @@ export default function InputHandler(node, context, flowchart, options = {}) {
         case "float":
         case "number": {
           const f = Number(norm);
-          if (isNaN(f))
-            throw new Error(`Invalid number for ${varName}`);
+          if (isNaN(f)) throw new Error(`Invalid number for ${varName}`);
           finalValue = f;
           finalType = "float";
           break;
@@ -207,7 +206,7 @@ export default function InputHandler(node, context, flowchart, options = {}) {
   const stored = context.get(varName);
 
   console.log(
-    `Input: ${varName} = ${JSON.stringify(stored)} (type=${typeof stored})`
+    `Input: ${varName} = ${JSON.stringify(stored)} (type=${typeof stored})`,
   );
 
   return { nextCondition: "auto" };
