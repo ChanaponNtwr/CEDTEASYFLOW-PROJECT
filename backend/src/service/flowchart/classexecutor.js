@@ -1,6 +1,6 @@
 // src/service/flowchart/classexecutor.js
 import Context from "./classcontext.js";
-import { getHandler } from "./nodeHandlers/index.js";
+import { getHandler } from "./nodehandlers/index.js";
 
 class Executor {
   constructor(flowchart, options = {}) {

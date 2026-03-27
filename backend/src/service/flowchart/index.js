@@ -4,7 +4,7 @@
 
 
 // Ensure handlers are executed (they register themselves on import)
-import "./nodeHandlers/index.js";
+import "./nodehandlers/index.js";
 
 
 // Re-export implementation modules as named exports
@@ -14,7 +14,7 @@ export { default as Node } from "./classnode.js";
 export { default as Executor } from "./classexecutor.js";
 export { default as Context } from "./classcontext.js";
 export { default as VariableItem } from "./classsvariable.js";
-export { getHandler } from "./nodeHandlers/index.js";
+export { getHandler } from "./nodehandlers/index.js";
 export { hydrateFlowchart } from "./serializer.js";
 
 
@@ -26,7 +26,7 @@ import NodeDefault from "./classnode.js";
 import ExecutorDefault from "./classexecutor.js";
 import ContextDefault from "./classcontext.js";
 import VariableItemDefault from "./classsvariable.js";
-import { getHandler as getHandlerFn } from "./nodeHandlers/index.js";
+import { getHandler as getHandlerFn } from "./nodehandlers/index.js";
 import { hydrateFlowchart as hydrateFn } from "./serializer.js";
 
 
