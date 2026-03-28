@@ -136,7 +136,7 @@ export default function TopBarControls({
         const resp = await apiGetTrialFlowchart(effectiveId);
 
         if (mounted) {
-          const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 238;
+          const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 18;
 
           if (foundLabId) {
             apiGetLab(foundLabId)
