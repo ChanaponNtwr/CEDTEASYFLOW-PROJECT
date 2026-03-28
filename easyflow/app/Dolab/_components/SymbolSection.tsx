@@ -470,10 +470,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase().trim();
     const rawLabel = String(
       nodeToEdit.label ??
-        nodeToEdit.data?.label ??
-        nodeToEdit.data?.message ??
-        nodeToEdit.data?.condition ??
-        ""
+      nodeToEdit.data?.label ??
+      nodeToEdit.data?.message ??
+      nodeToEdit.data?.condition ??
+      ""
     ).trim();
 
     const stripQuotes = (s: any) => {
@@ -736,18 +736,32 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       title: "While Properties",
       description: "A WHILE Statement repeatedly executes code as long as the condition is true.",
       icon: "/images/shape_while.png",
-      fields: [{ kind: "simple", key: "condition", placeholder: "condition count < 10", value: whileExpression, setValue: setWhileExpression }],
+      fields: [
+        {
+          kind: "simple",
+          key: "condition",
+          placeholder: "condition count < 10",
+          value: whileExpression,
+          setValue: setWhileExpression
+        }
+      ],
       onSubmit: (e) => {
         e.preventDefault();
+
         const validationError = validateConditionalExpression(whileExpression);
         if (validationError) {
           setError(validationError);
           return;
         }
+
+        // ✅ ดึงชื่อ variable จาก condition เช่น "i < 10"
+        const match = whileExpression.match(/^\s*([a-zA-Z_]\w*)/);
+        const varName = match ? match[1] : "x";
+
         callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression, {
           condition: whileExpression,
-          varName: "x",
-          increment: "x = x + 1"
+          varName: varName,
+          increment: `${varName} = ${varName} + 1`
         });
       },
       onClose: () => {
