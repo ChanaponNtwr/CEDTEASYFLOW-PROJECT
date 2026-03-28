@@ -731,18 +731,32 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       title: "While Properties",
       description: "A WHILE Statement repeatedly executes code as long as the condition is true.",
       icon: "/images/shape_while.png",
-      fields: [{ kind: "simple", key: "condition", placeholder: "condition count < 10", value: whileExpression, setValue: setWhileExpression }],
+      fields: [
+        {
+          kind: "simple",
+          key: "condition",
+          placeholder: "condition count < 10",
+          value: whileExpression,
+          setValue: setWhileExpression
+        }
+      ],
       onSubmit: (e) => {
         e.preventDefault();
+
         const validationError = validateConditionalExpression(whileExpression);
         if (validationError) {
           setError(validationError);
           return;
         }
+
+        // ✅ ดึงชื่อ variable จาก condition เช่น "i < 10"
+        const match = whileExpression.match(/^\s*([a-zA-Z_]\w*)/);
+        const varName = match ? match[1] : "x";
+
         callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression, {
           condition: whileExpression,
-          varName: "x",
-          increment: "x = x + 1",
+          varName: varName,
+          increment: `${varName} = ${varName} + 1`
         });
       },
       onClose: () => {
@@ -999,7 +1013,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
               exit={{ opacity: 0 }}
               aria-modal="true"
               role="dialog"
-              onClick={() => {}}
+              onClick={() => { }}
             >
               <motion.div
                 className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -1019,22 +1033,19 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
               >
                 <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
                   <div
-                    className={`px-6 pt-8 pb-6 flex flex-col items-center ${
-                      confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"
-                    }`}
+                    className={`px-6 pt-8 pb-6 flex flex-col items-center ${confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"
+                      }`}
                   >
                     <div
-                      className={`flex items-center justify-center w-20 h-20 rounded-xl ${
-                        confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"
-                      } shadow-md`}
+                      className={`flex items-center justify-center w-20 h-20 rounded-xl ${confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"
+                        } shadow-md`}
                     >
                       {confirmVariant === "danger" ? <FaCube size={36} className="text-white" /> : <FaPlus size={36} className="text-white" />}
                     </div>
 
                     <h3
-                      className={`mt-4 text-2xl font-extrabold ${
-                        confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"
-                      }`}
+                      className={`mt-4 text-2xl font-extrabold ${confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"
+                        }`}
                     >
                       {confirmTitle}
                     </h3>
@@ -1065,13 +1076,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                             setConfirmVisible(false);
                           }
                         }}
-                        className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${
-                          confirmVariant === "danger"
+                        className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${confirmVariant === "danger"
                             ? "bg-red-600 hover:bg-red-700 focus:ring-red-200"
                             : confirmVariant === "success"
-                            ? "bg-green-600 hover:bg-green-700 focus:ring-green-200"
-                            : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
-                        }`}
+                              ? "bg-green-600 hover:bg-green-700 focus:ring-green-200"
+                              : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
+                          }`}
                       >
                         ยืนยัน
                       </button>
@@ -1143,7 +1153,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             exit={{ opacity: 0 }}
             aria-modal="true"
             role="dialog"
-            onClick={() => {}}
+            onClick={() => { }}
           >
             <motion.div
               className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -1163,22 +1173,19 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             >
               <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
                 <div
-                  className={`px-6 pt-8 pb-6 flex flex-col items-center ${
-                    confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"
-                  }`}
+                  className={`px-6 pt-8 pb-6 flex flex-col items-center ${confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"
+                    }`}
                 >
                   <div
-                    className={`flex items-center justify-center w-20 h-20 rounded-xl ${
-                      confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"
-                    } shadow-md`}
+                    className={`flex items-center justify-center w-20 h-20 rounded-xl ${confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"
+                      } shadow-md`}
                   >
                     {confirmVariant === "danger" ? <FaCube size={36} className="text-white" /> : <FaPlus size={36} className="text-white" />}
                   </div>
 
                   <h3
-                    className={`mt-4 text-2xl font-extrabold ${
-                      confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"
-                    }`}
+                    className={`mt-4 text-2xl font-extrabold ${confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"
+                      }`}
                   >
                     {confirmTitle}
                   </h3>
@@ -1209,13 +1216,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                           setConfirmVisible(false);
                         }
                       }}
-                      className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${
-                        confirmVariant === "danger"
+                      className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${confirmVariant === "danger"
                           ? "bg-red-600 hover:bg-red-700 focus:ring-red-200"
                           : confirmVariant === "success"
-                          ? "bg-green-600 hover:bg-green-700 focus:ring-green-200"
-                          : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
-                      }`}
+                            ? "bg-green-600 hover:bg-green-700 focus:ring-green-200"
+                            : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
+                        }`}
                     >
                       ยืนยัน
                     </button>
