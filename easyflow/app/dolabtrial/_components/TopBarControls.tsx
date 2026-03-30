@@ -80,7 +80,6 @@ export default function TopBarControls({
   const [inputVarName, setInputVarName] = useState<string | null>(null);
 
   const outputResumeRef = useRef<(() => void) | null>(null);
-  const outputBufferRef = useRef<{ sender: "system" | "user"; text: string }[]>([]); // Added buffer for outputs
   const [pendingHighlightAfterOutput, setPendingHighlightAfterOutput] = useState<string | number | null>(null);
 
   const runAllActiveRef = useRef(false);
@@ -120,15 +119,6 @@ export default function TopBarControls({
 
   const shouldBlockBecauseInputMissing = () => {
     return expectingInputRef.current && isBlankInput(inputValue);
-  };
-
-  // Helper to flush all buffered outputs at once
-  const flushOutputs = () => {
-    if (outputBufferRef.current.length > 0) {
-      const buffered = [...outputBufferRef.current];
-      outputBufferRef.current = [];
-      setChatMessages((prev) => [...prev, ...buffered]);
-    }
   };
 
   useEffect(() => {
@@ -262,9 +252,18 @@ export default function TopBarControls({
     if (Array.isArray(respOutputs) && respOutputs.length > 0) {
       const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
       
-      // Store in buffer instead of immediately showing
-      outputBufferRef.current.push(...mapped);
+      // 1. ไฮไลท์ Node ปัจจุบัน (เช่น Output Node) ก่อน
+      const currentNodeId = resp?.result?.node?.id ?? null;
+      if (currentNodeId) {
+        safeHighlight(String(currentNodeId));
+        // รอสักนิดให้ UI อัปเดตการไฮไลท์ก่อนแสดงผลใน Console
+        await sleep(100);
+      }
 
+      // 2. แสดงผลใน Console ทันที
+      setChatMessages((prev) => [...prev, ...mapped]);
+
+      // 3. หน่วงเวลาก่อนจะไปขั้นตอนหรือ Node ถัดไป เพื่อให้ผู้ใช้เห็นจังหวะที่ค่อยๆ ออกทีละตัว
       const waitMs = autoContinue ? 120 : 600;
       try {
         await sleep(waitMs);
@@ -459,8 +458,6 @@ export default function TopBarControls({
       }
 
       if (finalDone) {
-        flushOutputs(); // Show all buffered outputs at the end
-
         try {
           const endId = await pickEndNodeId();
           if (endId) safeHighlight(endId);
@@ -624,8 +621,6 @@ export default function TopBarControls({
       }
 
       if (finalDone) {
-        flushOutputs(); // Show all buffered outputs at the end
-
         try {
           const endId = await pickEndNodeId();
           if (endId) safeHighlight(endId);
@@ -764,8 +759,6 @@ export default function TopBarControls({
         }
 
         if (finalDoneLoop) {
-          flushOutputs(); // Show all buffered outputs at the end
-
           try {
             const endId = await pickEndNodeId();
             if (endId) safeHighlight(endId);
@@ -911,12 +904,6 @@ export default function TopBarControls({
         }
       }
 
-      // Ensure flush occurs if this input submission reached the end of the flowchart
-      const finalDone = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextType);
-      if (finalDone) {
-        flushOutputs();
-      }
-
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
@@ -981,7 +968,6 @@ export default function TopBarControls({
       setInputNodeId(null);
       setInputVarName(null);
       setChatMessages([]);
-      outputBufferRef.current = []; // Clear output buffer upon reset
       setExpecting(false);
       setErrorMsg(null);
 
@@ -1353,7 +1339,7 @@ export default function TopBarControls({
             <div className="flex justify-between items-center h-[38px]">
               <span className="text-sm text-gray-500">{chatMessages.length > 0 ? "Output log" : ""}</span>
               <div className="flex gap-2">
-                <button onClick={() => { setChatMessages([]); outputBufferRef.current = []; }} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
+                <button onClick={() => setChatMessages([])} className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
                   Clear
                 </button>
               </div>
