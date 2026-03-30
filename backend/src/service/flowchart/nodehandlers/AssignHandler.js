@@ -62,12 +62,16 @@ export default function AssignHandler(node, context /*, flowchart */) {
 
   let varType;
 
-  if (typeof value === "number") {
+  if (Array.isArray(value)) {
+    varType = "array";
+  } else if (typeof value === "number") {
     varType = Number.isInteger(value) ? "int" : "float";
   } else if (typeof value === "boolean") {
     varType = "bool";
-  } else {
+  } else if (typeof value === "string") {
     varType = "string";
+  } else {
+    varType = "object";
   }
 
   context.set(varName, value, varType);

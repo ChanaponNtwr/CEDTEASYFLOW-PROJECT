@@ -79,6 +79,53 @@ export default function OutputHandler(node, context) {
   try {
     const trimmed = message.trim();
 
+    try {
+      const env = buildEnv();
+      const names = Object.keys(env);
+      const vals = names.map((n) => env[n]);
+
+      const fn = new Function(...names, `return (${message});`);
+      const evaluated = fn(...vals);
+
+      console.log(`Output (eval): ${evaluated}`);
+      pushValues(evaluated);
+      return { nextCondition: "auto" };
+    } catch (e) {
+      // ถ้า evaluate ไม่ได้ → ค่อยไป logic เดิม
+    }
+    /* ============================================================
+     * 0) Nested Array access เช่น arr[0][0][1]
+     * ============================================================ */
+    const nestedMatch = trimmed.match(/^([A-Za-z_]\w*)((\s*\[\s*\d+\s*\])+)$/
+
+    );
+    if (nestedMatch) {
+      const varName = nestedMatch[1];
+      const indexes = [...trimmed.matchAll(/\[\s*(\d+)\s*\]/g)].map((m) =>
+        parseInt(m[1], 10)
+      );
+
+      const variable = (context.variables || []).find(
+        (v) => v.name === varName,
+      );
+
+      if (variable) {
+        let val = variable.value;
+
+        for (let idx of indexes) {
+          if (Array.isArray(val)) {
+            val = val[idx];
+          } else {
+            val = undefined;
+            break;
+          }
+        }
+
+        console.log(`Output: ${trimmed} = ${val}`);
+        pushValues(val);
+        return { nextCondition: "auto" };
+      }
+    }
     /* ============================================================
      * 1) Exact variable name → output variable value (expand arrays)
      * ============================================================ */
