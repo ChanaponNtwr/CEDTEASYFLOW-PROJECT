@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { FaPlay, FaStepForward, FaStop } from "react-icons/fa";
+// Switched to trial-specific APIs as requested
 import {
   apiExecuteTrial,
   apiGetTrialFlowchart,
@@ -89,6 +90,7 @@ export default function TopBarControls({
 
   const [labInfo, setLabInfo] = useState<{ name?: string; detail?: string } | null>(null);
 
+  // เพิ่ม buffer สำหรับ output ที่มาจาก runAll
   const pendingOutputQueueRef = useRef<any[]>([]);
 
   const togglePopup = () => setShowPopup((v) => !v);
@@ -247,49 +249,45 @@ export default function TopBarControls({
     return [];
   };
 
-  const displayOutputs = async (outputs: any[], autoContinue = false): Promise<boolean> => {
-    if (!outputs.length) return false;
+  // ปรับให้รองรับ defer สำหรับ runAll
+  const handleResponseOutputs = async (
+    resp: ExecuteResponse | undefined | null,
+    autoContinue = false,
+    defer = false
+  ): Promise<boolean> => {
+    const respOutputs = extractNewOutputs(resp);
 
-    for (const o of outputs) {
-      setChatMessages((m) => [...m, { sender: "system" as const, text: renderValue(o) }]);
-      const waitMs = autoContinue ? 120 : 600;
-      try {
-        await sleep(waitMs);
-      } catch {}
+    if (!Array.isArray(respOutputs) || respOutputs.length === 0) {
+      return false;
     }
+
+    if (defer) {
+      pendingOutputQueueRef.current.push(...respOutputs);
+      return true;
+    }
+
+    const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
+    setChatMessages((m) => [...m, ...mapped]);
+
+    const waitMs = autoContinue ? 120 : 600;
+    try {
+      await sleep(waitMs);
+    } catch {}
     return true;
   };
 
-  const flushQueuedOutputs = async (autoContinue = false): Promise<boolean> => {
-    if (pendingOutputQueueRef.current.length === 0) return false;
-    const queued = [...pendingOutputQueueRef.current];
-    pendingOutputQueueRef.current = [];
-    return displayOutputs(queued, autoContinue);
-  };
+  // ปล่อย output ที่ buffer ไว้ทีละตัว
+  const flushBufferedOutputs = async (autoContinue = false) => {
+    const queued = pendingOutputQueueRef.current.splice(0, pendingOutputQueueRef.current.length);
 
-  const processOutputs = async (
-    resp: ExecuteResponse | undefined | null,
-    autoContinue = false,
-    deferCurrent = false
-  ): Promise<boolean> => {
-    const currentOutputs = extractNewOutputs(resp);
+    if (queued.length === 0) return false;
 
-    if (deferCurrent) {
-      if (currentOutputs.length > 0) pendingOutputQueueRef.current.push(...currentOutputs);
-      return currentOutputs.length > 0;
+    for (const item of queued) {
+      setChatMessages((prev) => [...prev, { sender: "system", text: renderValue(item) }]);
+      await sleep(autoContinue ? 120 : 220);
     }
 
-    let shown = false;
-
-    if (pendingOutputQueueRef.current.length > 0) {
-      shown = (await flushQueuedOutputs(autoContinue)) || shown;
-    }
-
-    if (currentOutputs.length > 0) {
-      shown = (await displayOutputs(currentOutputs, autoContinue)) || shown;
-    }
-
-    return shown;
+    return true;
   };
 
   useEffect(() => {
@@ -455,7 +453,7 @@ export default function TopBarControls({
       const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      const hadOutputs = await processOutputs(resp, autoPlayInputs, false);
+      const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs);
       if (hadOutputs) {
         setPendingHighlightAfterOutput(nextId);
         if (nextId) safeHighlight(nextId);
@@ -528,6 +526,7 @@ export default function TopBarControls({
     setIsLoading(true);
     setErrorMsg(null);
     runAllActiveRef.current = true;
+    pendingOutputQueueRef.current = [];
 
     try {
       const resolvedInitialVars = initialVariables ?? fetchedVariables ?? [];
@@ -590,6 +589,7 @@ export default function TopBarControls({
         setInputVarName(resolvedVarName ?? null);
         setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
         setExpecting(true);
+
         await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
         runAllWaitingForInputRef.current = null;
         resp = lastResponse ?? resp;
@@ -601,11 +601,14 @@ export default function TopBarControls({
       let nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      // ใน runAll ให้เก็บ output ไว้ก่อน ไม่แสดงทันที
-      await processOutputs(resp, autoPlayInputs, true);
-
-      const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-      safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
+      // ตอน runAll ให้ buffer output ไว้ก่อน
+      if (await handleResponseOutputs(resp, autoPlayInputs, true)) {
+        setPendingHighlightAfterOutput(nextId);
+        if (nextId) safeHighlight(nextId);
+      } else {
+        const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+        safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
+      }
 
       nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
@@ -613,6 +616,7 @@ export default function TopBarControls({
       if (nextType === "IN" || nextType === "INPUT") {
         const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
         const defaultVal = resolveDefaultValueForVar(resolvedVarName ?? null);
+
         if (autoPlayInputs) {
           const singleVarPayload: Variable[] = [{ name: resolvedVarName ?? "input", value: defaultVal }];
           resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: singleVarPayload, forceAdvanceBP })) as ExecuteResponse;
@@ -638,8 +642,8 @@ export default function TopBarControls({
       }
 
       if (finalDone) {
-        // แสดง output ที่ค้างไว้ทั้งหมดก่อน reset
-        await flushQueuedOutputs(autoPlayInputs);
+        // ปล่อย output ทั้งหมดหลัง input ครบแล้ว
+        await flushBufferedOutputs(false);
 
         try {
           const endId = await pickEndNodeId();
@@ -660,6 +664,7 @@ export default function TopBarControls({
         setVariablesSent(false);
         setInputNodeId(null);
         setInputVarName(null);
+
         const restartId = await pickRestartNodeId();
         safeHighlight(restartId);
         setIsLoading(false);
@@ -736,18 +741,22 @@ export default function TopBarControls({
         nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-        // ใน runAll ให้เก็บ output ไว้ก่อน
-        await processOutputs(resp, autoPlayInputs, true);
-
-        const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-        const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
-        safeHighlight(loopNodeId);
+        if (await handleResponseOutputs(resp, autoPlayInputs, true)) {
+          setPendingHighlightAfterOutput(nextId);
+          setPendingHighlightAfterOutput(null);
+          if (nextId) safeHighlight(nextId);
+        } else {
+          const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+          const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
+          safeHighlight(loopNodeId);
+        }
 
         nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
 
         if (nextTypeLoop === "IN" || nextTypeLoop === "INPUT") {
           const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
           const defaultVal = resolveDefaultValueForVar(resolvedVarName ?? null);
+
           if (autoPlayInputs) {
             const payload: Variable[] = [{ name: resolvedVarName ?? "input", value: defaultVal }];
             resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: payload, forceAdvanceBP })) as ExecuteResponse;
@@ -769,7 +778,7 @@ export default function TopBarControls({
             nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
             const finishedNow = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextTypeLoop);
             if (finishedNow) {
-              // fall through
+              // จะไปจบด้านล่าง
             } else {
               continue;
             }
@@ -777,8 +786,7 @@ export default function TopBarControls({
         }
 
         if (finalDoneLoop) {
-          // แสดง output ที่ค้างไว้ทั้งหมดก่อน reset
-          await flushQueuedOutputs(autoPlayInputs);
+          await flushBufferedOutputs(false);
 
           try {
             const endId = await pickEndNodeId();
@@ -804,9 +812,6 @@ export default function TopBarControls({
           break;
         }
       }
-
-      // เผื่อกรณีหลุดจาก loop โดยยังมี output ค้าง
-      await flushQueuedOutputs(autoPlayInputs);
     } catch (err) {
       console.error("runAll error", err);
       const message = err instanceof Error ? err.message : String(err);
@@ -837,8 +842,6 @@ export default function TopBarControls({
       pushConsoleError(getMissingInputMessage().replace("ก่อนรันต่อ", "ก่อนส่งต่อ"));
       return;
     }
-
-    const isRunAllMode = runAllActiveRef.current;
 
     setIsLoading(true);
     setErrorMsg(null);
@@ -889,21 +892,6 @@ export default function TopBarControls({
       const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
       safeHighlight(currentNodeId);
 
-      // ถ้าอยู่ใน runAll ให้ไม่แสดง output ตรงนี้ ให้ runAll เป็นคน flush ทีหลัง
-      if (isRunAllMode) {
-        await processOutputs(resp, autoPlayInputs, true);
-
-        if (runAllWaitingForInputRef.current) {
-          try {
-            runAllWaitingForInputRef.current();
-          } catch {}
-          runAllWaitingForInputRef.current = null;
-        }
-
-        setIsLoading(false);
-        return;
-      }
-
       const currentType = resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? null;
       const currentTypeStr = currentType ? String(currentType).toUpperCase().trim() : null;
 
@@ -930,7 +918,8 @@ export default function TopBarControls({
         return;
       }
 
-      const hadOutputs = await processOutputs(resp, autoPlayInputs, false);
+      // ใช้ defer เมื่อกำลัง runAll เพื่อไม่ให้ output โผล่เร็วเกินไป
+      const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs, runAllActiveRef.current);
       if (hadOutputs) {
         const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
@@ -1147,16 +1136,24 @@ export default function TopBarControls({
           (Array.isArray(r.errors) ? r.errors.join("; ") : undefined) ??
           null;
 
-        const level: TestLevel =
-          ["PASS", "PASSED", "OK", "SUCCESS"].includes(status)
-            ? "success"
-            : ["FAIL", "FAILED", "ERROR", "INPUT_MISSING", "TIMEOUT", "WRONG"].includes(status)
-            ? "error"
-            : ["WARN", "WARNING"].includes(status)
-            ? "warning"
-            : "info";
+        const actual =
+          r.actual ??
+          r.actualVal ??
+          r.actual_val ??
+          r.output ??
+          r.outputVal ??
+          r.output_val ??
+          r.resultOutput ??
+          r.result_output ??
+          null;
+
+        let level: TestLevel = "info";
+        if (["PASS", "PASSED", "OK", "SUCCESS"].includes(status)) level = "success";
+        else if (["FAIL", "FAILED", "ERROR", "INPUT_MISSING", "TIMEOUT", "WRONG"].includes(status)) level = "error";
+        else if (["WARN", "WARNING"].includes(status)) level = "warning";
 
         const messages: { level: TestLevel; text: string }[] = [];
+
         messages.push({ level, text: `${status}` });
 
         if (errorMessage) {
@@ -1278,9 +1275,9 @@ export default function TopBarControls({
           onClick={handleStep}
           disabled={isLoading || done}
           title={done ? "Finished" : "Step"}
-          className={`text-yellow-600 text-lg p-2 rounded-full transition-colors ${isLoading ? "opacity-50 cursor-not-allowed" : "hover:text-yellow-700 hover:bg-yellow-100"} ${
-            done ? "opacity-40 cursor-not-allowed" : ""
-          }`}
+          className={`text-yellow-600 text-lg p-2 rounded-full transition-colors ${
+            isLoading ? "opacity-50 cursor-not-allowed" : "hover:text-yellow-700 hover:bg-yellow-100"
+          } ${done ? "opacity-40 cursor-not-allowed" : ""}`}
         >
           <span className={`${isLoading ? "animate-pulse" : ""}`}>
             <FaStepForward />
