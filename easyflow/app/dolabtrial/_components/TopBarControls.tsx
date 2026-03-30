@@ -251,19 +251,8 @@ export default function TopBarControls({
 
     if (Array.isArray(respOutputs) && respOutputs.length > 0) {
       const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
-      
-      // 1. ไฮไลท์ Node ปัจจุบัน (เช่น Output Node) ก่อน
-      const currentNodeId = resp?.result?.node?.id ?? null;
-      if (currentNodeId) {
-        safeHighlight(String(currentNodeId));
-        // รอสักนิดให้ UI อัปเดตการไฮไลท์ก่อนแสดงผลใน Console
-        await sleep(100);
-      }
+      setChatMessages((m) => [...m, ...mapped]);
 
-      // 2. แสดงผลใน Console ทันที
-      setChatMessages((prev) => [...prev, ...mapped]);
-
-      // 3. หน่วงเวลาก่อนจะไปขั้นตอนหรือ Node ถัดไป เพื่อให้ผู้ใช้เห็นจังหวะที่ค่อยๆ ออกทีละตัว
       const waitMs = autoContinue ? 120 : 600;
       try {
         await sleep(waitMs);
@@ -408,13 +397,18 @@ export default function TopBarControls({
 
       if (!resp) return;
 
-      const possibleNodeType =
-        (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.nextNodeType ?? resp?.result?.node?.type ?? null) as string | number | null;
-      const nodeTypeStr = possibleNodeType ? String(possibleNodeType).toUpperCase().trim() : null;
-
       setLastResponse(resp);
       setVariablesSent(true);
       setStepCount((s) => s + 1);
+
+      // 1. Highlight Node ปัจจุบันก่อนที่จะประมวลผลการแสดง Output เพื่อให้ซิงค์กัน
+      const currentIdRaw = resp?.result?.node?.id ?? null;
+      const currentNodeId = currentIdRaw !== null && typeof currentIdRaw !== "undefined" ? String(currentIdRaw) : null;
+      if (currentNodeId) safeHighlight(currentNodeId);
+
+      const possibleNodeType =
+        (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.nextNodeType ?? resp?.result?.node?.type ?? null) as string | number | null;
+      const nodeTypeStr = possibleNodeType ? String(possibleNodeType).toUpperCase().trim() : null;
 
       if (nodeTypeStr && (nodeTypeStr === "IN" || nodeTypeStr === "INPUT" || nodeTypeStr.includes("INPUT") || resp?.paused === true)) {
         const inputNodeIdRaw = resp?.node?.id ?? resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
@@ -433,19 +427,13 @@ export default function TopBarControls({
       const inferredDone = isEndType(nextType);
       const finalDone = backendDone || inferredDone;
 
+      // 2. ปล่อย Output ออกมา (ฟังก์ชันนี้จะหน่วงเวลา sleep ไว้ให้เราเห็น Highlight ตรงกับ Output ที่ออก)
+      await handleResponseOutputs(resp, autoPlayInputs);
+
+      // 3. หลังจากหน่วงเวลา ค่อยไป Highlight Node ถัดไป
       const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
-
-      const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs);
-      if (hadOutputs) {
-        setPendingHighlightAfterOutput(nextId);
-        if (nextId) safeHighlight(nextId);
-        return;
-      }
-
-      const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-      const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
-      safeHighlight(currentNodeId);
+      if (nextId) safeHighlight(nextId);
 
       if (nextType === "IN" || nextType === "INPUT") {
         const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
@@ -559,6 +547,10 @@ export default function TopBarControls({
         setLastResponse(resp);
         setVariablesSent(true);
         setStepCount((s) => s + 1);
+
+        const currentIdRaw = resp?.result?.node?.id ?? null;
+        const currentNodeId = currentIdRaw !== null && typeof currentIdRaw !== "undefined" ? String(currentIdRaw) : null;
+        if (currentNodeId) safeHighlight(currentNodeId);
       }
 
       const currentType = (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? "").toString().toUpperCase();
@@ -579,16 +571,12 @@ export default function TopBarControls({
       let nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
       let finalDone = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextType);
 
+      // Output & Sync
+      await handleResponseOutputs(resp, autoPlayInputs);
+
       let nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
-
-      if (await handleResponseOutputs(resp, autoPlayInputs)) {
-        setPendingHighlightAfterOutput(nextId);
-        if (nextId) safeHighlight(nextId);
-      } else {
-        const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-        safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
-      }
+      if (nextId) safeHighlight(nextId);
 
       nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
@@ -694,6 +682,10 @@ export default function TopBarControls({
         setStepCount((s) => s + 1);
         setVariablesSent(true);
 
+        const currentIdRawLoop = resp?.result?.node?.id ?? null;
+        const currentNodeIdLoop = currentIdRawLoop !== null && typeof currentIdRawLoop !== "undefined" ? String(currentIdRawLoop) : null;
+        if (currentNodeIdLoop) safeHighlight(currentNodeIdLoop);
+
         const backendDoneLoop = Boolean(resp?.result?.done ?? resp?.done ?? false);
         let nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
         const inferredDoneLoop = isEndType(nextTypeLoop);
@@ -713,18 +705,11 @@ export default function TopBarControls({
           resp = lastResponse ?? resp;
         }
 
+        await handleResponseOutputs(resp, autoPlayInputs);
+
         nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
-
-        if (await handleResponseOutputs(resp, autoPlayInputs)) {
-          setPendingHighlightAfterOutput(nextId);
-          setPendingHighlightAfterOutput(null);
-          if (nextId) safeHighlight(nextId);
-        } else {
-          const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-          const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
-          safeHighlight(loopNodeId);
-        }
+        if (nextId) safeHighlight(nextId);
 
         nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
 
@@ -852,16 +837,16 @@ export default function TopBarControls({
       setStepCount((s) => s + 1);
       setVariablesSent(true);
 
+      const currentIdRaw = resp?.result?.node?.id ?? null;
+      const currentNodeId = currentIdRaw !== null && typeof currentIdRaw !== "undefined" ? String(currentIdRaw) : null;
+      if (currentNodeId) safeHighlight(currentNodeId);
+
       const nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
 
       setInputValue("");
       setInputNodeId(null);
       setInputVarName(null);
       setExpecting(false);
-
-      const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-      const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
-      safeHighlight(currentNodeId);
 
       const currentType = resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? null;
       const currentTypeStr = currentType ? String(currentType).toUpperCase().trim() : null;
@@ -889,19 +874,39 @@ export default function TopBarControls({
         return;
       }
 
-      const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs);
-      if (hadOutputs) {
-        const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
-        const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
-        setPendingHighlightAfterOutput(nextId);
+      await handleResponseOutputs(resp, autoPlayInputs);
+
+      const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
+      const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
+      if (nextId) safeHighlight(nextId);
+
+      if (nextType === "IN" || nextType === "INPUT") {
+        const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
+        setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
+        setExpecting(true);
       } else {
-        if (nextType === "IN" || nextType === "INPUT") {
-          const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
-          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
-          setExpecting(true);
-        } else {
-          setExpecting(false);
+        setExpecting(false);
+      }
+
+      const finalDone = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextType);
+      if (finalDone && !runAllActiveRef.current) {
+        try {
+          const endId = await pickEndNodeId();
+          if (endId) safeHighlight(endId);
+        } catch (err) {}
+        try {
+          await apiTrialReset(effectiveId as any);
+        } catch (err) {
+          try { await apiExecuteTrial(effectiveId as any, { action: "reset" }); } catch (e) {}
         }
+        setLastResponse(null);
+        setStepCount(0);
+        setVariablesSent(false);
+        setInputNodeId(null);
+        setInputVarName(null);
+        setDone(false);
+        const restartId = await pickRestartNodeId();
+        if (restartId) safeHighlight(restartId);
       }
 
       if (runAllWaitingForInputRef.current) {
