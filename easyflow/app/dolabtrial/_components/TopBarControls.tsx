@@ -608,14 +608,8 @@ export default function TopBarControls({
       let nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      const nextIsInput0 = isInputType(nextType);
-      if (await handleResponseOutputs(resp, autoPlayInputs, nextIsInput0)) {
-        setPendingHighlightAfterOutput(nextId);
-        if (nextId) safeHighlight(nextId);
-      } else {
-        const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-        safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
-      }
+      // Do NOT call handleResponseOutputs here yet — we need to check if next node is INPUT first.
+      // We defer output flushing until we are sure no more INPUT nodes follow.
 
       nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
@@ -624,6 +618,8 @@ export default function TopBarControls({
         const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
         const defaultVal = resolveDefaultValueForVar(resolvedVarName ?? null);
         if (autoPlayInputs) {
+          // buffer any outputs before executing the auto-input step
+          await handleResponseOutputs(resp, autoPlayInputs, true);
           const singleVarPayload: Variable[] = [{ name: resolvedVarName ?? "input", value: defaultVal }];
           resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: singleVarPayload, forceAdvanceBP })) as ExecuteResponse;
           setLastResponse(resp);
@@ -632,6 +628,8 @@ export default function TopBarControls({
           nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
           finalDone = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextType);
         } else {
+          // buffer outputs — more input is coming
+          await handleResponseOutputs(resp, autoPlayInputs, true);
           setInputNodeId(nextId ?? null);
           setInputVarName(resolvedVarName ?? null);
           setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName ?? "input"}` }]);
@@ -644,6 +642,15 @@ export default function TopBarControls({
           resp = lastResponse ?? resp;
           nextType = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
           finalDone = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextType);
+        }
+      } else {
+        // Next node is NOT input — safe to flush now
+        const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs, false);
+        if (hadOutputs) {
+          if (nextId) safeHighlight(nextId);
+        } else {
+          const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+          safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
         }
       }
 
@@ -746,21 +753,11 @@ export default function TopBarControls({
         nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
         nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
-        const nextIsInputLoop = isInputType(nextTypeLoop) || finalDoneLoop === false && isEndType(nextTypeLoop) === false && nextTypeLoop === "IN";
-
-        if (await handleResponseOutputs(resp, autoPlayInputs, isInputType(nextTypeLoop))) {
-          setPendingHighlightAfterOutput(nextId);
-          setPendingHighlightAfterOutput(null);
-          if (nextId) safeHighlight(nextId);
-        } else {
-          const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-          const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
-          safeHighlight(loopNodeId);
-        }
-
-        nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
 
         if (nextTypeLoop === "IN" || nextTypeLoop === "INPUT") {
+          // More input coming — buffer outputs, do NOT flush yet
+          await handleResponseOutputs(resp, autoPlayInputs, true);
+
           const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
           const defaultVal = resolveDefaultValueForVar(resolvedVarName ?? null);
           if (autoPlayInputs) {
@@ -783,10 +780,19 @@ export default function TopBarControls({
             resp = lastResponse ?? resp;
             nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
             const finishedNow = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextTypeLoop);
-            if (finishedNow) {
-            } else {
+            if (!finishedNow) {
               continue;
             }
+          }
+        } else {
+          // Next is NOT input — flush buffered outputs now
+          const hadLoopOutputs = await handleResponseOutputs(resp, autoPlayInputs, false);
+          if (hadLoopOutputs) {
+            if (nextId) safeHighlight(nextId);
+          } else {
+            const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+            const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
+            safeHighlight(loopNodeId);
           }
         }
 
