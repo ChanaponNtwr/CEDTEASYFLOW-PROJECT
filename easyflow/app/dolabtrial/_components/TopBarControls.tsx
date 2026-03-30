@@ -905,6 +905,9 @@ export default function TopBarControls({
         const inputNodeIdResolved = nextInputId !== null && typeof nextInputId !== "undefined" ? String(nextInputId) : null;
         const resolvedVarName2 = await getFirstVarNameForNode(inputNodeIdResolved);
 
+        // ── FIX: buffer any outputs from this resp before showing next input prompt ──
+        await handleResponseOutputs(resp, autoPlayInputs, true);
+
         setInputNodeId(inputNodeIdResolved);
         setInputVarName(resolvedVarName2 ?? null);
         setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
