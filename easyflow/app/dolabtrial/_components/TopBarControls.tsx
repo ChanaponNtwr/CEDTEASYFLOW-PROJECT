@@ -88,9 +88,6 @@ export default function TopBarControls({
   const expectingInputRef = useRef<boolean>(expectingInput);
   const pendingErrorRef = useRef<string | null>(null);
 
-  // Buffer to accumulate outputs across multiple input steps before flushing
-  const pendingOutputBufferRef = useRef<any[]>([]);
-
   const [labInfo, setLabInfo] = useState<{ name?: string; detail?: string } | null>(null);
 
   const togglePopup = () => setShowPopup((v) => !v);
@@ -256,31 +253,8 @@ export default function TopBarControls({
       const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
       setChatMessages((m) => [...m, ...mapped]);
 
-      const waitMs = autoContinue ? 120 : 600;
-      try {
-        await sleep(waitMs);
-      } catch {}
-      return true;
-    }
-    return false;
-  };
-
-  // Collect outputs into buffer without flushing to chat yet
-  const collectOutputsToBuffer = (resp: ExecuteResponse | undefined | null): void => {
-    const respOutputs = extractNewOutputs(resp);
-    if (Array.isArray(respOutputs) && respOutputs.length > 0) {
-      pendingOutputBufferRef.current = [...pendingOutputBufferRef.current, ...respOutputs];
-    }
-  };
-
-  // Flush all buffered outputs to chat at once
-  const flushOutputBuffer = async (autoContinue = false): Promise<boolean> => {
-    const buffered = pendingOutputBufferRef.current;
-    pendingOutputBufferRef.current = [];
-    if (buffered.length > 0) {
-      const mapped = buffered.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
-      setChatMessages((m) => [...m, ...mapped]);
-      const waitMs = autoContinue ? 120 : 600;
+      // ลดเวลาดีเลย์ของ Output ในโหมด Run All เพื่อให้แสดงผลลัพธ์ออกมาพร้อมๆ กัน
+      const waitMs = runAllActiveRef.current ? 50 : (autoContinue ? 120 : 600);
       try {
         await sleep(waitMs);
       } catch {}
@@ -525,8 +499,6 @@ export default function TopBarControls({
     setIsLoading(true);
     setErrorMsg(null);
     runAllActiveRef.current = true;
-    // Clear output buffer at the start of a fresh run
-    pendingOutputBufferRef.current = [];
 
     try {
       const resolvedInitialVars = initialVariables ?? fetchedVariables ?? [];
@@ -600,22 +572,10 @@ export default function TopBarControls({
       let nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-      // Buffer outputs instead of flushing immediately — will flush after all inputs are done
-      collectOutputsToBuffer(resp);
-
-      // Only flush now if the next step is NOT another input node and we're not done
-      const nextIsInput = nextType === "IN" || nextType === "INPUT";
-      if (!nextIsInput && !finalDone) {
-        if (await flushOutputBuffer(autoPlayInputs)) {
-          setPendingHighlightAfterOutput(nextId);
-          if (nextId) safeHighlight(nextId);
-        } else {
-          const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-          safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
-        }
-      } else if (!nextIsInput) {
-        // finalDone case — flush before finishing
-        await flushOutputBuffer(autoPlayInputs);
+      if (await handleResponseOutputs(resp, autoPlayInputs)) {
+        setPendingHighlightAfterOutput(nextId);
+        if (nextId) safeHighlight(nextId);
+      } else {
         const rawId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
         safeHighlight(rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null);
       }
@@ -651,9 +611,6 @@ export default function TopBarControls({
       }
 
       if (finalDone) {
-        // Flush any remaining buffered outputs before finishing
-        await flushOutputBuffer(autoPlayInputs);
-
         try {
           const endId = await pickEndNodeId();
           if (endId) safeHighlight(endId);
@@ -686,7 +643,8 @@ export default function TopBarControls({
           runAllWaitingForInputRef.current = null;
         }
 
-        await sleep(180);
+        // ลด delay ในลูป Run All เพื่อให้ทำงานได้ต่อเนื่องและเร็วขึ้น
+        await sleep(50);
 
         try {
           resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: [], forceAdvanceBP })) as ExecuteResponse;
@@ -749,24 +707,17 @@ export default function TopBarControls({
         nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
         nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
-        // Collect outputs into buffer; only flush when next node is NOT another input
-        collectOutputsToBuffer(resp);
+        if (await handleResponseOutputs(resp, autoPlayInputs)) {
+          setPendingHighlightAfterOutput(nextId);
+          setPendingHighlightAfterOutput(null);
+          if (nextId) safeHighlight(nextId);
+        } else {
+          const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+          const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
+          safeHighlight(loopNodeId);
+        }
 
         nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
-        const nextLoopIsInput = nextTypeLoop === "IN" || nextTypeLoop === "INPUT";
-
-        if (!nextLoopIsInput) {
-          // Safe to flush all buffered outputs now
-          if (await flushOutputBuffer(autoPlayInputs)) {
-            setPendingHighlightAfterOutput(nextId);
-            setPendingHighlightAfterOutput(null);
-            if (nextId) safeHighlight(nextId);
-          } else {
-            const rawLoopId = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
-            const loopNodeId = rawLoopId !== null && typeof rawLoopId !== "undefined" ? String(rawLoopId) : null;
-            safeHighlight(loopNodeId);
-          }
-        }
 
         if (nextTypeLoop === "IN" || nextTypeLoop === "INPUT") {
           const resolvedVarName = await getFirstVarNameForNode(nextId ?? null);
@@ -799,9 +750,6 @@ export default function TopBarControls({
         }
 
         if (finalDoneLoop) {
-          // Flush any remaining buffered outputs before finishing
-          await flushOutputBuffer(autoPlayInputs);
-
           try {
             const endId = await pickEndNodeId();
             if (endId) safeHighlight(endId);
@@ -832,8 +780,6 @@ export default function TopBarControls({
       setErrorMsg(message);
       setChatMessages((m) => [...m, { sender: "system", text: `Error: ${message}` }]);
     } finally {
-      // Flush any leftover buffered outputs on exit
-      pendingOutputBufferRef.current = [];
       setIsLoading(false);
       runAllActiveRef.current = false;
       if (runAllWaitingForInputRef.current) {
@@ -934,26 +880,19 @@ export default function TopBarControls({
         return;
       }
 
-      // Collect this response's outputs into the buffer (runAll will flush at the right time)
-      // For standalone handleSubmitInput (not inside runAll), flush immediately
-      if (!runAllActiveRef.current) {
-        const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs);
-        if (hadOutputs) {
-          const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
-          const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
-          setPendingHighlightAfterOutput(nextId);
-        } else {
-          if (nextType === "IN" || nextType === "INPUT") {
-            const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
-            setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
-            setExpecting(true);
-          } else {
-            setExpecting(false);
-          }
-        }
+      const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs);
+      if (hadOutputs) {
+        const nextIdRaw = resp?.nextNodeId ?? resp?.result?.node?.id ?? null;
+        const nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
+        setPendingHighlightAfterOutput(nextId);
       } else {
-        // Inside runAll: buffer outputs, let runAll decide when to flush
-        collectOutputsToBuffer(resp);
+        if (nextType === "IN" || nextType === "INPUT") {
+          const resolvedVarName2 = await getFirstVarNameForNode(resp?.nextNodeId ?? null);
+          setChatMessages((m) => [...m, { sender: "system", text: `กรุณากรอกค่า ${resolvedVarName2 ?? "input"}` }]);
+          setExpecting(true);
+        } else {
+          setExpecting(false);
+        }
       }
 
       if (runAllWaitingForInputRef.current) {
@@ -1024,7 +963,6 @@ export default function TopBarControls({
       setErrorMsg(null);
 
       pendingErrorRef.current = null;
-      pendingOutputBufferRef.current = [];
 
       if (runAllWaitingForInputRef.current) {
         try {
