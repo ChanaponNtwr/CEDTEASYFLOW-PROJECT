@@ -102,7 +102,6 @@ class Executor {
         variables: Array.isArray(this.context.variables)
           ? this.context.variables
           : [],
-        output: Array.isArray(this.context.output) ? this.context.output : [],
       };
 
       // Attempt to persist internal scope stack if present (Context implementation dependent)
