@@ -57,12 +57,14 @@ class Flowchart {
     if (!this.nodes[node.id]) {
       node.outgoingEdgeIds = node.outgoingEdgeIds || [];
       node.incomingEdgeIds = node.incomingEdgeIds || [];
+      node.parentIfId = node.parentIfId ?? null;
       this.nodes[node.id] = node;
     } else {
       this.nodes[node.id].outgoingEdgeIds =
         this.nodes[node.id].outgoingEdgeIds || [];
       this.nodes[node.id].incomingEdgeIds =
         this.nodes[node.id].incomingEdgeIds || [];
+      this.nodes[node.id].parentIfId = this.nodes[node.id].parentIfId ?? null;
     }
   }
 
@@ -257,18 +259,25 @@ class Flowchart {
   insertNodeAtEdge(edgeId, newNode, edgeLabel = "auto") {
     const edge = this.edges[edgeId];
     if (!edge) throw new Error(`ไม่พบ edge id = ${edgeId}`);
-    const { source, target: oldTarget, condition: originalCondition } = edge;
+
+    const { source, target: oldTarget } = edge;
+    const sourceNode = this.getNode(source);
+
+    // ✅ resolve scope ให้ถูกก่อน
+    const scopeIfId = this._resolveParentIfIdForEdge(edgeId);
+
+    // ✅ node ใหม่อยู่ใน scope เดียวกับ edge ที่ถูก split
+    newNode.parentIfId = scopeIfId;
 
     this.addNode(newNode);
 
     if (edge.id === "n_start-n_end") {
-      // canonical edge: สร้าง edge ใหม่ source → newNode แทนการ repoint
       const created = this.addEdge(source, newNode.id, "auto");
       newNode.incomingEdgeIds = newNode.incomingEdgeIds || [];
-      if (!newNode.incomingEdgeIds.includes(created.id))
+      if (!newNode.incomingEdgeIds.includes(created.id)) {
         newNode.incomingEdgeIds.push(created.id);
+      }
 
-      // ลบ canonical edge ถ้ามี outgoing อื่นแล้ว
       if (this.edges[edgeId]) {
         const srcNode = this.getNode(source);
         const others = (srcNode?.outgoingEdgeIds || []).filter(
@@ -277,28 +286,19 @@ class Flowchart {
         if (others.length > 0) this.removeEdge(edgeId);
       }
     } else {
-      // FIX 1: repoint edge เดิม source → newNode โดยไม่เปลี่ยน condition เลย
       this.updateEdgeTarget(edgeId, newNode.id);
     }
 
     if (newNode.type === "IF") {
-      /**
-       * IF structure:
-       *   IF  -["true"] → BP
-       *   IF  -["false"]→ BP   ← merge point เดียวกัน
-       *   BP  -["auto"] → oldTarget   ← FIX 3: ต้องเป็น "auto" เสมอ
-       */
       const bpNodeId = `bp_${newNode.id}`;
-      // FIX 2: type "BP" + data { note: "" } ผ่าน Node validator
       const bpNode = new Node(bpNodeId, "BP", "BP", { note: "" });
+      bpNode.parentIfId = newNode.id;
       this.addNode(bpNode);
 
       const eTrue = this.addEdge(newNode.id, bpNodeId, "true");
       const eFalse = this.addEdge(newNode.id, bpNodeId, "false");
-      // FIX 3: BP → oldTarget ด้วย "auto"
       this.addEdge(bpNodeId, oldTarget, "auto");
 
-      // FIX 4: เก็บ ref เพื่อใช้ตอน removeNode
       newNode.bpNodeId = bpNodeId;
       newNode.trueEdge = eTrue.id;
       newNode.falseEdge = eFalse.id;
@@ -313,11 +313,9 @@ class Flowchart {
       newNode.loopEdge = loopE?.id ?? loopE;
       newNode.loopExitEdge = exitE?.id ?? exitE;
     } else {
-      // Node ทั่วไป: newNode → oldTarget
       this.addEdge(newNode.id, oldTarget, "auto");
     }
 
-    // sync loopEdge/loopExitEdge ของ node อื่นที่ชี้ edgeId เดิม (ยังถูกต้อง)
     Object.values(this.nodes).forEach((n) => {
       if (n.loopExitEdge === edgeId) n.loopExitEdge = edgeId;
       if (n.loopEdge === edgeId) n.loopEdge = edgeId;
@@ -350,7 +348,42 @@ class Flowchart {
     return newNode;
   }
 
-    // ─── Internal cleanup helpers ─────────────────────────────────────────────
+  _resolveParentIfIdForEdge(edgeId) {
+    const edge = this.edges[edgeId];
+    if (!edge) return null;
+
+    const sourceNode = this.getNode(edge.source);
+    const targetNode = this.getNode(edge.target);
+
+    // เริ่ม branch ใหม่จาก IF node => scope คือ IF ตัวนั้น
+    if (sourceNode?.type === "IF") {
+      return sourceNode.id;
+    }
+
+    // edge ออกจาก BP:
+    // - ถ้าไป BP อีกตัว ให้ใช้ outer scope ของ target BP
+    // - ถ้าไป node ปกติ ให้ใช้ scope ของ target ถ้ามี
+    // - ถ้าไม่มี ให้ถือว่าอยู่นอก IF แล้ว
+    if (sourceNode?.type === "BP") {
+      if (targetNode?.type === "BP") {
+        return targetNode.parentIfId ?? null;
+      }
+      return targetNode?.parentIfId ?? null;
+    }
+
+    // ถ้าปลายทางเป็น BP ให้ใช้ scope ของ BP นั้น
+    if (targetNode?.type === "BP") {
+      return targetNode.parentIfId ?? null;
+    }
+
+    // กรณีทั่วไป: ใช้ scope ที่มีอยู่จากฝั่ง source ก่อน
+    if (sourceNode?.parentIfId) return sourceNode.parentIfId;
+    if (targetNode?.parentIfId) return targetNode.parentIfId;
+
+    return null;
+  }
+
+  // ─── Internal cleanup helpers ─────────────────────────────────────────────
 
   _collectReachableNodeIds(startId = "n_start") {
     const visited = new Set();
@@ -388,12 +421,17 @@ class Flowchart {
 
     // sync refs ใน node
     Object.values(this.nodes).forEach((n) => {
-      n.outgoingEdgeIds = (n.outgoingEdgeIds || []).filter((id) => this.edges[id]);
-      n.incomingEdgeIds = (n.incomingEdgeIds || []).filter((id) => this.edges[id]);
+      n.outgoingEdgeIds = (n.outgoingEdgeIds || []).filter(
+        (id) => this.edges[id],
+      );
+      n.incomingEdgeIds = (n.incomingEdgeIds || []).filter(
+        (id) => this.edges[id],
+      );
 
       if (n.loopEdge && !this.edges[n.loopEdge]) n.loopEdge = null;
       if (n.loopExitEdge && !this.edges[n.loopExitEdge]) n.loopExitEdge = null;
       if (n.bpNodeId && !this.nodes[n.bpNodeId]) n.bpNodeId = null;
+      if (n.parentIfId && !this.nodes[n.parentIfId]) n.parentIfId = null;
     });
   }
 
@@ -407,7 +445,9 @@ class Flowchart {
           (e) =>
             e.source === n.id &&
             e.target === n.id &&
-            (e.condition === "true" || e.condition === "next" || e.condition === "auto"),
+            (e.condition === "true" ||
+              e.condition === "next" ||
+              e.condition === "auto"),
         );
         if (selfLoop) {
           n.loopEdge = selfLoop.id;
@@ -424,9 +464,10 @@ class Flowchart {
             e.target !== n.id,
         );
 
-        const preferredOrder = n.type === "WH"
-          ? ["false", "auto", "done"]
-          : ["done", "auto", "false"];
+        const preferredOrder =
+          n.type === "WH"
+            ? ["false", "auto", "done"]
+            : ["done", "auto", "false"];
 
         let chosen = null;
         for (const pref of preferredOrder) {
@@ -446,10 +487,18 @@ class Flowchart {
 
       // sync ids
       n.outgoingEdgeIds = n.outgoingEdgeIds || [];
-      if (n.loopEdge && this.edges[n.loopEdge] && !n.outgoingEdgeIds.includes(n.loopEdge)) {
+      if (
+        n.loopEdge &&
+        this.edges[n.loopEdge] &&
+        !n.outgoingEdgeIds.includes(n.loopEdge)
+      ) {
         n.outgoingEdgeIds.push(n.loopEdge);
       }
-      if (n.loopExitEdge && this.edges[n.loopExitEdge] && !n.outgoingEdgeIds.includes(n.loopExitEdge)) {
+      if (
+        n.loopExitEdge &&
+        this.edges[n.loopExitEdge] &&
+        !n.outgoingEdgeIds.includes(n.loopExitEdge)
+      ) {
         n.outgoingEdgeIds.push(n.loopExitEdge);
       }
     }
@@ -487,7 +536,8 @@ class Flowchart {
 
         while (stack.length > 0) {
           const cur = stack.pop();
-          if (!cur || cur === bpId || cur === nodeId || bodyNodes.has(cur)) continue;
+          if (!cur || cur === bpId || cur === nodeId || bodyNodes.has(cur))
+            continue;
 
           const curNode = this.getNode(cur);
           if (!curNode) continue;
@@ -496,7 +546,8 @@ class Flowchart {
 
           for (const oe of Object.values(this.edges)) {
             if (oe.source !== cur) continue;
-            if (!oe.target || oe.target === bpId || oe.target === nodeId) continue;
+            if (!oe.target || oe.target === bpId || oe.target === nodeId)
+              continue;
             if (!bodyNodes.has(oe.target)) stack.push(oe.target);
           }
         }
@@ -522,7 +573,9 @@ class Flowchart {
 
           if (this.getNode(nid)) {
             delete this.nodes[nid];
-            console.log(`IF body node ${nid} cascade-deleted with IF ${nodeId}`);
+            console.log(
+              `IF body node ${nid} cascade-deleted with IF ${nodeId}`,
+            );
           }
         }
 
@@ -541,7 +594,10 @@ class Flowchart {
 
         // ถ้า BP ไม่มี incoming แล้ว ให้ลบ BP ทิ้งด้วย
         const bpNow = this.getNode(bpId);
-        if (bpNow && (!bpNow.incomingEdgeIds || bpNow.incomingEdgeIds.length === 0)) {
+        if (
+          bpNow &&
+          (!bpNow.incomingEdgeIds || bpNow.incomingEdgeIds.length === 0)
+        ) {
           const bpEdges = Object.values(this.edges)
             .filter((e) => e.source === bpId || e.target === bpId)
             .map((e) => e.id);
@@ -552,7 +608,9 @@ class Flowchart {
         }
       } else {
         // fallback: ไม่มี BP → reconnect incoming ไปยัง outgoing โดยตรง
-        targets = outgoingEdges.map((e) => e.target).filter((t) => t && t !== nodeId);
+        targets = outgoingEdges
+          .map((e) => e.target)
+          .filter((t) => t && t !== nodeId);
 
         for (const inEdge of incomingEdges) {
           for (const t of targets) {
@@ -586,7 +644,9 @@ class Flowchart {
       if (exitTargets.length === 0) {
         for (const e of outgoingEdges) {
           if (
-            (e.condition === "false" || e.condition === "done" || e.condition === "auto") &&
+            (e.condition === "false" ||
+              e.condition === "done" ||
+              e.condition === "auto") &&
             e.target &&
             e.target !== nodeId &&
             !exitTargets.includes(e.target)
@@ -605,7 +665,13 @@ class Flowchart {
 
       while (stack.length > 0) {
         const cur = stack.pop();
-        if (!cur || cur === nodeId || exitTargets.includes(cur) || bodyNodes.has(cur)) continue;
+        if (
+          !cur ||
+          cur === nodeId ||
+          exitTargets.includes(cur) ||
+          bodyNodes.has(cur)
+        )
+          continue;
 
         const curNode = this.getNode(cur);
         if (!curNode) continue;
@@ -614,7 +680,12 @@ class Flowchart {
 
         for (const oe of Object.values(this.edges)) {
           if (oe.source !== cur) continue;
-          if (!oe.target || oe.target === nodeId || exitTargets.includes(oe.target)) continue;
+          if (
+            !oe.target ||
+            oe.target === nodeId ||
+            exitTargets.includes(oe.target)
+          )
+            continue;
           if (!bodyNodes.has(oe.target)) stack.push(oe.target);
         }
       }
@@ -622,7 +693,9 @@ class Flowchart {
       const finalTargets =
         exitTargets.length > 0
           ? exitTargets
-          : (this.getNode("n_end") ? ["n_end"] : []);
+          : this.getNode("n_end")
+            ? ["n_end"]
+            : [];
 
       // reconnect incoming ไปยัง exit
       for (const inEdge of incomingEdges) {
@@ -646,7 +719,9 @@ class Flowchart {
 
         if (this.getNode(nid)) {
           delete this.nodes[nid];
-          console.log(`Loop body node ${nid} ถูกลบเนื่องจาก loop ${nodeId} ถูกลบ`);
+          console.log(
+            `Loop body node ${nid} ถูกลบเนื่องจาก loop ${nodeId} ถูกลบ`,
+          );
         }
       }
 
@@ -660,14 +735,18 @@ class Flowchart {
         this.removeEdge(eid);
       }
 
-      if (node.loopEdge && this.edges[node.loopEdge]) this.removeEdge(node.loopEdge);
-      if (node.loopExitEdge && this.edges[node.loopExitEdge]) this.removeEdge(node.loopExitEdge);
+      if (node.loopEdge && this.edges[node.loopEdge])
+        this.removeEdge(node.loopEdge);
+      if (node.loopExitEdge && this.edges[node.loopExitEdge])
+        this.removeEdge(node.loopExitEdge);
 
       delete this.nodes[nodeId];
 
-    // ── Node ทั่วไป ──────────────────────────────────────────────────────────
+      // ── Node ทั่วไป ──────────────────────────────────────────────────────────
     } else {
-      targets = outgoingEdges.map((e) => e.target).filter((t) => t && t !== nodeId);
+      targets = outgoingEdges
+        .map((e) => e.target)
+        .filter((t) => t && t !== nodeId);
 
       for (const inEdge of incomingEdges) {
         for (const t of targets) {
@@ -698,7 +777,9 @@ class Flowchart {
       for (const eid of [...inNow, ...outNow]) this.removeEdge(eid);
       delete this.nodes[nodeId];
 
-      console.log(`Node ${nodeId} ถูกลบเรียบร้อย (rewired to: ${targets.join(", ")})`);
+      console.log(
+        `Node ${nodeId} ถูกลบเรียบร้อย (rewired to: ${targets.join(", ")})`,
+      );
     }
 
     // ─── Final cleanup ───────────────────────────────────────────────────────
@@ -721,7 +802,10 @@ class Flowchart {
 
     // restore default start→end ถ้า n_start ไม่มี outgoing เหลือ
     const startNode = this.getNode("n_start");
-    if (startNode && (!startNode.outgoingEdgeIds || startNode.outgoingEdgeIds.length === 0)) {
+    if (
+      startNode &&
+      (!startNode.outgoingEdgeIds || startNode.outgoingEdgeIds.length === 0)
+    ) {
       if (this.getNode("n_end") && !this.edges["n_start-n_end"]) {
         this._addEdgeInternal(
           new Edge("n_start-n_end", "n_start", "n_end", "auto"),
@@ -733,6 +817,7 @@ class Flowchart {
   getNode(id) {
     return this.nodes[id];
   }
+
   getEdge(id) {
     return this.edges[id];
   }
