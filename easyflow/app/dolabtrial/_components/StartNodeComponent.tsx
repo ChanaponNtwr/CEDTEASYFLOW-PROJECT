@@ -41,10 +41,10 @@ const TerminatorNodeComponent: React.FC<TerminatorNodeProps> = ({ data }) => {
     // add visible highlight styles when needed
     ...(highlighted
       ? {
-          border: "3px solid #ff6b00",
-          boxShadow: "0 0 0 8px rgba(255,107,0,0.12)",
-          transition: "box-shadow 160ms, border 160ms",
-        }
+        border: "3px solid #ff6b00",
+        boxShadow: "0 0 0 8px rgba(255,107,0,0.12)",
+        transition: "box-shadow 160ms, border 160ms",
+      }
       : {}),
   };
 

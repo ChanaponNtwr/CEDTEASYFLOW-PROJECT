@@ -28,7 +28,7 @@ type NodeResult = {
 
 type ExecContext = { variables?: Variable[]; index_map?: Record<string, number>; output?: any[] };
 
-type ExecResult = { node?: NodeResult; context?: ExecContext; done?: boolean; paused?: boolean; newOutput?: any[];};
+type ExecResult = { node?: NodeResult; context?: ExecContext; done?: boolean; paused?: boolean; newOutput?: any[] };
 
 type ExecuteResponse = {
   ok: boolean;
@@ -44,7 +44,6 @@ type ExecuteResponse = {
 };
 
 interface TopBarControlsProps {
-  // New: prefer trialId (UUID string). Keep flowchartId for backward compatibility.
   trialId?: string | null;
   flowchartId?: string | number | null;
   initialVariables?: Variable[] | null;
@@ -61,7 +60,6 @@ export default function TopBarControls({
   onHighlightNode,
   autoPlayInputs = false,
 }: TopBarControlsProps) {
-  // effectiveId is what we send to trial endpoints (string UUID preferred)
   const effectiveId: string | null = (trialId ?? (flowchartId != null ? String(flowchartId) : null)) as string | null;
 
   const [showPopup, setShowPopup] = useState(false);
@@ -87,13 +85,9 @@ export default function TopBarControls({
   const runAllActiveRef = useRef(false);
   const runAllWaitingForInputRef = useRef<(() => void) | null>(null);
 
-  // ref to mirror expectingInput state so loops/closures see latest value
   const expectingInputRef = useRef<boolean>(expectingInput);
-
-  // NEW: pending error storage so we can show it AFTER user input
   const pendingErrorRef = useRef<string | null>(null);
 
-  // --- State สำหรับเก็บข้อมูล Lab ---
   const [labInfo, setLabInfo] = useState<{ name?: string; detail?: string } | null>(null);
 
   const togglePopup = () => setShowPopup((v) => !v);
@@ -104,20 +98,32 @@ export default function TopBarControls({
     return ["EN", "END", "ED", "TERMINATE", "ENDNODE", "EXIT"].includes(s);
   };
 
-  // small helper sleep
   const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-  // helper to set both state and ref for expectingInput
   const setExpecting = (v: boolean) => {
     expectingInputRef.current = v;
     setExpectingInputState(v);
   };
 
-  // fetch declared variables from flowchart/trial AND Lab Info
+  const isBlankInput = (val: any) => String(val ?? "").trim() === "";
+
+  const pushConsoleError = (message: string) => {
+    setErrorMsg(message);
+    setChatMessages((prev) => [...prev, { sender: "system", text: message }]);
+    console.error(message);
+  };
+
+  const getMissingInputMessage = () => {
+    return `Error: กรุณากรอกค่า ${inputVarName ?? "input"} ก่อนรันต่อ`;
+  };
+
+  const shouldBlockBecauseInputMissing = () => {
+    return expectingInputRef.current && isBlankInput(inputValue);
+  };
+
   useEffect(() => {
     let mounted = true;
 
-    // Fetch Variables AND Lab Info
     const fetchVars = async () => {
       if (initialVariables && initialVariables.length > 0) {
         setFetchedVariables(initialVariables);
@@ -129,9 +135,7 @@ export default function TopBarControls({
         setFetchingVars(true);
         const resp = await apiGetTrialFlowchart(effectiveId);
 
-        // --- Logic การดึงข้อมูล Lab ---
         if (mounted) {
-          // พยายามหา labId จาก response ถ้าไม่มีให้ Default เป็น 18 ตามโจทย์
           const foundLabId = resp?.labId ?? resp?.trial?.labId ?? 238;
 
           if (foundLabId) {
@@ -139,7 +143,6 @@ export default function TopBarControls({
               .then((labResp) => {
                 if (mounted) {
                   const rawLab = labResp?.lab ?? labResp;
-                  // Map ข้อมูลเข้า State (รองรับ structure หลายแบบ)
                   setLabInfo({
                     name: rawLab?.labname ?? rawLab?.name ?? `Lab ${foundLabId}`,
                     detail: rawLab?.problemSolving ?? rawLab?.problem ?? "No description available.",
@@ -149,7 +152,6 @@ export default function TopBarControls({
               .catch((err) => console.warn("Fetch Lab Error:", err));
           }
         }
-        // ------------------------------------------------
 
         const nodes: any[] = resp?.flowchart?.nodes ?? resp?.nodes ?? [];
 
@@ -234,21 +236,16 @@ export default function TopBarControls({
     return String(v);
   };
 
-  // NEW: use only newOutput for display, so old accumulated output won't be shown twice
   const extractNewOutputs = (resp: ExecuteResponse | undefined | null): any[] => {
     if (!resp) return [];
 
-    const raw =
-      resp?.newOutput ??
-      resp?.result?.newOutput ??
-      null;
+    const raw = resp?.newOutput ?? resp?.result?.newOutput ?? null;
 
     if (Array.isArray(raw)) return raw;
     if (raw !== null && typeof raw !== "undefined") return [raw];
     return [];
   };
 
-  // NOTE: changed to async so callers can await to ensure outputs are rendered before continuing.
   const handleResponseOutputs = async (resp: ExecuteResponse | undefined | null, autoContinue = false): Promise<boolean> => {
     const respOutputs = extractNewOutputs(resp);
 
@@ -256,9 +253,6 @@ export default function TopBarControls({
       const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
       setChatMessages((m) => [...m, ...mapped]);
 
-      // Since Acknowledge button was removed from UI, we add a short automatic pause
-      // so outputs are visible in order before the runner continues.
-      // If autoContinue (autoPlayInputs) is true, use a much shorter pause.
       const waitMs = autoContinue ? 120 : 600;
       try {
         await sleep(waitMs);
@@ -354,9 +348,14 @@ export default function TopBarControls({
     return 0;
   };
 
-  // --- Step (with input-missing handling) ---
   const handleStep = async () => {
     if (isLoading) return;
+
+    if (shouldBlockBecauseInputMissing()) {
+      pushConsoleError(getMissingInputMessage());
+      return;
+    }
+
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -369,14 +368,9 @@ export default function TopBarControls({
       try {
         resp = (await apiExecuteTrial(effectiveId as any, payload)) as ExecuteResponse;
       } catch (err: any) {
-        const msg =
-          err?.response?.data?.message ??
-          err?.response?.data?.error ??
-          err?.message ??
-          String(err);
+        const msg = err?.response?.data?.message ?? err?.response?.data?.error ?? err?.message ?? String(err);
         console.warn("apiExecuteTrial error (step):", msg);
 
-        // แก้ไข Regex ให้คลอบคลุมคำว่า input provider
         if (/input missing/i.test(msg) || /input provider/i.test(msg)) {
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
@@ -386,10 +380,8 @@ export default function TopBarControls({
           return;
         }
 
-        // NEW: ถ้า error ระบุว่า "not declared" ให้เก็บไว้แสดงทีหลัง (หลังกรอก input)
         if (/not declare/i.test(msg) || /not declared/i.test(msg) || /not declared before input/i.test(msg)) {
           pendingErrorRef.current = msg;
-          // try to extract varname to prompt user (if present)
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
           setInputVarName(varName);
@@ -398,7 +390,6 @@ export default function TopBarControls({
           return;
         }
 
-        // --- แสดง error ให้ผู้ใช้ทันทีใน Console (อื่น ๆ) ---
         setErrorMsg(msg);
         setChatMessages((m) => [...m, { sender: "system", text: `Error: ${msg}` }]);
         return;
@@ -407,10 +398,7 @@ export default function TopBarControls({
       if (!resp) return;
 
       const possibleNodeType =
-        (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.nextNodeType ?? resp?.result?.node?.type ?? null) as
-          | string
-          | number
-          | null;
+        (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.nextNodeType ?? resp?.result?.node?.type ?? null) as string | number | null;
       const nodeTypeStr = possibleNodeType ? String(possibleNodeType).toUpperCase().trim() : null;
 
       setLastResponse(resp);
@@ -440,7 +428,6 @@ export default function TopBarControls({
       const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs);
       if (hadOutputs) {
         setPendingHighlightAfterOutput(nextId);
-        // Previously we paused here. Now we do an automatic short pause so output is readable.
         if (nextId) safeHighlight(nextId);
         return;
       }
@@ -500,9 +487,14 @@ export default function TopBarControls({
     }
   };
 
-  // --- Run All (with input-missing handling & pause/resume) ---
   const handleRunAll = async () => {
     if (isLoading) return;
+
+    if (shouldBlockBecauseInputMissing()) {
+      pushConsoleError(getMissingInputMessage());
+      return;
+    }
+
     setIsLoading(true);
     setErrorMsg(null);
     runAllActiveRef.current = true;
@@ -511,24 +503,17 @@ export default function TopBarControls({
       const resolvedInitialVars = initialVariables ?? fetchedVariables ?? [];
       let firstCallVars = variablesSent ? [] : resolvedInitialVars;
 
-      // If we are already expecting input before starting, wait here
       if (expectingInputRef.current) {
         await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
         runAllWaitingForInputRef.current = null;
       }
 
-      // FIRST STEP (catch input-missing)
       let resp: ExecuteResponse | null = null;
       try {
         resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: firstCallVars, forceAdvanceBP })) as ExecuteResponse;
       } catch (err: any) {
-        const msg =
-          err?.response?.data?.message ??
-          err?.response?.data?.error ??
-          err?.message ??
-          String(err);
+        const msg = err?.response?.data?.message ?? err?.response?.data?.error ?? err?.message ?? String(err);
 
-        // แก้ไข Regex ให้คลอบคลุมคำว่า input provider
         if (/input missing/i.test(msg) || /input provider/i.test(msg)) {
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
@@ -540,7 +525,6 @@ export default function TopBarControls({
           runAllWaitingForInputRef.current = null;
           resp = lastResponse ?? null;
         } else if (/not declare/i.test(msg) || /not declared/i.test(msg) || /not declared before input/i.test(msg)) {
-          // NEW: ถ้าเป็นกรณี not declared ให้เก็บไว้แสดงทีหลัง (หลังกรอก input)
           pendingErrorRef.current = msg;
           const m = String(msg).match(/'([^']+)'/);
           const varName = m ? m[1] : null;
@@ -552,7 +536,6 @@ export default function TopBarControls({
           runAllWaitingForInputRef.current = null;
           resp = lastResponse ?? null;
         } else {
-          // --- แสดง error ให้ผู้ใช้ทันที (และยกเลิก runAll) ---
           setErrorMsg(msg);
           setChatMessages((m) => [...m, { sender: "system", text: `Error: ${msg}` }]);
           runAllActiveRef.current = false;
@@ -589,8 +572,6 @@ export default function TopBarControls({
       let nextId = nextIdRaw !== null && typeof nextIdRaw !== "undefined" ? String(nextIdRaw) : null;
 
       if (await handleResponseOutputs(resp, autoPlayInputs)) {
-        // NOTE: We now wait a short delay inside handleResponseOutputs before continuing,
-        // and let the caller set pending/highlight as before.
         setPendingHighlightAfterOutput(nextId);
         if (nextId) safeHighlight(nextId);
       } else {
@@ -655,13 +636,10 @@ export default function TopBarControls({
         return;
       }
 
-      // MAIN RUN LOOP
       while (runAllActiveRef.current) {
-        // If expecting input (set by other places), wait here until it's resolved
         if (expectingInputRef.current) {
           await new Promise<void>((resolve) => (runAllWaitingForInputRef.current = resolve));
           runAllWaitingForInputRef.current = null;
-          // after resume, continue loop
         }
 
         await sleep(180);
@@ -669,12 +647,7 @@ export default function TopBarControls({
         try {
           resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: [], forceAdvanceBP })) as ExecuteResponse;
         } catch (err: any) {
-          const msg =
-            err?.response?.data?.message ??
-            err?.response?.data?.error ??
-            err?.message ??
-            String(err);
-          // แก้ไข Regex ให้คลอบคลุมคำว่า input provider
+          const msg = err?.response?.data?.message ?? err?.response?.data?.error ?? err?.message ?? String(err);
           if (/input missing/i.test(msg) || /input provider/i.test(msg)) {
             const m = String(msg).match(/'([^']+)'/);
             const varName = m ? m[1] : null;
@@ -686,7 +659,6 @@ export default function TopBarControls({
             resp = lastResponse ?? null;
             if (!resp) continue;
           } else if (/not declare/i.test(msg) || /not declared/i.test(msg) || /not declared before input/i.test(msg)) {
-            // NEW: store pending error and prompt user for input (then resume)
             pendingErrorRef.current = msg;
             const m = String(msg).match(/'([^']+)'/);
             const varName = m ? m[1] : null;
@@ -698,7 +670,6 @@ export default function TopBarControls({
             resp = lastResponse ?? null;
             if (!resp) continue;
           } else {
-            // --- แสดง error และหยุด loop / ยกเลิก runAll ---
             setErrorMsg(msg);
             setChatMessages((m) => [...m, { sender: "system", text: `Error: ${msg}` }]);
             runAllActiveRef.current = false;
@@ -736,7 +707,6 @@ export default function TopBarControls({
 
         if (await handleResponseOutputs(resp, autoPlayInputs)) {
           setPendingHighlightAfterOutput(nextId);
-          // automatic short pause already handled in handleResponseOutputs
           setPendingHighlightAfterOutput(null);
           if (nextId) safeHighlight(nextId);
         } else {
@@ -771,7 +741,6 @@ export default function TopBarControls({
             nextTypeLoop = resp?.nextNodeType?.toString?.().trim?.()?.toUpperCase?.();
             const finishedNow = Boolean(resp?.result?.done ?? resp?.done ?? false) || isEndType(nextTypeLoop);
             if (finishedNow) {
-              // handled below
             } else {
               continue;
             }
@@ -826,14 +795,18 @@ export default function TopBarControls({
     }
   };
 
-  // --- Input submit (handles both single-step input & runAll resume) ---
   const handleSubmitInput = async () => {
     if (!expectingInputRef.current) return;
+
+    if (isBlankInput(inputValue)) {
+      pushConsoleError(getMissingInputMessage().replace("ก่อนรันต่อ", "ก่อนส่งต่อ"));
+      return;
+    }
+
     setIsLoading(true);
     setErrorMsg(null);
 
     try {
-      // determine variable name
       let currentVars: Variable[] = lastResponse?.result?.node?.variables ?? lastResponse?.result?.context?.variables ?? fetchedVariables ?? [];
 
       const targetNodeIdRaw = inputNodeId ?? lastResponse?.nextNodeId ?? null;
@@ -851,23 +824,19 @@ export default function TopBarControls({
 
       const singleVarPayload: Variable[] = [{ name: resolvedVarName, value: inputValue }];
 
-      // send to backend
       const resp = (await apiExecuteTrial(effectiveId as any, { action: "step", variables: singleVarPayload, forceAdvanceBP })) as ExecuteResponse;
 
-      // เพิ่มการแจ้งเตือน Error จาก Response (หาก API คืนค่า ok เป็น false แต่ไม่เข้า catch)
       if (resp && resp.ok === false) {
         const errMsg = resp.error || resp.message || "Execution failed";
         setChatMessages((m) => [...m, { sender: "system", text: `Error: ${errMsg}` }]);
       }
 
-      // FIRST: if we had a pending error stored earlier, display it now (after user input)
       if (pendingErrorRef.current) {
         const pendingMsg = pendingErrorRef.current;
         setChatMessages((m) => [...m, { sender: "system", text: `Error: ${pendingMsg}` }]);
         pendingErrorRef.current = null;
       }
 
-      // update UI
       setLastResponse(resp);
       setStepCount((s) => s + 1);
       setVariablesSent(true);
@@ -883,8 +852,7 @@ export default function TopBarControls({
       const currentNodeId = rawId !== null && typeof rawId !== "undefined" ? String(rawId) : null;
       safeHighlight(currentNodeId);
 
-      // --- FIX: เพิ่มการตรวจสอบว่า Node ปัจจุบันที่ backend หยุดเป็น Input หรือไม่ ---
-      const currentType = (resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? null);
+      const currentType = resp?.node?.type ?? resp?.node?.nodeType ?? resp?.result?.node?.type ?? null;
       const currentTypeStr = currentType ? String(currentType).toUpperCase().trim() : null;
 
       if (currentTypeStr && (currentTypeStr === "IN" || currentTypeStr === "INPUT" || resp?.paused === true)) {
@@ -900,7 +868,6 @@ export default function TopBarControls({
 
         if (inputNodeIdResolved) safeHighlight(inputNodeIdResolved);
 
-        // ถ้า RunAll รออยู่ ให้ไปต่อได้เลย (resume)
         if (runAllWaitingForInputRef.current) {
           try {
             runAllWaitingForInputRef.current();
@@ -910,7 +877,6 @@ export default function TopBarControls({
         setIsLoading(false);
         return;
       }
-      // --------------------------------------------------------------------------
 
       const hadOutputs = await handleResponseOutputs(resp, autoPlayInputs);
       if (hadOutputs) {
@@ -927,28 +893,19 @@ export default function TopBarControls({
         }
       }
 
-      // Resolve any runAll waiter if present (resume runAll)
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {
-          /* ignore */
-        }
+        } catch {}
         runAllWaitingForInputRef.current = null;
       }
     } catch (err: any) {
       console.error("submit input error", err);
-      // เปลี่ยนการดึงข้อความ Error แบบเจาะลึกไปที่ Response ของ Axios
-      const msg =
-        err?.response?.data?.message ??
-        err?.response?.data?.error ??
-        err?.message ??
-        String(err);
+      const msg = err?.response?.data?.message ?? err?.response?.data?.error ?? err?.message ?? String(err);
 
       setErrorMsg(msg);
       setChatMessages((m) => [...m, { sender: "system", text: `Error: ${msg}` }]);
 
-      // ให้ loop RunAll ที่รอ Input อยู่หลุดจากการรอเมื่อเจอ Error ด้วย (จะได้ไม่ค้าง)
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
@@ -960,7 +917,6 @@ export default function TopBarControls({
     }
   };
 
-  // Acknowledge logic removed from button but kept for reference or internal state clearing
   const acknowledgeOutputs = () => {
     const pending = pendingHighlightAfterOutput;
     setPendingHighlightAfterOutput(null);
@@ -972,7 +928,6 @@ export default function TopBarControls({
   };
 
   const cancelInput = () => {
-    // clear pending error when user cancels input (avoid stale message)
     pendingErrorRef.current = null;
 
     setExpecting(false);
@@ -1005,7 +960,6 @@ export default function TopBarControls({
       setExpecting(false);
       setErrorMsg(null);
 
-      // clear pending error
       pendingErrorRef.current = null;
 
       if (runAllWaitingForInputRef.current) {
@@ -1043,12 +997,8 @@ export default function TopBarControls({
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [chatMessages]);
 
-  // -------------------
-  // Test UI state & handler (unchanged minus effectiveId)
-  // -------------------
   type TestLevel = "error" | "warning" | "info" | "success";
   const [testResults, setTestResults] = useState<Record<string, { level: TestLevel; text: string }[]>>({});
-
   const [runningTests, setRunningTests] = useState(false);
   const [labTestcases, setLabTestcases] = useState<any[]>([]);
 
@@ -1104,7 +1054,6 @@ export default function TopBarControls({
       const newResults: Record<string, { level: TestLevel; text: string }[]> = {};
 
       rawResults.forEach((r: any, idx: number) => {
-        // Use sequential index as key to match display
         const tcId = String(idx + 1);
 
         let status = "UNKNOWN";
@@ -1179,16 +1128,13 @@ export default function TopBarControls({
     }
   };
 
-  // Render Badge now filters out generic FAIL/PASS text from the bottom area
   const renderBadge = (r: { level: TestLevel; text: string }, idx: number) => {
     const base = "inline-block text-base px-2 py-1 rounded-md mb-2 mr-2 font-medium";
 
-    // Filter out simple status text that is already shown in the right badge
     if (["PASS", "FAIL", "UNKNOWN", "ERROR", "SUCCESS"].includes(r.text.toUpperCase())) {
       return null;
     }
 
-    // Special styling for "Actual:" text to make it stand out and bigger
     if (r.text.startsWith("Actual:")) {
       return (
         <div key={idx} className={`block text-lg font-bold mt-1 ${r.level === "error" || r.level === "info" ? "text-red-600" : "text-gray-700"}`}>
@@ -1275,10 +1221,8 @@ export default function TopBarControls({
     return arr.reduce((acc, val) => (Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val)), []);
   };
 
-  // ------- UI rendering -------
   return (
     <div className="absolute z-1 pt-4">
-      {/* Control bar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg shadow-md border border-gray-200 w-fit hover:shadow-lg transition-shadow duration-200">
         <button onClick={handleRunAll} title="Run" className="text-green-600 hover:text-green-700 text-lg p-2 rounded-full hover:bg-green-100 transition-colors">
           <FaPlay />
@@ -1298,15 +1242,11 @@ export default function TopBarControls({
         <button onClick={resetFlowchart} className="text-gray-600 hover:text-gray-700 text-lg p-2 rounded-full hover:bg-gray-100 transition-colors">
           <FaStop />
         </button>
-        <span
-          onClick={togglePopup}
-          className="ml-2 px-3 py-1 bg-blue-200 text-blue-800 text-sm font-semibold rounded-lg cursor-pointer hover:bg-blue-300 transition-colors select-none"
-        >
+        <span onClick={togglePopup} className="ml-2 px-3 py-1 bg-blue-200 text-blue-800 text-sm font-semibold rounded-lg cursor-pointer hover:bg-blue-300 transition-colors select-none">
           Problem solving
         </span>
       </div>
 
-      {/* Persistent single chat panel (Console) */}
       <div className="fixed bottom-6 right-6 z-50 w-96 max-h-[420px] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white flex items-center justify-between">
           <div className="font-medium flex items-center gap-2">Console</div>
@@ -1400,7 +1340,6 @@ export default function TopBarControls({
       {showPopup && (
         <div className="absolute z-50 w-120 h-auto rounded-xl bg-white p-4 shadow-xl border border-gray-200 ml-12 mt-3 transform translate-x-[-10%] animate-fadeIn">
           <div className="relative w-full">
-            {/* Title & description: allow long text to wrap and scroll if too tall */}
             <div className="text-gray-800 text-lg font-medium font-['Sarabun'] leading-snug mb-4 whitespace-pre-wrap break-words">
               {labInfo ? (
                 <>
@@ -1415,7 +1354,6 @@ export default function TopBarControls({
             <div className="space-y-4 max-h-96 overflow-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300">
               {labTestcases.length === 0 && <div className="text-sm text-gray-400">ยังไม่มี Testcases ให้แสดง</div>}
               {labTestcases.map((tc, index) => {
-                // Use Index + 1 for display ID as requested
                 const displayId = String(index + 1);
 
                 const rawInput = parseVal(tc.inputVal ?? tc.input ?? tc.in ?? tc.input_values ?? []);
@@ -1434,13 +1372,11 @@ export default function TopBarControls({
                 return (
                   <div key={displayId} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between gap-4">
-                      {/* Left: Content */}
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-lg font-bold text-gray-800">Test Case #{displayId}</span>
                         </div>
 
-                        {/* Combined Input/Output line with larger font */}
                         <div className="text-base text-gray-600">
                           <span className="font-semibold text-gray-800">Input:</span>{" "}
                           <span className="mr-3 font-mono bg-gray-50 px-1 rounded">{inputDisplay}</span>
@@ -1454,7 +1390,6 @@ export default function TopBarControls({
                         )}
                       </div>
 
-                      {/* Right: Score & Status */}
                       <div className="flex flex-col items-end gap-2 min-w-[100px]">
                         <div className="text-sm font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded">Score: {tc.score ?? 0}</div>
 
@@ -1475,13 +1410,10 @@ export default function TopBarControls({
                       </div>
                     </div>
 
-                    {/* Bottom: Result Details (Actual, Error, etc.) */}
                     <div className="mt-2 pt-2">
                       <div className="flex flex-col">
                         {(testResults[displayId] ?? []).map((r, idx) => (
-                          <div key={idx}>
-                            {renderBadge(r, idx)}
-                          </div>
+                          <div key={idx}>{renderBadge(r, idx)}</div>
                         ))}
                       </div>
                     </div>
@@ -1500,15 +1432,6 @@ export default function TopBarControls({
               >
                 {runningTests ? "Testing..." : "Test"}
               </button>
-
-              {/* Submit: visual parity with original UI but disabled in trial build (no submit handler available here) */}
-              {/* <button
-                disabled
-                title="Submission disabled in trial"
-                className="text-base font-medium px-6 py-2 rounded-full bg-blue-900 text-white opacity-60 cursor-not-allowed"
-              >
-                Submit
-              </button> */}
             </div>
           </div>
         </div>

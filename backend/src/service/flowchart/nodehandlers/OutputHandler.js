@@ -15,7 +15,6 @@ export default function OutputHandler(node, context) {
     return env;
   };
 
-  // helper: strip wrapping quotes ("A" or 'A')
   const stripQuotes = (val) => {
     if (typeof val !== "string") return val;
     const s = val.trim();
@@ -25,45 +24,108 @@ export default function OutputHandler(node, context) {
     ) {
       return s.slice(1, -1);
     }
-    return val;
+    return s;
   };
 
-  // helper: push value(s) into context.output, expanding arrays
   const pushValues = (val) => {
-    if (val == null) {
-      // keep behavior: push null/undefined? here we skip null/undefined to avoid noisy outputs.
-      return;
-    }
+    if (val == null) return;
 
-    // If it's already an array, push each element
+    // ถ้าเป็น array ค่อยแตกทีละค่า
     if (Array.isArray(val)) {
-      val.forEach((x) => context.output.push(x));
+      val.forEach((x) => pushValues(x));
       return;
     }
 
-    // If looks like a JSON array string (e.g. "[1,2,3]"), try parse
+    // ถ้าเป็น string
     if (typeof val === "string") {
       const trimmed = val.trim();
+
+      // ถ้าเป็น JSON array string เช่น "[1,2,3]" ค่อย parse
       if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
         try {
           const parsed = JSON.parse(trimmed);
           if (Array.isArray(parsed)) {
-            parsed.forEach((x) => context.output.push(x));
+            parsed.forEach((x) => pushValues(x));
             return;
           }
         } catch (e) {
-          // fallthrough: not a valid JSON array string
+          // ไม่ใช่ JSON array ก็ปล่อยผ่าน
         }
       }
+
+      // กรณีเป็นหลาย token ที่ครอบ quote แยกกัน เช่น: "p" "p"
+      // จะ split เฉพาะ pattern นี้เท่านั้น
+      const quotedTokens = trimmed.match(/"[^"]*"|'[^']*'/g);
+      if (quotedTokens && quotedTokens.length > 1) {
+        const cleanedQuoted = quotedTokens.map((t) => stripQuotes(t));
+        const rejoined = quotedTokens.join(" ").trim();
+
+        // split เฉพาะเมื่อทั้งสตริงประกอบด้วย quoted tokens เป็นหลัก
+        if (rejoined === trimmed) {
+          cleanedQuoted.forEach((x) => context.output.push(x));
+          return;
+        }
+      }
+
+      // string ปกติ: เก็บทั้งก้อน ไม่ split ตาม space
+      context.output.push(stripQuotes(trimmed));
+      return;
     }
 
-    // otherwise push the single value
+    // number / boolean / อื่น ๆ
     context.output.push(val);
   };
 
   try {
     const trimmed = message.trim();
 
+    try {
+      const env = buildEnv();
+      const names = Object.keys(env);
+      const vals = names.map((n) => env[n]);
+
+      const fn = new Function(...names, `return (${message});`);
+      const evaluated = fn(...vals);
+
+      console.log(`Output (eval): ${evaluated}`);
+      pushValues(evaluated);
+      return { nextCondition: "auto" };
+    } catch (e) {
+      // ถ้า evaluate ไม่ได้ → ค่อยไป logic เดิม
+    }
+    /* ============================================================
+     * 0) Nested Array access เช่น arr[0][0][1]
+     * ============================================================ */
+    const nestedMatch = trimmed.match(/^([A-Za-z_]\w*)((\s*\[\s*\d+\s*\])+)$/
+
+    );
+    if (nestedMatch) {
+      const varName = nestedMatch[1];
+      const indexes = [...trimmed.matchAll(/\[\s*(\d+)\s*\]/g)].map((m) =>
+        parseInt(m[1], 10)
+      );
+
+      const variable = (context.variables || []).find(
+        (v) => v.name === varName,
+      );
+
+      if (variable) {
+        let val = variable.value;
+
+        for (let idx of indexes) {
+          if (Array.isArray(val)) {
+            val = val[idx];
+          } else {
+            val = undefined;
+            break;
+          }
+        }
+
+        console.log(`Output: ${trimmed} = ${val}`);
+        pushValues(val);
+        return { nextCondition: "auto" };
+      }
+    }
     /* ============================================================
      * 1) Exact variable name → output variable value (expand arrays)
      * ============================================================ */

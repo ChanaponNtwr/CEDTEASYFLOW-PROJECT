@@ -3,7 +3,6 @@
 import React, { useEffect, useState, Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import { Edge, Node } from "@xyflow/react";
-// --- แก้ไข 1: เปลี่ยน import เป็น apiGetTrialShapeRemaining ---
 import {
   insertTrialNode,
   deleteTrialNode,
@@ -28,7 +27,7 @@ type FlowNode = Node & {
 };
 
 interface SymbolSectionProps {
-  flowchartId: string; // แก้ไข: เปลี่ยนจาก number เป็น string ให้ตรงกับ trialId ที่ส่งมาจากหน้า page.tsx
+  flowchartId: string;
   selectedEdgeId?: string;
   edge?: Edge;
   onAddNode?: (type: string, label: string, anchorId?: string) => void;
@@ -147,19 +146,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // confirmation modal state (แทน alert/confirm)
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [confirmTitle, setConfirmTitle] = useState("");
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmAction, setConfirmAction] = useState<(() => Promise<void> | void) | null>(null);
   const [confirmVariant, setConfirmVariant] = useState<ModalVariant>("danger");
 
-  // shape remaining state
   const [shapeRemaining, setShapeRemaining] = useState<Record<string, any> | null>(null);
   const [srLoading, setSrLoading] = useState(false);
   const [srError, setSrError] = useState<string | null>(null);
 
-  // fields
   const [inputValue, setInputValue] = useState("");
   const [outputValue, setOutputValue] = useState("");
   const [ifExpression, setIfExpression] = useState("");
@@ -204,7 +200,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     setConflicts([]);
   };
 
-  /* --- Shape remaining helpers --- */
   const parseRemaining = (v: any): number | typeof Infinity | null => {
     if (v === null || v === undefined) return null;
     if (typeof v === "number") return v;
@@ -258,9 +253,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       setSrError(null);
       setSrLoading(true);
 
-      // --- เรียก apiGetTrialShapeRemaining ---
       const res = await apiGetTrialShapeRemaining(flowchartId);
-
       setShapeRemaining(res?.shapeRemaining ?? null);
     } catch (err: any) {
       console.error("apiGetTrialShapeRemaining failed:", err);
@@ -275,20 +268,15 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowchartId]);
 
-  /* --- Helper: extract newOutput (flexible) --- */
   const extractNewOutput = (serviceResp: any): any | null => {
     if (serviceResp === null || serviceResp === undefined) return null;
-    // If service already returned newOutput array directly
     if (Array.isArray(serviceResp)) return serviceResp;
-    // If service returned object with newOutput property
     if (serviceResp?.newOutput && Array.isArray(serviceResp.newOutput)) return serviceResp.newOutput;
     if (serviceResp?.newOutput) return serviceResp.newOutput;
-    // also handle case resp.data?.newOutput when callers pass full axios response (not used here)
     if (serviceResp?.data && Array.isArray(serviceResp.data?.newOutput)) return serviceResp.data.newOutput;
     return null;
   };
 
-  /* --- callUpdateOrAdd --- */
   const callUpdateOrAdd = async (nodeId: string | undefined, uiType: string, label: string, data?: any) => {
     setError("");
     setConflicts([]);
@@ -306,7 +294,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         console.info("Call editTrialNode with:", { flowchartId, nodeId, payload: payloadNode });
         const res = await editTrialNode(flowchartId, nodeId, payloadNode);
 
-        // new: extract newOutput when available and log it (otherwise log full res)
         const newOutput = extractNewOutput(res);
         if (newOutput) {
           console.info("editTrialNode newOutput:", newOutput);
@@ -331,7 +318,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         console.info("Call insertTrialNode with:", { flowchartId, edgeId: selectedEdgeId, node: payloadNode });
         const res = await insertTrialNode(flowchartId, selectedEdgeId, payloadNode);
 
-        // new: extract newOutput when available and log it (otherwise log full res)
         const newOutput = extractNewOutput(res);
         if (newOutput) {
           console.info("insertTrialNode newOutput:", newOutput);
@@ -345,8 +331,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           } catch (refreshErr) {
             console.warn("onRefresh failed after insert:", refreshErr);
           }
-        } else {
-          // nothing to do
         }
       }
 
@@ -382,7 +366,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     }
   };
 
-  // performDelete contains the real delete logic (เดิมถูกเรียกจาก confirm)
   const performDelete = async () => {
     if (!nodeToEdit) return;
     if (!flowchartId) {
@@ -403,7 +386,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
       const res = await deleteTrialNode(flowchartId, nodeId);
 
-      // new: extract newOutput when available and log it (otherwise log full res)
       const newOutput = extractNewOutput(res);
       if (newOutput) {
         console.info("deleteTrialNode newOutput:", newOutput);
@@ -411,7 +393,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         console.info("deleteTrialNode response:", res);
       }
 
-      // delete associated breakpoints (graceful)
       try {
         const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase();
         if (rawType.includes("IF")) {
@@ -463,7 +444,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     }
   };
 
-  // original handler now opens confirm modal instead of window.confirm
   const handleDeleteClick = async () => {
     if (!nodeToEdit) return;
     setError("");
@@ -486,10 +466,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     const rawType = String(nodeToEdit.type ?? nodeToEdit.data?.type ?? "").toUpperCase().trim();
     const rawLabel = String(
       nodeToEdit.label ??
-        nodeToEdit.data?.label ??
-        nodeToEdit.data?.message ??
-        nodeToEdit.data?.condition ??
-        ""
+      nodeToEdit.data?.label ??
+      nodeToEdit.data?.message ??
+      nodeToEdit.data?.condition ??
+      ""
     ).trim();
 
     const stripQuotes = (s: any) => {
@@ -570,7 +550,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       const increment = String(nodeToEdit.data?.increment ?? "");
 
       if (init || condition || increment) {
-        const initMatch = init.match(/([a-zA-Z_]\w*)\s*=\s*([-/\d]+)/);
+        const initMatch = init.match(/([a-zA-Z_]\w*)\s*=\s*(.+)/);
         if (initMatch) {
           setForVariable(String(initMatch[1] ?? ""));
           setForStart(String(initMatch[2] ?? ""));
@@ -586,16 +566,16 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         }
 
         const condMatch =
-          condition.match(/<\s*([-/\d]+)/) ||
-          condition.match(/<=\s*([-/\d]+)/) ||
-          condition.match(/to\s+([-/\d]+)/i);
+          condition.match(/<\s*(.+)$/) ||
+          condition.match(/<=\s*(.+)$/) ||
+          condition.match(/to\s+(.+)$/i);
         if (condMatch) {
           setForEnd(String(condMatch[1] ?? ""));
         } else if (nodeToEdit.data?.end !== undefined) {
           setForEnd(String(nodeToEdit.data.end));
         }
 
-        const stepMatch = increment.match(/(?:\+=|=\s*.+\+\s*)([-/\d]+)/);
+        const stepMatch = increment.match(/(?:\+=|=\s*.+\+\s*)(.+)/);
         if (stepMatch) setForStep(String(stepMatch[1] ?? ""));
         else if (nodeToEdit.data?.step !== undefined) setForStep(String(nodeToEdit.data.step));
       } else {
@@ -626,7 +606,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     onCloseModal?.();
   };
 
-  /* --- Modal Configs --- */
   const modalConfigs: ModalConfig[] = [
     {
       key: "input",
@@ -752,18 +731,32 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       title: "While Properties",
       description: "A WHILE Statement repeatedly executes code as long as the condition is true.",
       icon: "/images/shape_while.png",
-      fields: [{ kind: "simple", key: "condition", placeholder: "condition count < 10", value: whileExpression, setValue: setWhileExpression }],
+      fields: [
+        {
+          kind: "simple",
+          key: "condition",
+          placeholder: "condition count < 10",
+          value: whileExpression,
+          setValue: setWhileExpression
+        }
+      ],
       onSubmit: (e) => {
         e.preventDefault();
+
         const validationError = validateConditionalExpression(whileExpression);
         if (validationError) {
           setError(validationError);
           return;
         }
+
+        // ✅ ดึงชื่อ variable จาก condition เช่น "i < 10"
+        const match = whileExpression.match(/^\s*([a-zA-Z_]\w*)/);
+        const varName = match ? match[1] : "x";
+
         callUpdateOrAdd(nodeToEdit?.id, "while", whileExpression, {
           condition: whileExpression,
-          varName: "x",
-          increment: "x = x + 1",
+          varName: varName,
+          increment: `${varName} = ${varName} + 1`
         });
       },
       onClose: () => {
@@ -794,12 +787,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
           return;
         }
-        if (isNaN(Number(forStart)) || isNaN(Number(forEnd)) || isNaN(Number(forStep))) {
-          setError("ค่า Start, End, Step ต้องเป็นตัวเลข");
-          return;
-        }
+
+        // เปลี่ยนตรงนี้: ไม่บังคับให้เป็นตัวเลขแล้ว
         callUpdateOrAdd(nodeToEdit?.id, "for", `${forVariable} = ${forStart} to ${forEnd}`, {
-          init: `int ${forVariable} = ${forStart}`,
+          init: `${forVariable} = ${forStart}`,
           condition: `${forVariable} < ${forEnd}`,
           increment: `${forVariable} += ${forStep}`,
           varName: forVariable,
@@ -835,7 +826,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     },
   ];
 
-  /* --- Symbols --- */
   const symbols: SymbolItem[] = [
     { key: "input", label: "Input", imageSrc: "/images/input.png" },
     { key: "output", label: "Output", imageSrc: "/images/output.png" },
@@ -860,7 +850,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
           setError("");
           resetFields();
           if (disabled) {
-            setError("รูปแบบนี้ไม่สามารถเพิ่มได้อีก (จำนวนเต็ม)"); // friendly message
+            setError("รูปแบบนี้ไม่สามารถเพิ่มได้อีก (จำนวนเต็ม)");
             return;
           }
           setActiveModal(item.key);
@@ -871,7 +861,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
       >
         <div className="relative">
           <Image src={item.imageSrc} alt={item.label} width={100} height={60} />
-          {/* badge */}
           <div className="absolute -top-2 -right-2 bg-white border rounded-full px-2 py-0.5 text-xs shadow-sm">
             {srLoading ? "..." : isUnlimited ? "∞" : remaining === null ? "-" : String(remaining)}
           </div>
@@ -881,7 +870,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
     );
   };
 
-  /* --- Render active modal if any --- */
   if (activeModal) {
     const cfg = modalConfigs.find((m) => m.key === activeModal);
     if (!cfg) return null;
@@ -899,7 +887,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
               )}
             </div>
 
-            {/* Render fields dynamically */}
             {cfg.fields.map((f) => {
               if (f.kind === "group") {
                 return (
@@ -953,7 +940,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
 
             {error && <div className="text-red-500 text-xs ml-6 -mt-2 mb-2">{error}</div>}
 
-            {/* conflicts */}
             {conflicts.length > 0 && (
               <div className="ml-6 mb-2">
                 <div className="text-sm text-gray-700 mb-1">พบตัวแปรซ้ำใน node ต่อไปนี้:</div>
@@ -962,7 +948,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                     <li key={c.nodeId} className="flex items-center gap-2">
                       <div className="flex-1">
                         <div className="font-medium">{c.label || c.nodeId}</div>
-                        <div className="text-xs text-gray-500">var: {c.varName}{c.foundIn ? ` · found in: ${c.foundIn}` : ""}</div>
+                        <div className="text-xs text-gray-500">
+                          var: {c.varName}
+                          {c.foundIn ? ` · found in: ${c.foundIn}` : ""}
+                        </div>
                       </div>
 
                       <div>
@@ -975,7 +964,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                             } else {
                               try {
                                 navigator.clipboard?.writeText(c.nodeId);
-                                // keep the alert fallback for this case (user asked only to remove delete alert)
                                 alert(`Copied node id: ${c.nodeId} — ให้ parent implement onFocusNode เพื่อโฟกัส node โดยตรง`);
                               } catch (e) {
                                 console.log("Focus node fallback, nodeId:", c.nodeId);
@@ -993,22 +981,29 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             )}
 
             <div className="flex justify-end gap-3 mt-3 mr-5 text-xs">
-              <button type="button" onClick={() => cfg.onClose()} className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer">
+              <button
+                type="button"
+                onClick={() => cfg.onClose()}
+                className="w-24 px-5 py-2 rounded-full border border-gray-400 text-gray-700 hover:bg-gray-100 transition cursor-pointer"
+              >
                 Cancel
               </button>
-              <button type="submit" disabled={loading} className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-24 px-5 py-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
+              >
                 {loading ? "Saving..." : "Ok"}
               </button>
             </div>
           </form>
 
           <div className="bg-[#E9E5FF] rounded-b-lg mt-6 p-3 flex items-center gap-2">
-            <img src={modalConfigs.find(m => m.key === activeModal)?.icon} alt="Icon" className="w-50 h-7" />
-            <span className="text-gray-600 text-sm">{modalConfigs.find(m => m.key === activeModal)?.description}</span>
+            <img src={modalConfigs.find((m) => m.key === activeModal)?.icon} alt="Icon" className="w-50 h-7" />
+            <span className="text-gray-600 text-sm">{modalConfigs.find((m) => m.key === activeModal)?.description}</span>
           </div>
         </div>
 
-        {/* Confirmation modal (AnimatePresence) */}
         <AnimatePresence>
           {confirmVisible && (
             <motion.div
@@ -1018,7 +1013,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
               exit={{ opacity: 0 }}
               aria-modal="true"
               role="dialog"
-              onClick={() => { /* do nothing on backdrop click */ }}
+              onClick={() => { }}
             >
               <motion.div
                 className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -1037,24 +1032,27 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
-                  <div className={`px-6 pt-8 pb-6 flex flex-col items-center ${confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"}`}>
-                    <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"} shadow-md`}>
-                      {confirmVariant === "danger" ? (
-                        <FaCube size={36} className="text-white" />
-                      ) : (
-                        <FaPlus size={36} className="text-white" />
-                      )}
+                  <div
+                    className={`px-6 pt-8 pb-6 flex flex-col items-center ${confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"
+                      }`}
+                  >
+                    <div
+                      className={`flex items-center justify-center w-20 h-20 rounded-xl ${confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"
+                        } shadow-md`}
+                    >
+                      {confirmVariant === "danger" ? <FaCube size={36} className="text-white" /> : <FaPlus size={36} className="text-white" />}
                     </div>
 
-                    <h3 className={`mt-4 text-2xl font-extrabold ${confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"}`}>
+                    <h3
+                      className={`mt-4 text-2xl font-extrabold ${confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"
+                        }`}
+                    >
                       {confirmTitle}
                     </h3>
                   </div>
 
                   <div className="px-6 pb-6 pt-4">
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center">
-                      {confirmMessage}
-                    </p>
+                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center">{confirmMessage}</p>
 
                     <div className="w-full border-t border-gray-200 my-4" />
 
@@ -1078,7 +1076,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                             setConfirmVisible(false);
                           }
                         }}
-                        className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${confirmVariant === "danger" ? "bg-red-600 hover:bg-red-700 focus:ring-red-200" : confirmVariant === "success" ? "bg-green-600 hover:bg-green-700 focus:ring-green-200" : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"}`}
+                        className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${confirmVariant === "danger"
+                            ? "bg-red-600 hover:bg-red-700 focus:ring-red-200"
+                            : confirmVariant === "success"
+                              ? "bg-green-600 hover:bg-green-700 focus:ring-green-200"
+                              : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
+                          }`}
                       >
                         ยืนยัน
                       </button>
@@ -1091,7 +1094,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                     className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                      <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </button>
                 </div>
@@ -1099,10 +1102,10 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
-      </>    );
+      </>
+    );
   }
 
-  /* --- Palette --- */
   return (
     <>
       <div className="w-full bg-white p-4 flex flex-col gap-4 rounded-lg shadow-lg border-1">
@@ -1141,7 +1144,6 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
         </div>
       </div>
 
-      {/* Confirmation modal for palette case as well (in case delete clicked while no activeModal) */}
       <AnimatePresence>
         {confirmVisible && (
           <motion.div
@@ -1151,7 +1153,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
             exit={{ opacity: 0 }}
             aria-modal="true"
             role="dialog"
-            onClick={() => { /* do nothing on backdrop click */ }}
+            onClick={() => { }}
           >
             <motion.div
               className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -1170,24 +1172,27 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
-                <div className={`px-6 pt-8 pb-6 flex flex-col items-center ${confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"}`}>
-                  <div className={`flex items-center justify-center w-20 h-20 rounded-xl ${confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"} shadow-md`}>
-                    {confirmVariant === "danger" ? (
-                      <FaCube size={36} className="text-white" />
-                    ) : (
-                      <FaPlus size={36} className="text-white" />
-                    )}
+                <div
+                  className={`px-6 pt-8 pb-6 flex flex-col items-center ${confirmVariant === "danger" ? "bg-red-50" : confirmVariant === "success" ? "bg-green-50" : "bg-blue-50"
+                    }`}
+                >
+                  <div
+                    className={`flex items-center justify-center w-20 h-20 rounded-xl ${confirmVariant === "danger" ? "bg-red-600" : confirmVariant === "success" ? "bg-green-600" : "bg-blue-600"
+                      } shadow-md`}
+                  >
+                    {confirmVariant === "danger" ? <FaCube size={36} className="text-white" /> : <FaPlus size={36} className="text-white" />}
                   </div>
 
-                  <h3 className={`mt-4 text-2xl font-extrabold ${confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"}`}>
+                  <h3
+                    className={`mt-4 text-2xl font-extrabold ${confirmVariant === "danger" ? "text-red-700" : confirmVariant === "success" ? "text-green-700" : "text-blue-700"
+                      }`}
+                  >
                     {confirmTitle}
                   </h3>
                 </div>
 
                 <div className="px-6 pb-6 pt-4">
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center">
-                    {confirmMessage}
-                  </p>
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap text-center">{confirmMessage}</p>
 
                   <div className="w-full border-t border-gray-200 my-4" />
 
@@ -1211,7 +1216,12 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                           setConfirmVisible(false);
                         }
                       }}
-                      className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${confirmVariant === "danger" ? "bg-red-600 hover:bg-red-700 focus:ring-red-200" : confirmVariant === "success" ? "bg-green-600 hover:bg-green-700 focus:ring-green-200" : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"}`}
+                      className={`inline-flex items-center justify-center px-6 py-2 rounded-full text-white focus:outline-none focus:ring-2 focus:ring-offset-2 text-sm font-medium shadow-sm ${confirmVariant === "danger"
+                          ? "bg-red-600 hover:bg-red-700 focus:ring-red-200"
+                          : confirmVariant === "success"
+                            ? "bg-green-600 hover:bg-green-700 focus:ring-green-200"
+                            : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
+                        }`}
                     >
                       ยืนยัน
                     </button>
@@ -1224,7 +1234,7 @@ const SymbolSection: React.FC<SymbolSectionProps> = ({
                   className="absolute top-4 right-4 bg-white border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center shadow"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M6 6L18 18M6 18L18 6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
               </div>

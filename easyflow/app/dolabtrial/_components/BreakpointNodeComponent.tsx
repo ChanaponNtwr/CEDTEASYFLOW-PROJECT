@@ -2,12 +2,12 @@
 import React from "react";
 import { Handle, Position } from "@xyflow/react";
 
-  const hiddenHandleStyle = {
-    width: 0,
-    height: 0,
-    background: "transparent",
-  };
-  
+const hiddenHandleStyle = {
+  width: 0,
+  height: 0,
+  background: "transparent",
+};
+
 const BreakpointNodeComponent: React.FC<{ data: { label: string } }> = ({ data }) => (
   <div
     style={{
@@ -25,9 +25,9 @@ const BreakpointNodeComponent: React.FC<{ data: { label: string } }> = ({ data }
     }}
   >
     <Handle type="target" position={Position.Left} id="false" style={{ ...hiddenHandleStyle, left: -8, top: "50%", transform: "translateY(-50%)" }} />
-    <Handle type="target" position={Position.Right} id="true" style={{ ...hiddenHandleStyle, right: -8, top: "50%", transform: "translateY(-50%)" }}/>
-    <Handle type="source" position={Position.Bottom} style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }}/>
-    <div>{data.label}</div>
+    <Handle type="target" position={Position.Right} id="true" style={{ ...hiddenHandleStyle, right: -8, top: "50%", transform: "translateY(-50%)" }} />
+    <Handle type="source" position={Position.Bottom} style={{ ...hiddenHandleStyle, bottom: -8, left: "50%", transform: "translateX(-50%)" }} />
+    {data?.label && <div>{data.label}</div>}
   </div>
 );
 

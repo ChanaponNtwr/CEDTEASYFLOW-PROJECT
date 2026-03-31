@@ -77,6 +77,15 @@ export default function InputHandler(node, context, flowchart, options = {}) {
     if (typeof val === "object") return val;
 
     const s = String(val).trim();
+
+    // ⭐ NEW: detect array
+    if (s.startsWith("[") && s.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(s);
+        if (Array.isArray(parsed)) return parsed;
+      } catch { }
+    }
+
     const low = s.toLowerCase();
 
     if (low === "true") return true;
@@ -90,7 +99,6 @@ export default function InputHandler(node, context, flowchart, options = {}) {
 
     return s;
   };
-
   /* ===============================
      read declared type
      =============================== */
@@ -169,6 +177,15 @@ export default function InputHandler(node, context, flowchart, options = {}) {
         default:
           finalValue = String(norm);
           finalType = "string";
+
+        case "array": {
+          if (!Array.isArray(norm)) {
+            throw new Error(`Invalid array for ${varName}`);
+          }
+          finalValue = norm;
+          finalType = "array";
+          break;
+        }
       }
     } else {
       if (typeof norm === "number") {
@@ -177,10 +194,14 @@ export default function InputHandler(node, context, flowchart, options = {}) {
       } else if (typeof norm === "boolean") {
         finalType = "bool";
         finalValue = norm;
+      } else if (Array.isArray(norm)) {
+        finalType = "array";
+        finalValue = norm;
       } else {
         finalType = "string";
         finalValue = String(norm);
       }
+      
     }
   } catch (e) {
     const err = new Error(e.message || `Invalid input for ${varName}`);
