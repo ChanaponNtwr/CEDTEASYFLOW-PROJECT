@@ -60,6 +60,15 @@ export default function AssignHandler(node, context /*, flowchart */) {
 
   /* ================= set result ================= */
 
+  // 👉 เพิ่มบล็อกนี้: เช็คว่าตอน Declare ประกาศเป็น Integer ไว้หรือเปล่า
+  const existingVar = context.variables.find(v => v.name === varName);
+  const declaredType = existingVar ? existingVar.varType : null;
+
+  // ถ้าประกาศไว้เป็น int หรือ integer ให้บังคับตัดเศษทิ้ง
+  if ((declaredType === "int" || declaredType === "integer") && typeof value === "number") {
+    value = Math.trunc(value); // Math.trunc จะตัดทศนิยมทิ้งเสมอ (เช่น 12.3 -> 12)
+  }
+
   let varType;
 
   if (Array.isArray(value)) {
