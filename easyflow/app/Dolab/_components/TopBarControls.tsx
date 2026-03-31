@@ -29,7 +29,7 @@ type NodeResult = {
 
 type ExecContext = { variables?: Variable[]; index_map?: Record<string, number>; output?: any[] };
 
-type ExecResult = { node?: NodeResult; context?: ExecContext; done?: boolean; paused?: boolean };
+type ExecResult = { node?: NodeResult; context?: ExecContext; done?: boolean; paused?: boolean; newOutput?: any[];};
 
 type ExecuteResponse = {
   ok: boolean;
@@ -37,6 +37,7 @@ type ExecuteResponse = {
   nextNodeId?: string | number;
   nextNodeType?: string | number;
   context?: { variables?: Variable[]; output?: any[] };
+  newOutput?: any[];
   paused?: boolean;
   done?: boolean;
   reenter?: boolean;
@@ -234,9 +235,31 @@ export default function TopBarControls({
     });
   };
 
+  // // ---------- Highlight node that produced outputs immediately ----------
+  // const handleResponseOutputs = (resp: ExecuteResponse | undefined | null, autoContinue = false): boolean => {
+  //   const respOutputs = resp?.result?.context?.output ?? resp?.context?.output ?? [];
+  //   if (Array.isArray(respOutputs) && respOutputs.length > 0) {
+  //     // determine the node that produced the output (prefer result.node.id, fallback to nextNodeId)
+  //     const producerRaw = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
+  //     const producerId = producerRaw !== null && typeof producerRaw !== "undefined" ? String(producerRaw) : null;
+
+  //     safeHighlight(producerId);
+
+  //     const mapped = respOutputs.map((o) => ({ sender: "system" as const, text: renderValue(o) }));
+  //     setChatMessages((m) => [...m, ...mapped]);
+
+  //     if (!autoContinue) {
+  //       return true;
+  //     }
+  //   }
+  //   return false;
+  // };
+
   // ---------- Highlight node that produced outputs immediately ----------
   const handleResponseOutputs = (resp: ExecuteResponse | undefined | null, autoContinue = false): boolean => {
-    const respOutputs = resp?.result?.context?.output ?? resp?.context?.output ?? [];
+    // แก้ไขบรรทัดนี้: เปลี่ยนจาก context?.output เป็นดึง newOutput มาแสดงผลแทน
+    const respOutputs = resp?.result?.newOutput ?? resp?.newOutput ?? [];
+
     if (Array.isArray(respOutputs) && respOutputs.length > 0) {
       // determine the node that produced the output (prefer result.node.id, fallback to nextNodeId)
       const producerRaw = resp?.result?.node?.id ?? resp?.nextNodeId ?? null;
@@ -649,13 +672,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
     }
@@ -729,7 +752,7 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current(resp);
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
     } catch (err) {
@@ -750,7 +773,7 @@ export default function TopBarControls({
     if (runAllWaitingForInputRef.current) {
       try {
         runAllWaitingForInputRef.current();
-      } catch {}
+      } catch { }
       runAllWaitingForInputRef.current = null;
     }
   };
@@ -776,13 +799,13 @@ export default function TopBarControls({
       if (runAllWaitingForInputRef.current) {
         try {
           runAllWaitingForInputRef.current();
-        } catch {}
+        } catch { }
         runAllWaitingForInputRef.current = null;
       }
       if (outputResumeRef.current) {
         try {
           outputResumeRef.current();
-        } catch {}
+        } catch { }
         outputResumeRef.current = null;
       }
       runAllActiveRef.current = false;
@@ -1288,9 +1311,9 @@ export default function TopBarControls({
           const parsed = JSON.parse(raw);
           const id = parsed?.id ?? parsed?.userId ?? parsed?.user_id ?? parsed?.sub ?? parsed?.user?.id ?? null;
           if (id) return Number(id);
-        } catch {}
+        } catch { }
       }
-    } catch {}
+    } catch { }
     return null;
   };
 
@@ -1414,13 +1437,12 @@ export default function TopBarControls({
               return (
                 <div key={i} className={`mb-3 flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${
-                      m.sender === "user"
+                    className={`max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap text-sm font-mono ${m.sender === "user"
                         ? "bg-blue-600 text-white rounded-br-sm shadow-sm"
                         : isError
-                        ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
-                        : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
-                    }`}
+                          ? "bg-red-50 border border-red-200 text-red-800 rounded-bl-sm shadow-sm font-semibold"
+                          : "bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm"
+                      }`}
                   >
                     {m.text}
                   </div>
